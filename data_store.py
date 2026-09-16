@@ -783,7 +783,8 @@ class DataStore:
             "benign_exclusions": [
                 "10-K", "annual report", "investor presentation",
                 "quarterly earnings", "proxy statement", "sustainability report",
-                "gamer", "gaming", "workspace", "podcast", "music"
+                "gamer", "gaming", "workspace", "podcast", "music",
+                "casio", "g-shock", "watch", "bezel", "strap"
             ]
         }
         return self._data.get("document_intel", defaults)

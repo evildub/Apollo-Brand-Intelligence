@@ -1699,18 +1699,25 @@ class TestApolloCoreFeatures(unittest.TestCase):
         self.assertEqual(res8["threat_score"], 80)
         self.assertFalse(res8["is_suppressed"])
 
-        # 9. Ambiguous Standalone GMW without numeric spec
-        res9 = classify_scribd_document("GMW Regional Meeting Minutes and Agenda")
-        self.assertEqual(res9["category"], "Ambiguous Document")
-        self.assertEqual(res9["threat_score"], 25)
-        self.assertFalse(res9["is_suppressed"])
-        self.assertIn("Ambiguous", res9["threat_badge"])
+        # 9. Non-OEM Collision: Casio GMW-B5000 Watch Series
+        res9 = classify_scribd_document("Casio GMW-B5000TFC Glass Replacement")
+        self.assertEqual(res9["category"], "Suppressed False Positive")
+        self.assertTrue(res9["is_suppressed"])
+        self.assertEqual(res9["threat_score"], 0)
+        self.assertIn("Suppressed", res9["threat_badge"])
 
-        # 10. Other OEM Standards: Ford WSS
-        res10 = classify_scribd_document("Ford WSS-M2C913-C Engine Lubricant Specification")
-        self.assertEqual(res10["category"], "OEM Engineering Standard")
-        self.assertIn("WSS", res10["threat_badge"])
-        self.assertEqual(res10["threat_score"], 95)
+        # 10. Ambiguous Standalone GMW with automotive context
+        res10 = classify_scribd_document("General Motors Worldwide GMW Engineering Material Specification")
+        self.assertEqual(res10["category"], "Ambiguous Document")
+        self.assertEqual(res10["threat_score"], 25)
+        self.assertFalse(res10["is_suppressed"])
+        self.assertIn("Ambiguous", res10["threat_badge"])
+
+        # 11. Other OEM Standards: Ford WSS
+        res11 = classify_scribd_document("Ford WSS-M2C913-C Engine Lubricant Specification")
+        self.assertEqual(res11["category"], "OEM Engineering Standard")
+        self.assertIn("WSS", res11["threat_badge"])
+        self.assertEqual(res11["threat_score"], 95)
 
     def test_56_document_intel_presets_and_datastore(self):
         """Test Item 56: Verify Document Intel presets in data_store and Scribd platform detection in batch_importer."""

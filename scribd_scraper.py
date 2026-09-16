@@ -23,8 +23,10 @@ logger = logging.getLogger("Apollo.ScribdScraper")
 
 
 OEM_SPEC_PATTERNS = [
-    # GMW and GM legacy standards: GMW14872, GMW 3044, GMW-3172, GM4350M, GME00201, GMP.E/P.001
-    (re.compile(r'\b(GMW|GM\d{4}M|GME\d{4,5}|GMP\.[A-Z0-9.]+)\s*[-_]?\s*(\d{3,6}[A-Z0-9-]*)?\b', re.IGNORECASE), "General Motors", "GMW"),
+    # GMW standards (strictly GMW + 3 to 5 digits, e.g. GMW14872, GMW 3044, GMW-3172)
+    (re.compile(r'\bGMW\s*[-_]?\s*(\d{3,5})\b', re.IGNORECASE), "General Motors", "GMW"),
+    # GM legacy standards: GM4350M, GME00201, GMP.E/P.001
+    (re.compile(r'\b(GM\d{4}M|GME\d{4,5}|GMP\.[A-Z0-9.]+)\b', re.IGNORECASE), "General Motors", "GM Legacy"),
     # Ford: WSS-M2C913-C, WSK-M2G379-A, WSB-M1P83-A
     (re.compile(r'\b(WSS|WSK|WSB|WSD|WSE)\s*[-_]?\s*M\d+[A-Z0-9-]*\b', re.IGNORECASE), "Ford", "WSS"),
     # Chrysler / Stellantis: MS-6395, MS-90032, PS-8555
@@ -42,13 +44,25 @@ OEM_CORROBORATING_TERMS = {
     "corrosion", "fastener", "plating", "engineering", "durability", "oem", "requirement",
     "requirements", "spec", "drawing", "norm", "norma", "vibration", "tensile", "hardness",
     "weld", "welding", "torque", "flammability", "paint", "steel", "aluminum", "resin",
-    "gmw", "general motors", "worldwide", "engineering standard", "material spec"
+    "general motors", "worldwide", "engineering standard", "material spec", "sheet steel",
+    "automotive", "vehicle", "chassis", "powertrain"
 }
 
 NON_OEM_FALSE_POSITIVE_TERMS = {
+    # Watches, Timepieces & Jewelry (e.g. Casio G-Shock GMW-B5000)
+    "casio", "g-shock", "g shock", "watch", "bezel", "strap", "timepiece", "bracelet",
+    "glass replacement", "dial", "horology", "chronograph", "quartz", "seiko", "citizen",
+    "rolex", "omega", "band replacement", "wrist watch",
+    # Gaming, Streaming & Workspace Collision
     "gamer", "gaming", "workspace", "podcast", "music", "radio", "charity", "ministry",
     "west", "global money week", "gameplay", "youtube", "discord", "roblox", "minecraft",
-    "twitch", "streamer", "let's play", "esports", "novel", "fiction", "poetry", "church"
+    "twitch", "streamer", "let's play", "esports", "mouse", "keyboard", "headset", "headphone",
+    # Apparel & Personal Goods
+    "t-shirt", "hoodie", "sweater", "shoes", "sneakers", "dress", "perfume", "fragrance",
+    # Literature, Fiction & Media
+    "novel", "fiction", "poetry", "poem", "lyrics", "audiobook", "manga", "anime", "comic",
+    # Religious & Non-Profit
+    "church", "ministry", "charity", "sermon", "global money week", "gospel", "bible"
 }
 
 SERVICE_MANUAL_TERMS = {
@@ -109,7 +123,7 @@ def classify_scribd_document(title: str, query: str = "", uploader: str = "") ->
             "detected_brand": ""
         }
 
-    # 2. Check for Non-OEM False Positive Collision Terms (e.g. "Gamer Media Workspace")
+    # 2. Check for Non-OEM False Positive Collision Terms (e.g. "Casio GMW-B5000", "Gamer Media Workspace")
     is_non_oem = any(fp in t_low for fp in NON_OEM_FALSE_POSITIVE_TERMS)
     if is_non_oem:
         return {
@@ -123,14 +137,16 @@ def classify_scribd_document(title: str, query: str = "", uploader: str = "") ->
         }
 
     # 3. Check for OEM Engineering Standards (GMW, WSS, MS, TSM, TL, DBL)
+    matched_any_oem = False
     for pattern, brand_name, code_prefix in OEM_SPEC_PATTERNS:
         match = pattern.search(title)
         if match:
+            matched_any_oem = True
             spec_str = match.group(0).strip()
             has_numeric_spec = bool(re.search(r'\d{3,6}', spec_str))
             has_corroborating = any(c in combined for c in OEM_CORROBORATING_TERMS)
 
-            if has_numeric_spec and (has_corroborating or len(spec_str) >= 6):
+            if has_numeric_spec and (has_corroborating or len(spec_str) >= 6 or code_prefix == "GMW"):
                 badge_label = f"🚨 Verified {code_prefix} Standard" if code_prefix == "GMW" else f"🚨 Verified OEM Standard ({code_prefix})"
                 return {
                     "category": "OEM Engineering Standard",
@@ -151,17 +167,31 @@ def classify_scribd_document(title: str, query: str = "", uploader: str = "") ->
                     "matched_spec": spec_str,
                     "detected_brand": brand_name
                 }
-            elif "gmw" in spec_str.lower() and not has_numeric_spec:
-                # Standalone GMW acronym without standard number
-                return {
-                    "category": "Ambiguous Document",
-                    "threat_badge": "⚠️ Ambiguous (Review Required)",
-                    "threat_score": 25,
-                    "is_suppressed": False,
-                    "confidence": "LOW",
-                    "matched_spec": spec_str,
-                    "detected_brand": ""
-                }
+
+    # Standalone unconfirmed "GMW" acronym check without numeric standard code
+    if not matched_any_oem and re.search(r'\bgmw\b', t_low):
+        has_corroborating = any(c in combined for c in OEM_CORROBORATING_TERMS)
+        if has_corroborating:
+            return {
+                "category": "Ambiguous Document",
+                "threat_badge": "⚠️ Ambiguous (Review Required)",
+                "threat_score": 25,
+                "is_suppressed": False,
+                "confidence": "LOW",
+                "matched_spec": "GMW",
+                "detected_brand": "General Motors"
+            }
+        else:
+            # GMW with zero automotive context is an irrelevant non-OEM collision
+            return {
+                "category": "Suppressed False Positive",
+                "threat_badge": "🛡️ Suppressed False Positive",
+                "threat_score": 0,
+                "is_suppressed": True,
+                "confidence": "HIGH",
+                "matched_spec": "",
+                "detected_brand": ""
+            }
 
     # 4. Check for Electrical Wiring / Schematic / Pinout
     if any(w in t_low for w in WIRING_DIAGRAM_TERMS):

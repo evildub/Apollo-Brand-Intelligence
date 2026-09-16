@@ -581,7 +581,7 @@ CONTINENTAL_QUOTES = [
 ]
 
 
-VERSION = "2.0.0"
+VERSION = "3.0.0"
 
 
 class EbayTool(tk.Tk):
@@ -9674,7 +9674,7 @@ class EbayTool(tk.Tk):
         _row(info_frame, 0, "Creator & Lead Architect:", "Jerry Seidenstucker (Personal Project)")
         _row(info_frame, 1, "AI Pair Programmer & Engine:", "Aether (Aeth) • Antigravity / Google DeepMind")
         _row(info_frame, 2, "Intellectual Property:", "© 2026 Jerry Seidenstucker. All Rights Reserved.")
-        _row(info_frame, 3, "Architecture Version:", "Apollo v2.0.0 Enterprise Tactical Suite")
+        _row(info_frame, 3, "Architecture Version:", "Apollo v3.0.0 Enterprise Tactical Suite")
         _row(info_frame, 4, "License Mode:", "Proprietary / Authorized Internal Evaluation")
 
         # Legal & Ownership Notice box

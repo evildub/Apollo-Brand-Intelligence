@@ -1737,6 +1737,12 @@ class TestApolloCoreFeatures(unittest.TestCase):
         self.assertEqual(batch_importer.detect_platform("https://www.scribd.com/document/12345678/Sample-Spec"), "Scribd")
         self.assertEqual(batch_importer.detect_platform("https://www.scribd.com/doc/98765432/Wiring-Diagram"), "Scribd")
 
+        # Verify ScribdScraper lifecycle and close() method
+        from scribd_scraper import ScribdScraper
+        scraper = ScribdScraper(headless=True)
+        self.assertTrue(hasattr(scraper, "close"))
+        scraper.close()
+
 
 if __name__ == "__main__":
     unittest.main()

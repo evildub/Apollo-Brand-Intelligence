@@ -245,6 +245,24 @@ class ScribdScraper:
             )
         return self._context
 
+    def close(self):
+        """Safely close browser context, browser instance, and Playwright process."""
+        try:
+            if self._context:
+                try: self._context.close()
+                except Exception: pass
+                self._context = None
+            if self._browser:
+                try: self._browser.close()
+                except Exception: pass
+                self._browser = None
+            if self._playwright:
+                try: self._playwright.stop()
+                except Exception: pass
+                self._playwright = None
+        except Exception:
+            pass
+
     def resolve_store_info(self, url_or_name: str) -> Dict[str, str]:
         """Resolve store/uploader name and document ID from Scribd URL or identifier."""
         if not url_or_name:

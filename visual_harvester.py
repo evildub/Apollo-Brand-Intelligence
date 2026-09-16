@@ -33,7 +33,7 @@ class VisualHarvester:
 
     def search_by_image(self, image_source, label: str = "", marketplace: str = "eBay",
                         region: Optional[str] = None,
-                        max_distance: int = 10, max_results: int = 50, log_callback=None) -> List[Dict]:
+                        max_distance: int = 18, max_results: int = 50, log_callback=None) -> List[Dict]:
         """
         Search for marketplace listings matching the target photo.
         Strictly filters out any candidate whose image pHash does not match within max_distance.
@@ -155,14 +155,24 @@ class VisualHarvester:
                 dist = hamming_distance(target_phash, cand_phash)
                 if dist <= max_distance:
                     sim_pct = max(0, int((1.0 - (dist / 64.0)) * 100))
-                    match_label = f"🎯 Exact Match ({sim_pct}%)" if sim_pct >= 98 else f"🖼 Visual Clone ({sim_pct}%)"
+                    if dist <= 6:
+                        match_label = f"🎯 Exact Match ({sim_pct}%)"
+                        badge_label = f"🚨 Exact Clone ({sim_pct}%)"
+                    elif dist <= 12:
+                        match_label = f"🖼 Visual Clone ({sim_pct}%)"
+                        badge_label = f"🚨 Visual Clone ({sim_pct}%)"
+                    else:
+                        match_label = f"🔍 Possible Match ({sim_pct}%)"
+                        badge_label = f"🔍 Visual Candidate ({sim_pct}%)"
+
                     cand["similarity"] = match_label
                     cand["match_type"] = match_label
-                    cand["threat_badge"] = f"🚨 Visual Clone ({sim_pct}%)"
-                    cand["threat_score"] = max(cand.get("threat_score", 0), 95)
-                    cand["visual_counterfeit"] = True
+                    cand["threat_badge"] = badge_label
+                    cand["threat_score"] = max(cand.get("threat_score", 0), 95 if dist <= 12 else 75)
+                    cand["visual_counterfeit"] = True if dist <= 12 else False
                     cand["distance"] = dist
-                    cand["condition"] = f"📸 Visual Clone (Dist {dist})"
+                    cand["sim_pct"] = sim_pct
+                    cand["condition"] = f"📸 Visual Match (Dist {dist})"
                     return (cand, dist, sim_pct)
             except Exception:
                 pass
@@ -179,6 +189,9 @@ class VisualHarvester:
                         _log(f"  🎯 [MATCH FOUND] {cand.get('title', '')[:42]} | pHash Dist: {dist} ({sim_pct}% match)")
                 except Exception:
                     pass
+
+        # Sort matches by similarity (lowest distance first)
+        verified_matches.sort(key=lambda x: x.get("distance", 999))
 
         # 5. Parallel Seller Handle & Origin Enrichment for Discovered Clones
         if verified_matches:

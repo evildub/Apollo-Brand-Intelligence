@@ -1630,7 +1630,7 @@ class EbayScraper:
                         "location": res.get("location") or item.get("location")
                     }
                     store_cache[s] = resolved_payload
-                    if orig_seller:
+                    if orig_seller and orig_seller not in ("eBay Seller", "Unknown", "Resolving...", "Global Search"):
                         store_cache[orig_seller] = resolved_payload
                     if store_id:
                         store_cache[store_id] = resolved_payload

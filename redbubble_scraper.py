@@ -404,59 +404,186 @@ class RedbubbleScraper:
                     break
 
                 parent_id = str(parent.get("item_id", "")).strip()
-                raw_url = parent.get("url", "")
+                raw_url = str(parent.get("url", "")).strip()
+                if not raw_url:
+                    continue
+
+                if not raw_url.startswith("http"):
+                    if raw_url.startswith("/"):
+                        raw_url = f"https://www.redbubble.com{raw_url}"
+                    elif re.match(r'^\d+$', raw_url):
+                        raw_url = f"https://www.redbubble.com/shop/ap/{raw_url}"
+                    else:
+                        raw_url = f"https://www.redbubble.com/{raw_url}"
+
                 seller = parent.get("seller") or "Redbubble Artist"
                 brand = parent.get("brand", "")
                 keyword = parent.get("keyword", "")
                 parent_title = parent.get("title", "")
+                new_for_this_parent = 0
 
                 _log(f"🎨 [Redbubble] Expanding variants for [{idx+1}/{total_parents}]: '{parent_title[:35]}...'")
 
                 try:
                     resp = session.get(raw_url, timeout=18)
-                    if resp.status_code != 200:
-                        _log(f"⚠ [Redbubble] HTTP status {resp.status_code} fetching PDP {raw_url}.")
+                    html_text = resp.text if resp.status_code == 200 else ""
+
+                    # Fallback to Playwright if session get blocked or empty
+                    if not html_text or resp.status_code in (403, 429, 503):
+                        try:
+                            context = self._get_context()
+                            page = context.new_page()
+                            page.goto(raw_url, wait_until="domcontentloaded", timeout=20000)
+                            page.wait_for_timeout(1500)
+                            html_text = page.content()
+                            page.close()
+                        except Exception as pw_err:
+                            logger.debug(f"Playwright fallback fetch error: {pw_err}")
+
+                    if not html_text:
+                        _log(f"⚠ [Redbubble] Could not retrieve page HTML for {raw_url}.")
                         continue
 
-                    soup = BeautifulSoup(resp.text, "html.parser")
+                    soup = BeautifulSoup(html_text, "html.parser")
+                    parent_variants = []
+
+                    # ── Strategy 1: Next.js __NEXT_DATA__ JSON ────────────────────
                     next_data = soup.find("script", id="__NEXT_DATA__")
-                    new_for_this_parent = 0
-
                     if next_data:
-                        data = json.loads(next_data.text)
-                        default_items = data.get("props", {}).get("pageProps", {}).get("defaultInventoryItems", [])
-                        
-                        for it in default_items:
-                            p_urls = it.get("productPageUrls", {})
-                            u = p_urls.get("url") or p_urls.get("fallbackUrl") or ""
-                            if not u:
-                                continue
-                            if not u.startswith("http"):
-                                u = f"https://www.redbubble.com{u}"
+                        try:
+                            data = json.loads(next_data.text)
+                            props = data.get("props", {}).get("pageProps", {})
+                            inv_items = (
+                                props.get("defaultInventoryItems") or
+                                props.get("inventoryItems") or
+                                props.get("work", {}).get("inventoryItems") or
+                                props.get("work", {}).get("products") or
+                                []
+                            )
+                            for it in inv_items:
+                                if not isinstance(it, dict):
+                                    continue
+                                p_urls = it.get("productPageUrls", {})
+                                u = p_urls.get("url") or p_urls.get("fallbackUrl") or it.get("productPageUrl") or it.get("url") or ""
+                                if not u:
+                                    continue
+                                if not u.startswith("http"):
+                                    u = f"https://www.redbubble.com{u}"
 
-                            v_id = self.extract_item_id(u, fallback_work_id=str(it.get("id", "")).strip())
+                                v_id = self.extract_item_id(u, fallback_work_id=str(it.get("id", "")).strip())
+                                if not v_id or v_id in known_ids or v_id == parent_id:
+                                    continue
+                                known_ids.add(v_id)
+
+                                desc = (it.get("description") or "Merchandise").strip()
+                                p_obj = it.get("price", {})
+                                amt = p_obj.get("amount") if isinstance(p_obj, dict) else None
+                                price_str = f"${amt:.2f}" if isinstance(amt, (int, float)) else str(amt or parent.get("price") or "$19.99")
+
+                                previews = it.get("previewSet", {}).get("previews", []) if isinstance(it.get("previewSet"), dict) else []
+                                img_url = previews[0].get("url", "") if previews else parent.get("image_url", "")
+
+                                full_title = f"{parent_title} - {desc}" if parent_title and desc.lower() not in parent_title.lower() else (parent_title or f"Redbubble {desc}")
+
+                                variant_item = {
+                                    "brand": brand,
+                                    "product_type": desc,
+                                    "title": full_title,
+                                    "item_id": v_id,
+                                    "price": price_str,
+                                    "seller": seller,
+                                    "location": "United States",
+                                    "image_url": img_url,
+                                    "thumbnail": img_url or parent.get("thumbnail", "") or parent.get("image_url", ""),
+                                    "url": u,
+                                    "marketplace": "redbubble.com",
+                                    "condition": "New",
+                                    "keyword": keyword
+                                }
+                                parent_variants.append(variant_item)
+                        except Exception as json_err:
+                            logger.debug(f"Redbubble Next.js parse error: {json_err}")
+
+                    # ── Strategy 2: window.__APOLLO_STATE__ GraphQL State ─────────
+                    if not parent_variants:
+                        for s in soup.find_all("script"):
+                            txt = s.text
+                            if "window.__APOLLO_STATE__" in txt:
+                                m = re.search(r'window\.__APOLLO_STATE__\s*=\s*(\{.*?\});', txt, re.DOTALL)
+                                if m:
+                                    try:
+                                        apollo_data = json.loads(m.group(1))
+                                        for k, v in apollo_data.items():
+                                            if isinstance(v, dict) and "productPageUrls" in v:
+                                                p_urls = v.get("productPageUrls", {})
+                                                u = p_urls.get("url") or p_urls.get("fallbackUrl") or ""
+                                                if not u:
+                                                    continue
+                                                if not u.startswith("http"):
+                                                    u = f"https://www.redbubble.com{u}"
+
+                                                v_id = self.extract_item_id(u, fallback_work_id=str(v.get("id", "")).strip())
+                                                if not v_id or v_id in known_ids or v_id == parent_id:
+                                                    continue
+                                                known_ids.add(v_id)
+
+                                                desc = (v.get("description") or "Merchandise").strip()
+                                                p_obj = v.get("price", {})
+                                                amt = p_obj.get("amount") if isinstance(p_obj, dict) else None
+                                                price_str = f"${amt:.2f}" if isinstance(amt, (int, float)) else str(amt or parent.get("price") or "$19.99")
+
+                                                previews = v.get("previewSet", {}).get("previews", []) if isinstance(v.get("previewSet"), dict) else []
+                                                img_url = previews[0].get("url", "") if previews else parent.get("image_url", "")
+
+                                                full_title = f"{parent_title} - {desc}" if parent_title and desc.lower() not in parent_title.lower() else (parent_title or f"Redbubble {desc}")
+
+                                                parent_variants.append({
+                                                    "brand": brand,
+                                                    "product_type": desc,
+                                                    "title": full_title,
+                                                    "item_id": v_id,
+                                                    "price": price_str,
+                                                    "seller": seller,
+                                                    "location": "United States",
+                                                    "image_url": img_url,
+                                                    "thumbnail": img_url or parent.get("thumbnail", "") or parent.get("image_url", ""),
+                                                    "url": u,
+                                                    "marketplace": "redbubble.com",
+                                                    "condition": "New",
+                                                    "keyword": keyword
+                                                })
+                                    except Exception as ap_err:
+                                        logger.debug(f"Apollo state parse error: {ap_err}")
+
+                    # ── Strategy 3: DOM Product Link & Card Extraction ───────────
+                    if not parent_variants:
+                        for a in soup.select('a[href*="/i/"]'):
+                            href = a.get("href", "")
+                            if not href:
+                                continue
+                            if not href.startswith("http"):
+                                href = f"https://www.redbubble.com{href}"
+
+                            v_id = self.extract_item_id(href)
                             if not v_id or v_id in known_ids or v_id == parent_id:
                                 continue
                             known_ids.add(v_id)
 
-                            desc = (it.get("description") or "Merchandise").strip()
-                            
-                            # Price
-                            p_obj = it.get("price", {})
-                            amt = p_obj.get("amount")
-                            price_str = f"${amt:.2f}" if isinstance(amt, (int, float)) else str(amt or parent.get("price") or "$19.99")
+                            raw_text = a.get_text(" ", strip=True)
+                            m_price = re.search(r'\$[\d,.]+', raw_text)
+                            price_str = m_price.group(0) if m_price else str(parent.get("price") or "$19.99")
+                            desc = raw_text.replace(price_str, "").replace("From", "").strip() or "Merchandise"
 
-                            # Thumbnail
-                            previews = it.get("previewSet", {}).get("previews", [])
-                            img_url = previews[0].get("url", "") if previews else parent.get("image_url", "")
+                            img = a.select_one("img")
+                            img_url = ""
+                            if img:
+                                img_url = img.get("src") or img.get("data-src") or ""
+                                if img_url.startswith("//"):
+                                    img_url = f"https:{img_url}"
 
-                            # Synthesize canonical title: "<Parent Title> - <Product Description>"
-                            if parent_title and desc.lower() not in parent_title.lower():
-                                full_title = f"{parent_title} - {desc}"
-                            else:
-                                full_title = parent_title or f"Redbubble {desc}"
+                            full_title = f"{parent_title} - {desc}" if parent_title and desc.lower() not in parent_title.lower() else (parent_title or f"Redbubble {desc}")
 
-                            variant_item = {
+                            parent_variants.append({
                                 "brand": brand,
                                 "product_type": desc,
                                 "title": full_title,
@@ -464,15 +591,17 @@ class RedbubbleScraper:
                                 "price": price_str,
                                 "seller": seller,
                                 "location": "United States",
-                                "image_url": img_url,
+                                "image_url": img_url or parent.get("image_url", ""),
                                 "thumbnail": img_url or parent.get("thumbnail", "") or parent.get("image_url", ""),
-                                "url": u,
+                                "url": href,
                                 "marketplace": "redbubble.com",
                                 "condition": "New",
                                 "keyword": keyword
-                            }
-                            expanded_results.append(variant_item)
-                            new_for_this_parent += 1
+                            })
+
+                    for var in parent_variants:
+                        expanded_results.append(var)
+                        new_for_this_parent += 1
 
                     _log(f"  ✓ Harvested +{new_for_this_parent} POD product variants for '{parent_title[:30]}...' (Total new: {len(expanded_results)})")
 

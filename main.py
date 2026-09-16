@@ -28,12 +28,14 @@ from printerval_scraper import PrintervalScraper
 from vinted_scraper import VintedScraper
 from tiktok_scraper import TikTokScraper
 from manomano_scraper import ManoManoScraper
+from scribd_scraper import ScribdScraper
 from exporter import ExcelExporter
 from data_store import DataStore
 import batch_importer
 from visual_catalog import VisualCatalogManager, compute_phash, hamming_distance
 from visual_harvester import VisualHarvester
 from visual_catalog_modal import VisualCatalogModal
+from vero_disclosure_modal import VeroDisclosureModal
 from field_guide_modal import FieldGuideModal
 from tooltip import add_tooltip, HoverTip
 
@@ -589,6 +591,7 @@ class EbayTool(tk.Tk):
         self.vinted_scraper = VintedScraper(headless=self.headless_var.get())
         self.tiktok_scraper = TikTokScraper(headless=self.headless_var.get())
         self.manomano_scraper = ManoManoScraper(headless=self.headless_var.get())
+        self.scribd_scraper = ScribdScraper(headless=self.headless_var.get())
         self.marketplace_var= tk.StringVar(value="🛒 eBay.com")
         self.exporter       = ExcelExporter()
         self.visual_catalog = VisualCatalogManager()
@@ -800,7 +803,7 @@ class EbayTool(tk.Tk):
         self.themed_widgets["subtext_labels"].append(market_lbl)
 
         self.market_combo = ttk.Combobox(top_right, textvariable=self.marketplace_var,
-                                         values=["🛒 eBay.com", "🧰 ManoMano", "🎵 TikTok Shop", "👗 Vinted", "🌐 AliExpress.com", "🌠 Wish.com", "🟠 Temu.com", "🛍 Mercado Libre", "🎨 Redbubble.com", "👕 Printerval.com"],
+                                         values=["🛒 eBay.com", "📚 Scribd.com", "🧰 ManoMano", "🎵 TikTok Shop", "👗 Vinted", "🌐 AliExpress.com", "🌠 Wish.com", "🟠 Temu.com", "🛍 Mercado Libre", "🎨 Redbubble.com", "👕 Printerval.com"],
                                          state="readonly", width=19, font=FONT_SM)
         self.market_combo.pack(side="left", padx=(0, 4))
         self.market_combo.bind("<<ComboboxSelected>>", self._on_market_changed)
@@ -1092,6 +1095,10 @@ class EbayTool(tk.Tk):
         self.settings_menu.add_separator()
 
         # 5. Modals & Configuration
+        self.settings_menu.add_command(
+            label="📄 VeRO Seller Disclosure Parser (.pdf / text)...",
+            command=self._open_vero_disclosure_modal
+        )
         self.settings_menu.add_command(
             label="📚 Open Analyst Field Guide (F1)",
             command=self._open_field_guide_modal
@@ -1643,18 +1650,6 @@ class EbayTool(tk.Tk):
                                                 width=15, state="readonly", font=FONT_SM)
         self.benign_filter_combo.pack(side="left", padx=(2, 3))
         self.benign_filter_combo.bind("<<ComboboxSelected>>", lambda e: self._repopulate_results_table())
-
-        self.st_cb = tk.Checkbutton(filter_bar, text="⚡ Smart Triage", variable=self.smart_triage_var,
-                                    command=self._repopulate_results_table, bg=t["panel"], fg="#38BDF8",
-                                    selectcolor=t["entry_bg"], activebackground=t["panel"], font=FONT_SM)
-        self.st_cb.pack(side="left", padx=(2, 2))
-        self.themed_widgets["checks"].append(self.st_cb)
-
-        self.fluff_btn = tk.Checkbutton(filter_bar, text="💨 Show Suppressed Fluff (0)", variable=self.show_fluff_var,
-                                        command=self._repopulate_results_table, bg=t["panel"], fg=t["subtext"],
-                                        selectcolor=t["entry_bg"], activebackground=t["panel"], font=FONT_SM)
-        self.fluff_btn.pack(side="left", padx=(2, 4))
-        self.themed_widgets["checks"].append(self.fluff_btn)
 
         self._btn(filter_bar, "✕ Clear", self._clear_filter).pack(side="left", padx=(0, 4))
         self._btn(filter_bar, "✓ Select All Visible", self._select_all_visible).pack(side="left", padx=(0, 4))
@@ -2294,6 +2289,8 @@ class EbayTool(tk.Tk):
             return "Printerval"
         elif "Redbubble" in mkt:
             return "Redbubble"
+        elif "Scribd" in mkt:
+            return "Scribd"
         elif "Mercado" in mkt:
             return "Mercado Libre"
         return "eBay"
@@ -2438,7 +2435,14 @@ class EbayTool(tk.Tk):
             else:
                 self.pod_expand_btn.pack_forget()
 
-        if "TikTok" in market:
+        if "Scribd" in market:
+            self.store_placeholder = "📚 Scribd Document Search: https://www.scribd.com/search?content_type=documents\n(Leave blank to sweep Scribd documents, or enter specific uploader/document URLs: https://www.scribd.com/doc/12345)"
+            if not current_text or any(k in current_text for k in ("ebay.com", "aliexpress.com", "wish.com", "temu.com", "mercadolibre", "redbubble.com", "printerval.com", "vinted.", "tiktok.com", "manomano.", "store2", "Global")):
+                self.store_text.delete("1.0", "end")
+                self.store_text.insert("1.0", self.store_placeholder)
+                self.store_text.config(fg=t["subtext"])
+            self._log("📚 Switched platform to: Scribd.com (Documents)")
+        elif "TikTok" in market:
             self.store_placeholder = "🎵 TikTok Shop Search: https://shop.tiktok.com/us\n(Leave blank to sweep TikTok Shop, or enter specific product/store URLs: https://shop.tiktok.com/us/pdp/...)"
             if not current_text or "ebay.com" in current_text or "aliexpress.com" in current_text or "wish.com" in current_text or "temu.com" in current_text or "mercadolibre" in current_text or "redbubble.com" in current_text or "printerval.com" in current_text or "store2" in current_text or "Global" in current_text:
                 self.store_text.delete("1.0", "end")
@@ -3977,6 +3981,7 @@ class EbayTool(tk.Tk):
             s_low = store_raw.lower()
             
             is_manomano = "manomano" in p_low or "manomano." in s_low
+            is_scribd = "scribd" in p_low or "scribd.com" in s_low
             is_tiktok = "tiktok" in p_low or "tiktok.com" in s_low
             is_vinted = "vinted" in p_low or "vinted." in s_low
             is_wish = "wish" in p_low or "wish.com" in s_low
@@ -3987,7 +3992,7 @@ class EbayTool(tk.Tk):
             is_printerval = "printerval" in p_low or "printerval.com" in s_low
 
             mkt_map = {
-                "ManoMano": "manomano.fr", "TikTok Shop": "shop.tiktok.com", "Vinted": "vinted.co.uk", "Wish": "wish.com", "Temu": "temu.com",
+                "ManoMano": "manomano.fr", "Scribd": "scribd.com", "TikTok Shop": "shop.tiktok.com", "Vinted": "vinted.co.uk", "Wish": "wish.com", "Temu": "temu.com",
                 "AliExpress": "aliexpress.com", "Mercado Libre": "mercadolibre.com",
                 "Redbubble": "redbubble.com", "Printerval": "printerval.com", "eBay": "ebay.com"
             }
@@ -4016,6 +4021,10 @@ class EbayTool(tk.Tk):
                     resolved = m_info.get("store_name", seller_label)
                     job_record["resolved_seller"] = resolved
                     self._log(f"🛠 [ManoMano] Target resolved: '{resolved}'")
+                elif is_scribd:
+                    resolved = self.scribd_scraper.resolve_store_info(store_raw).get("store_name", seller_label)
+                    job_record["resolved_seller"] = resolved
+                    self._log(f"📚 [Scribd] Target resolved: '{resolved}'")
                 elif is_tiktok:
                     t_info = self.tiktok_scraper.resolve_store_info(store_raw)
                     resolved = t_info.get("store_name", seller_label)
@@ -4263,6 +4272,18 @@ class EbayTool(tk.Tk):
                         )
                         dom_ext = "fr" if clean_loc == "France" else ("es" if clean_loc == "Spain" else ("de" if clean_loc == "Germany" else ("it" if clean_loc == "Italy" else ("co.uk" if clean_loc == "United Kingdom" else "fr"))))
                         job_record["url"] = f"https://www.manomano.{dom_ext}/recherche/{actual_term.replace(' ', '+')}"
+                    elif is_scribd:
+                        self.scribd_scraper.headless = is_headless
+                        items = self.scribd_scraper.search(
+                            store_raw,
+                            actual_term,
+                            job["excludes"],
+                            condition=job.get("condition", "all"),
+                            stop_event=self.stop_event,
+                            pause_event=self.pause_event,
+                            log_callback=self._log
+                        )
+                        job_record["url"] = f"https://www.scribd.com/search?content_type=documents&query={actual_term.replace(' ', '+')}"
                     elif is_tiktok:
                         self.tiktok_scraper.headless = is_headless
                         items = self.tiktok_scraper.search(
@@ -4830,6 +4851,8 @@ class EbayTool(tk.Tk):
             return "Temu"
         elif "vinted" in mkt_low or "vinted." in url:
             return "Vinted"
+        elif "scribd" in mkt_low or "scribd.com" in url:
+            return "Scribd"
         elif "mercado" in mkt_low or "mercadolibre" in mkt_low or "mercadolivre" in mkt_low or "mercadolibre." in url or "mercadolivre." in url:
             return "Mercado Libre"
         elif mkt:
@@ -4937,21 +4960,24 @@ class EbayTool(tk.Tk):
                         item["product_type"] = ""
 
                     # Evaluate Threat Intel from DataStore cache
+                    GENERIC_SELLER_PLACEHOLDERS = {"ebay seller", "unknown", "resolving...", "global search", "aliexpress global", "printerval creator", "printerval seller", "mercado libre seller", "mercado libre merchant", "tiktok shop merchant", "redbubble artist", "vinted user", "meli_seller_"}
                     seller_clean = str(item.get("seller", "")).replace("🛡", "").replace("(Authorized)", "").strip()
-                    cached_intel = self.data_store.get_seller_intel(seller_clean)
-                    raw_origin = item.get("seller_origin") or (cached_intel.get("country") if cached_intel else "") or item.get("location", "")
+                    is_generic_seller = not seller_clean or any(g in seller_clean.lower() for g in GENERIC_SELLER_PLACEHOLDERS)
+                    
+                    cached_intel = self.data_store.get_seller_intel(seller_clean) if not is_generic_seller else None
+                    raw_origin = item.get("seller_origin") or (cached_intel.get("country") if (cached_intel and cached_intel.get("country") != "Unknown") else "")
                     loc = item.get("location", "")
 
-                    assessment = self.data_store.compute_threat_assessment(raw_origin, loc)
-                    orig_country = assessment.get("country", "")
-                    if not orig_country or orig_country == "Unknown":
-                        orig_country = item.get("seller_origin") or item.get("location") or "Unknown"
-
-                    orig_flag = self.data_store.COUNTRY_FLAGS.get(orig_country.lower(), "🌍") if orig_country != "Unknown" else "❓"
-                    orig_display = f"{orig_flag} {orig_country}" if orig_country != "Unknown" else "❓ Unresolved"
-                    threat_display = assessment.get("badge", "Domestic / Verified") if orig_country != "Unknown" else "Unresolved"
-                    if orig_country != "Unknown":
-                        item["seller_origin"] = orig_country
+                    assessment = self.data_store.compute_threat_assessment(raw_origin, loc, seller_name=seller_clean)
+                    
+                    orig_display = ""
+                    if raw_origin and raw_origin != "Unknown":
+                        orig_flag = self.data_store.COUNTRY_FLAGS.get(raw_origin.lower(), "🌍")
+                        orig_display = f"{orig_flag} {raw_origin}"
+                        item["seller_origin"] = raw_origin
+                    elif item.get("seller_origin") and item.get("seller_origin") != "Unknown":
+                        orig_flag = self.data_store.COUNTRY_FLAGS.get(item["seller_origin"].lower(), "🌍")
+                        orig_display = f"{orig_flag} {item['seller_origin']}"
 
                     # If item already has a specialized visual or threat badge, preserve it
                     if item.get("visual_benign"):
@@ -4959,24 +4985,20 @@ class EbayTool(tk.Tk):
                     elif item.get("visual_counterfeit"):
                         threat_display = item.get("threat_badge", "🚨 Visual Counterfeit")
                     elif item.get("threat_badge"):
-                        threat_display = item["threat_badge"]
-                    else:
-                        item["threat_badge"] = threat_display
-
-                    # Evaluate Smart Triage (Universal Compatibility & Fluff Suppression)
-                    is_fluff, fluff_reason = False, ""
-                    if hasattr(self.data_store, "is_universal_fluff"):
-                        is_fluff, fluff_reason = self.data_store.is_universal_fluff(item.get("title", ""), item.get("product_type", ""))
-                    
-                    # If analyst checked "Show Suppressed Fluff" -> Isolated Audit Mode (show ONLY fluff items)
-                    if hasattr(self, "show_fluff_var") and self.show_fluff_var.get():
-                        if not is_fluff:
-                            continue
+                        raw_tb = str(item["threat_badge"]).strip()
+                        if "\n" in raw_tb or len(raw_tb) > 60:
+                            threat_display = assessment.get("badge", "") if ((raw_origin and raw_origin != "Unknown") or assessment.get("is_high_risk")) else ""
+                            item["threat_badge"] = threat_display
                         else:
-                            threat_display = f"💨 Suppressed ({fluff_reason})"
-                    # Otherwise, if Smart Triage is active -> Suppress/hide fluff items
-                    elif hasattr(self, "smart_triage_var") and self.smart_triage_var.get() and is_fluff:
-                        continue
+                            threat_display = raw_tb
+                    elif assessment.get("is_high_risk"):
+                        threat_display = assessment.get("badge", "")
+                        item["threat_badge"] = threat_display
+                    elif raw_origin and raw_origin != "Unknown":
+                        threat_display = assessment.get("badge", "")
+                        item["threat_badge"] = threat_display
+                    else:
+                        threat_display = ""
 
                     # Check Benign Filter (Hide Benign vs Show All vs Benign Only)
                     b_mode = self.benign_filter_var.get() if hasattr(self, "benign_filter_var") else "🛡 Hide Benign"
@@ -5115,21 +5137,24 @@ class EbayTool(tk.Tk):
                 item["product_type"] = ""
 
             # Evaluate Threat Intel from DataStore cache
+            GENERIC_SELLER_PLACEHOLDERS = {"ebay seller", "unknown", "resolving...", "global search", "aliexpress global", "printerval creator", "printerval seller", "mercado libre seller", "mercado libre merchant", "tiktok shop merchant", "redbubble artist", "vinted user", "meli_seller_"}
             seller_clean = str(item.get("seller", "")).replace("🛡", "").replace("(Authorized)", "").strip()
-            cached_intel = self.data_store.get_seller_intel(seller_clean)
-            raw_origin = item.get("seller_origin") or (cached_intel.get("country") if cached_intel else "") or item.get("location", "")
+            is_generic_seller = not seller_clean or any(g in seller_clean.lower() for g in GENERIC_SELLER_PLACEHOLDERS)
+            
+            cached_intel = self.data_store.get_seller_intel(seller_clean) if not is_generic_seller else None
+            raw_origin = item.get("seller_origin") or (cached_intel.get("country") if (cached_intel and cached_intel.get("country") != "Unknown") else "")
             loc = item.get("location", "")
 
             assessment = self.data_store.compute_threat_assessment(raw_origin, loc, seller_name=seller_clean)
-            orig_country = assessment.get("country", "")
-            if not orig_country or orig_country == "Unknown":
-                orig_country = item.get("seller_origin") or item.get("location") or "Unknown"
-
-            orig_flag = self.data_store.COUNTRY_FLAGS.get(orig_country.lower(), "🌍") if orig_country != "Unknown" else "❓"
-            orig_display = f"{orig_flag} {orig_country}" if orig_country != "Unknown" else "❓ Unresolved"
-            threat_display = assessment.get("badge", "Domestic / Verified") if orig_country != "Unknown" else "Unresolved"
-            if orig_country != "Unknown":
-                item["seller_origin"] = orig_country
+            
+            orig_display = ""
+            if raw_origin and raw_origin != "Unknown":
+                orig_flag = self.data_store.COUNTRY_FLAGS.get(raw_origin.lower(), "🌍")
+                orig_display = f"{orig_flag} {raw_origin}"
+                item["seller_origin"] = raw_origin
+            elif item.get("seller_origin") and item.get("seller_origin") != "Unknown":
+                orig_flag = self.data_store.COUNTRY_FLAGS.get(item["seller_origin"].lower(), "🌍")
+                orig_display = f"{orig_flag} {item['seller_origin']}"
 
             # If item already has a specialized visual or threat badge, preserve it
             if item.get("visual_benign"):
@@ -5139,31 +5164,18 @@ class EbayTool(tk.Tk):
             elif item.get("threat_badge"):
                 raw_tb = str(item["threat_badge"]).strip()
                 if "\n" in raw_tb or len(raw_tb) > 60:
-                    # Clean up corrupted multiline breadcrumbs
-                    threat_display = assessment.get("badge", "Domestic / Verified") if orig_country != "Unknown" else "Unresolved"
+                    threat_display = assessment.get("badge", "") if ((raw_origin and raw_origin != "Unknown") or assessment.get("is_high_risk")) else ""
                     item["threat_badge"] = threat_display
                 else:
                     threat_display = raw_tb
-            else:
+            elif assessment.get("is_high_risk"):
+                threat_display = assessment.get("badge", "")
                 item["threat_badge"] = threat_display
-
-            # Evaluate Smart Triage (Universal Compatibility & Fluff Suppression)
-            is_fluff, fluff_reason = False, ""
-            if hasattr(self.data_store, "is_universal_fluff"):
-                is_fluff, fluff_reason = self.data_store.is_universal_fluff(item.get("title", ""), item.get("product_type", ""))
-            
-            if is_fluff:
-                suppressed_fluff_count += 1
-
-            # If analyst checked "Show Suppressed Fluff" -> Isolated Audit Mode (show ONLY fluff items)
-            if hasattr(self, "show_fluff_var") and self.show_fluff_var.get():
-                if not is_fluff:
-                    continue
-                else:
-                    threat_display = f"💨 Suppressed ({fluff_reason})"
-            # Otherwise, if Smart Triage is active -> Suppress/hide fluff items
-            elif hasattr(self, "smart_triage_var") and self.smart_triage_var.get() and is_fluff:
-                continue
+            elif raw_origin and raw_origin != "Unknown":
+                threat_display = assessment.get("badge", "")
+                item["threat_badge"] = threat_display
+            else:
+                threat_display = ""
 
             # Check Benign Filter (Hide Benign vs Show All vs Benign Only)
             b_mode = self.benign_filter_var.get() if hasattr(self, "benign_filter_var") else "🛡 Hide Benign"
@@ -6021,6 +6033,10 @@ class EbayTool(tk.Tk):
         self._btn(btn_row, "📥 Import & Apply Pack", _do_import, accent=True).pack(side="left", fill="x", expand=True, padx=(0, 6))
         self._btn(btn_row, "Cancel", win.destroy).pack(side="right")
 
+    def _open_vero_disclosure_modal(self):
+        """Open the VeRO & eBay Seller Disclosure Intelligence Harvester dialog."""
+        return VeroDisclosureModal(self)
+
     def _open_visual_catalog_modal(self):
         """Open the Visual Threat Catalog & Benign Packaging Manager dialog."""
         VisualCatalogModal(self, self.visual_catalog, self.theme, on_update_callback=self._repopulate_results_table)
@@ -6662,7 +6678,9 @@ class EbayTool(tk.Tk):
                                 if c1 and c1 == c2:
                                     is_match = True
                         elif s_name and other.get("seller") == s_name:
-                            is_match = True
+                            GENERIC_SELLER_PLACEHOLDERS = {"ebay seller", "unknown", "resolving...", "global search", "aliexpress global", "printerval creator", "printerval seller", "mercado libre seller", "mercado libre merchant", "tiktok shop merchant", "redbubble artist", "vinted user", "meli_seller_"}
+                            if not any(g in s_name.lower() for g in GENERIC_SELLER_PLACEHOLDERS):
+                                is_match = True
                         elif not is_catalog_item:
                             # Standalone items sharing exact URL or Item ID
                             if item_url_norm and other_url_norm and item_url_norm == other_url_norm:
@@ -8454,17 +8472,42 @@ class EbayTool(tk.Tk):
             if seller_key in cur_reg:
                 self._open_seller_items_inspector(seller_key, cur_reg[seller_key])
 
+        def _add_selected_sellers_to_stores():
+            sel = tree.selection()
+            if not sel:
+                messagebox.showinfo("Select Store", "Select one or more stores to add to the target stores list.", parent=win)
+                return
+            
+            raw_text = self.store_text.get("1.0", "end").strip()
+            is_placeholder = (not raw_text or raw_text == getattr(self, "store_placeholder", "").strip() or 
+                              "Global eBay Search" in raw_text or "store1" in raw_text or "High Table contracts" in raw_text)
+            
+            existing_lines = [] if is_placeholder else [line.strip() for line in raw_text.splitlines() if line.strip()]
+            existing_set = {line.lower() for line in existing_lines}
+            
+            added_count = 0
+            for seller_key in sel:
+                s_clean = str(seller_key).strip()
+                if s_clean and s_clean.lower() not in existing_set:
+                    existing_lines.append(s_clean)
+                    existing_set.add(s_clean.lower())
+                    added_count += 1
+            
+            self.store_text.delete("1.0", "end")
+            self.store_text.insert("1.0", "\n".join(existing_lines))
+            self.store_text.config(fg=t["text"])
+            self._log(f"➕ Added {added_count} seller(s) from Enforcement Registry to Target Stores list ({len(existing_lines)} total stores).")
+            self._status(f"Added {added_count} seller(s) to Target Stores list.")
+
         def _queue_reenforcement_sweep():
             sel = tree.selection()
             if not sel:
-                messagebox.showinfo("Select Store", "Select a store to re-enforce.", parent=win)
+                messagebox.showinfo("Select Store", "Select one or more stores to re-enforce.", parent=win)
                 return
-            seller_key = sel[0]
-            self.store_text.delete("1.0", "end")
-            self.store_text.insert("1.0", seller_key)
-            self.store_text.config(fg=t["text"])
+            _add_selected_sellers_to_stores()
             self._queue_portfolio_preset()
-            win.destroy()
+            self._log(f"⚡ Queued re-enforcement sweep for {len(sel)} store(s) across active portfolio.")
+            self._status(f"Queued re-enforcement sweep for {len(sel)} store(s).")
 
         def _deduplicate_registry():
             """Deduplicate stores and items across the entire A2C2 Registry."""
@@ -8630,8 +8673,10 @@ class EbayTool(tk.Tk):
                 self._log(f"🗑 Removed {len(sel)} store record(s) from Enforcement Registry.")
 
         self._btn(btn_row, "📄 Export Enterprise Dossier (.xlsx)", _export_dossier, accent=True).pack(side="left", padx=(0, 6))
+        self._btn(btn_row, "📄 Import VeRO Disclosures", self._open_vero_disclosure_modal, accent=True).pack(side="left", padx=(0, 6))
         self._btn(btn_row, "✏ Edit Seller Intel", _edit_selected_seller_intel).pack(side="left", padx=(0, 6))
         self._btn(btn_row, "🔍 Inspect Store Listings", _inspect_selected_seller).pack(side="left", padx=(0, 6))
+        self._btn(btn_row, "➕ Add to Stores", _add_selected_sellers_to_stores).pack(side="left", padx=(0, 6))
         self._btn(btn_row, "⚡ Queue Re-Enforcement Sweep", _queue_reenforcement_sweep).pack(side="left", padx=(0, 6))
         self._btn(btn_row, "🧹 Deduplicate Registry", _deduplicate_registry).pack(side="left", padx=(0, 6))
         self._btn(btn_row, "🗑 Remove Store Entry", _delete_selected_entry, danger=True).pack(side="left", padx=(0, 6))
@@ -10501,7 +10546,7 @@ class ReverseVisualModal(tk.Toplevel):
         self.hits = hits or []
         self.target_img = target_img
         self.label = label
-        self.marketplace = marketplace or "eBay"
+        self.marketplace = parent._get_current_platform_name(marketplace) if hasattr(parent, "_get_current_platform_name") else (marketplace or "eBay")
         self.region = region
         self.target_phash = target_phash
         self.t = parent.theme
@@ -10570,10 +10615,9 @@ class ReverseVisualModal(tk.Toplevel):
         self.thumb_size_combo.pack(side="left", padx=(0, 10))
         self.thumb_size_combo.bind("<<ComboboxSelected>>", self._on_thumb_size_changed)
 
-        tk.Label(f_row, text="Match Filter:", font=FONT_SM, bg=t["panel"], fg=t["subtext"]).pack(side="left", padx=(0, 4))
-        self.match_filter_var = tk.StringVar(value="(All Discovered)")
-        match_filters = ["(All Discovered)", "🎯 Exact Matches Only (100%)", "🖼 Visual Matches Only"]
-        self.match_filter_combo = ttk.Combobox(f_row, textvariable=self.match_filter_var, values=match_filters, width=24, state="readonly", font=FONT_SM)
+        self.match_filter_var = tk.StringVar(value="(All Discovered Matches)")
+        match_filters = ["(All Discovered Matches)", "🎯 Exact Matches (90%+)", "🖼 High Similarity (80%+)", "🔍 Possible Candidates (70%+)"]
+        self.match_filter_combo = ttk.Combobox(f_row, textvariable=self.match_filter_var, values=match_filters, width=26, state="readonly", font=FONT_SM)
         self.match_filter_combo.pack(side="left", padx=(0, 10))
         self.match_filter_combo.bind("<<ComboboxSelected>>", lambda e: self._populate_tree())
 
@@ -10736,10 +10780,13 @@ class ReverseVisualModal(tk.Toplevel):
 
             seen_sellers.add(seller_clean)
 
-            sim_txt = itm.get("match_type") or itm.get("threat_badge") or "🎯 Exact Photo Match (100%)"
-            if "Exact" in match_filter and "100%" not in sim_txt and "Exact" not in sim_txt:
+            sim_txt = itm.get("match_type") or itm.get("threat_badge") or itm.get("similarity") or "🎯 Exact Photo Match (100%)"
+            dist = itm.get("distance", 0)
+            if "Exact Matches" in match_filter and dist > 6:
                 continue
-            if "Visual" in match_filter and not any(k in sim_txt for k in ("Exact", "Visual", "Clone", "100%")):
+            elif "High Similarity" in match_filter and dist > 12:
+                continue
+            elif "Possible Candidates" in match_filter and dist > 18:
                 continue
 
             if is_wl:

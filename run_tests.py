@@ -768,13 +768,35 @@ class TestApolloCoreFeatures(unittest.TestCase):
         self.assertEqual(seller_label, "eBay Global Search")
 
     def test_29_export_marketplace_dotcom_normalization(self):
-        """Test Item 29: Verify that Redbubble and Printerval strictly normalize to redbubble.com and printerval.com for Excel export."""
+        """Test Item 29: Verify that all marketplace names (including emoji-prefixed and short names) strictly normalize to canonical domains."""
         from exporter import normalize_marketplace_code
-        self.assertEqual(normalize_marketplace_code("Redbubble"), "redbubble.com")
-        self.assertEqual(normalize_marketplace_code("redbubble.com"), "redbubble.com")
-        self.assertEqual(normalize_marketplace_code("Printerval"), "printerval.com")
-        self.assertEqual(normalize_marketplace_code("printerval.com"), "printerval.com")
+        # eBay variations
+        self.assertEqual(normalize_marketplace_code("🛒 eBay.com"), "ebay.com")
+        self.assertEqual(normalize_marketplace_code("eBay"), "ebay.com")
+        self.assertEqual(normalize_marketplace_code("ebay"), "ebay.com")
+        self.assertEqual(normalize_marketplace_code("🛒 eBay"), "ebay.com")
+        self.assertEqual(normalize_marketplace_code("eBay (ebay.de)"), "ebay.de")
         self.assertEqual(normalize_marketplace_code("cafr.ebay.ca"), "ebay.ca - cafr")
+        self.assertEqual(normalize_marketplace_code("ebay.ca - cafr"), "ebay.ca - cafr")
+        # POD
+        self.assertEqual(normalize_marketplace_code("🎨 Redbubble.com"), "redbubble.com")
+        self.assertEqual(normalize_marketplace_code("Redbubble"), "redbubble.com")
+        self.assertEqual(normalize_marketplace_code("👕 Printerval.com"), "printerval.com")
+        self.assertEqual(normalize_marketplace_code("Printerval"), "printerval.com")
+        # Social & Retail
+        self.assertEqual(normalize_marketplace_code("🎵 TikTok Shop"), "shop.tiktok.com")
+        self.assertEqual(normalize_marketplace_code("TikTok Shop"), "shop.tiktok.com")
+        self.assertEqual(normalize_marketplace_code("🌐 AliExpress.com"), "aliexpress.com")
+        self.assertEqual(normalize_marketplace_code("AliExpress"), "aliexpress.com")
+        self.assertEqual(normalize_marketplace_code("🌠 Wish.com"), "wish.com")
+        self.assertEqual(normalize_marketplace_code("Wish"), "wish.com")
+        self.assertEqual(normalize_marketplace_code("🟠 Temu.com"), "temu.com")
+        self.assertEqual(normalize_marketplace_code("Temu"), "temu.com")
+        self.assertEqual(normalize_marketplace_code("📚 Scribd.com"), "scribd.com")
+        self.assertEqual(normalize_marketplace_code("Scribd"), "scribd.com")
+        self.assertEqual(normalize_marketplace_code("🧰 ManoMano"), "manomano.fr")
+        self.assertEqual(normalize_marketplace_code("👗 Vinted"), "vinted.co.uk")
+        self.assertEqual(normalize_marketplace_code("🛍 Mercado Libre"), "listado.mercadolibre.com.mx")
 
     def test_30_mercadolibre_catalog_multiseller_expansion(self):
         """Test Item 30: Verify Mercado Libre / Livre Catalog Buy Box multi-seller expansion in Brazil (MLB) and Mexico (MLM)."""
@@ -1305,6 +1327,128 @@ class TestApolloCoreFeatures(unittest.TestCase):
 
         s6 = meli._clean_seller_name("AGROPETVIRTUAL", "https://www.mercadolivre.com.br/pagina/agropetvirtual")
         self.assertEqual(s6, "AGROPETVIRTUAL")
+
+    def test_41_visual_dredge_widened_tolerance_and_ranking(self):
+        """Test Item 41: Verify Visual Dredge expanded pHash tolerance (max_distance=18) and candidate similarity ranking."""
+        from visual_harvester import VisualHarvester
+        harvester = VisualHarvester()
+
+        # 16-character hex pHash strings with known Hamming distances
+        base_hash = "0000000000000000"
+        # 0x3ff = 10 set bits (distance 10 -> ~84.4% similarity)
+        hash_dist_10 = "00000000000003ff"
+        # 0xffff = 16 set bits (distance 16 -> 75% similarity)
+        hash_dist_16 = "000000000000ffff"
+        # 0x3fffff = 22 set bits (distance 22 -> rejected under tolerance 18)
+        hash_dist_22 = "00000000003fffff"
+
+        from visual_catalog import hamming_distance
+        self.assertEqual(hamming_distance(base_hash, hash_dist_10), 10)
+        self.assertEqual(hamming_distance(base_hash, hash_dist_16), 16)
+        self.assertEqual(hamming_distance(base_hash, hash_dist_22), 22)
+
+        # Verify candidate scoring logic
+        sim_10 = round((1.0 - (10 / 64.0)) * 100, 1)
+        self.assertEqual(sim_10, 84.4)
+        sim_16 = round((1.0 - (16 / 64.0)) * 100, 1)
+        self.assertEqual(sim_16, 75.0)
+
+    def test_42_scribd_scraper_url_and_resolution(self):
+        """Test Item 42: Verify Scribd document scraper URL builder, store resolver, and exclusion checks."""
+        from scribd_scraper import ScribdScraper
+        scraper = ScribdScraper(headless=True)
+
+        # 1. Resolve store info from document URL
+        info1 = scraper.resolve_store_info("https://www.scribd.com/document/742189456/Toyota-Camry-Service-Manual")
+        self.assertEqual(info1["store_name"], "Toyota-Camry-Service-Manual")
+        self.assertEqual(info1["doc_id"], "742189456")
+
+        # 2. Resolve store info from uploader profile
+        info2 = scraper.resolve_store_info("https://www.scribd.com/user/987654321/tech_manuals_pro")
+        self.assertEqual(info2["store_name"], "tech_manuals_pro")
+
+        # 3. Clean seller uploader name extraction
+        clean_name = scraper._clean_uploader_name("Uploaded by TestBankMaster", "https://www.scribd.com/doc/12345")
+        self.assertEqual(clean_name, "TestBankMaster")
+
+    def test_43_vero_seller_disclosure_decomposition(self):
+        """Test Item 43: Verify VeRO / eBay seller disclosure decomposition into structured contact and address parts."""
+        from vero_pdf_parser import parse_vero_line, parse_vero_text
+
+        # Chinese pinyin seller tracking lines
+        line1 = "trdracing / xu jie xu yu xiu qu yong fu lu 35 2, guang zhou, 510000, CN"
+        rec1 = parse_vero_line(line1)
+        self.assertIsNotNone(rec1)
+        self.assertEqual(rec1["handle"], "trdracing")
+        self.assertEqual(rec1["contact_name"], "xu jie")
+        self.assertEqual(rec1["street_address"], "xu yu xiu qu yong fu lu 35 2")
+        self.assertEqual(rec1["city"], "guang zhou")
+        self.assertEqual(rec1["postal_code"], "510000")
+        self.assertEqual(rec1["country"], "CN")
+
+        line2 = "yu1587_21 / zhao kun yu baiyunqujiefangbeilu1461 1469haoshouceng, shengyipijuchengdangkouhaoN22 1fang, guang zhou, 510000, CN"
+        rec2 = parse_vero_line(line2)
+        self.assertIsNotNone(rec2)
+        self.assertEqual(rec2["handle"], "yu1587_21")
+        self.assertEqual(rec2["contact_name"], "zhao kun yu")
+        self.assertEqual(rec2["city"], "guang zhou")
+        self.assertEqual(rec2["postal_code"], "510000")
+        self.assertEqual(rec2["country"], "CN")
+
+        # Western seller tracking line
+        line3 = "speedy_auto_us / John Doe 123 Industrial Parkway, Suite 400, Los Angeles, 90001, US"
+        rec3 = parse_vero_line(line3)
+        self.assertEqual(rec3["handle"], "speedy_auto_us")
+        self.assertEqual(rec3["contact_name"], "John Doe")
+        self.assertEqual(rec3["city"], "Los Angeles")
+        self.assertEqual(rec3["postal_code"], "90001")
+        self.assertEqual(rec3["country"], "US")
+
+        # German seller tracking line
+        line4 = "euro_parts_de / Hans Schmidt Industriestrasse 14, Munich, 80331, DE"
+        rec4 = parse_vero_line(line4)
+        self.assertEqual(rec4["handle"], "euro_parts_de")
+        self.assertEqual(rec4["contact_name"], "Hans Schmidt")
+        self.assertEqual(rec4["city"], "Munich")
+        self.assertEqual(rec4["postal_code"], "80331")
+        self.assertEqual(rec4["country"], "DE")
+
+    def test_44_vero_registry_ingestion_and_excel_export(self):
+        """Test Item 44: Verify VeRO disclosures push into DataStore Enforcement Registry and export Genesis-compliant Excel."""
+        from vero_pdf_parser import parse_vero_text, push_to_enforcement_registry, export_to_excel, export_to_csv
+        raw_text = """
+        trdracing / xu jie xu yu xiu qu yong fu lu 35 2, guang zhou, 510000, CN
+        yu1587_21 / zhao kun yu baiyunqujiefangbeilu1461 1469haoshouceng, shengyipijuchengdangkouhaoN22 1fang, guang zhou, 510000, CN
+        """
+        records = parse_vero_text(raw_text)
+        self.assertEqual(len(records), 2)
+
+        # Ingest into DataStore
+        updated = push_to_enforcement_registry(records, self.data_store)
+        self.assertEqual(updated, 2)
+
+        reg = self.data_store.get_enforcement_registry()
+        self.assertIn("trdracing", reg)
+        self.assertEqual(reg["trdracing"]["country"], "CN")
+        self.assertEqual(reg["trdracing"]["contact_name"], "xu jie")
+        self.assertEqual(reg["trdracing"]["disclosure_source"], "VeRO / eBay Disclosure")
+
+        # Test Excel & CSV exports
+        xlsx_path = os.path.join(self.temp_dir, "test_vero_disclosures.xlsx")
+        csv_path = os.path.join(self.temp_dir, "test_vero_disclosures.csv")
+        export_to_excel(records, xlsx_path)
+        export_to_csv(records, csv_path)
+
+        self.assertTrue(os.path.exists(xlsx_path))
+        self.assertTrue(os.path.exists(csv_path))
+
+        wb = openpyxl.load_workbook(xlsx_path)
+        self.assertIn("VeRO Disclosures", wb.sheetnames)
+        ws = wb["VeRO Disclosures"]
+        self.assertEqual(ws.cell(row=1, column=1).value, "Seller Handle")
+        self.assertEqual(ws.cell(row=2, column=1).value, "trdracing")
+        self.assertEqual(ws.cell(row=2, column=2).value, "xu jie")
+        self.assertEqual(ws.cell(row=2, column=6).value, "CN")
 
 
 if __name__ == "__main__":

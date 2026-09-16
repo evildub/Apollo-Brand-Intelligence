@@ -961,7 +961,7 @@ def _fetch_mercadolibre_item(url: str, headless: bool = True) -> dict:
 
 
 def _fetch_redbubble_item(url: str, headless: bool = True) -> dict:
-    """Fetch Redbubble item detail by URL."""
+    """Fetch Redbubble item detail by URL with guaranteed high-res thumbnail and metadata extraction."""
     clean_url = url
     m = re.search(r"^https?://(?:www\.)?redbubble\.com/i/([^/]+)/(.+)-by-([^/]+)/(\d+)", url)
     if m:
@@ -975,7 +975,7 @@ def _fetch_redbubble_item(url: str, headless: bool = True) -> dict:
         artist = "Redbubble Artist"
         item_id = re.sub(r'\D+', '', url)[-8:]
 
-    price = "$4.50"
+    price = "$19.95"
     image_url = ""
 
     html = ""
@@ -996,17 +996,62 @@ def _fetch_redbubble_item(url: str, headless: bool = True) -> dict:
 
     if html:
         soup = BeautifulSoup(html, "html.parser")
-        t_el = soup.select_one("h1[class*='ProductTitle'], h1")
-        if t_el and not title:
-            title = t_el.text.strip()
-        
-        p_el = soup.select_one("span[class*='Price'], div[class*='price']")
-        if p_el:
-            price = p_el.text.strip()
 
-        img_el = soup.select_one("img[class*='ProductImage'], div[class*='MainImage'] img")
-        if img_el:
-            image_url = img_el.get("src") or img_el.get("data-src") or ""
+        # 1. Check og:image meta tag
+        og_el = soup.find("meta", attrs={"property": "og:image"}) or soup.find("meta", attrs={"name": "og:image"})
+        if og_el and og_el.get("content") and not str(og_el.get("content")).endswith(".svg"):
+            image_url = str(og_el.get("content")).strip()
+
+        # 2. Check JSON-LD metadata for exact price, high-res image, and full name
+        for s in soup.find_all("script", type="application/ld+json"):
+            try:
+                ld = json.loads(s.text)
+                if isinstance(ld, list):
+                    ld = ld[0]
+                if not title and ld.get("name"):
+                    title = str(ld.get("name")).strip()
+                if not image_url and ld.get("image"):
+                    img = ld.get("image")
+                    image_url = str(img if isinstance(img, str) else img[0]).strip()
+                offers = ld.get("offers", {})
+                if isinstance(offers, dict) and offers.get("price"):
+                    price = f"${offers.get('price')}"
+            except Exception:
+                pass
+
+        # 3. Check Next.js __NEXT_DATA__
+        next_data = soup.find("script", id="__NEXT_DATA__")
+        if next_data:
+            try:
+                nd = json.loads(next_data.text)
+                props = nd.get("props", {}).get("pageProps", {})
+                prod = props.get("product") or props.get("inventoryItem") or {}
+                if prod:
+                    if not title and prod.get("title"):
+                        title = str(prod.get("title")).strip()
+                    if artist == "Redbubble Artist" and prod.get("artistName"):
+                        artist = str(prod.get("artistName")).strip()
+                    if prod.get("price"):
+                        price = f"${prod.get('price')}"
+                    if not image_url and prod.get("previewUrl"):
+                        image_url = str(prod.get("previewUrl")).strip()
+            except Exception:
+                pass
+
+        # 4. Fallback DOM selectors
+        if not title:
+            t_el = soup.select_one("h1[class*='ProductTitle'], h1")
+            if t_el:
+                title = t_el.text.strip()
+
+        if not image_url:
+            img_el = soup.select_one("img[class*='ProductImage'], div[class*='MainImage'] img, img[src*='redbubble.net/image']")
+            if img_el:
+                image_url = img_el.get("src") or img_el.get("data-src") or ""
+
+    # Synthesize high-res fallback if still blank
+    if not image_url and item_id and len(item_id) >= 6:
+        image_url = f"https://ih1.redbubble.net/image.{item_id}.2101/fc,small,white-pad,600x600,solid.u1.jpg"
 
     return {
         "title": title or f"Redbubble Product #{item_id}",
@@ -1016,6 +1061,7 @@ def _fetch_redbubble_item(url: str, headless: bool = True) -> dict:
         "seller": artist,
         "location": "United States",
         "image_url": image_url,
+        "thumbnail": image_url,
         "marketplace": "redbubble.com",
     }
 

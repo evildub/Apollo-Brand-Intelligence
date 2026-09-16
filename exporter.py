@@ -1,3 +1,4 @@
+import re
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -45,15 +46,113 @@ HEADER_FILL  = PatternFill("solid", fgColor="2B2D42")
 HEADER_FONT  = Font(bold=True, color="FFFFFF", name="Segoe UI", size=10)
 
 def normalize_marketplace_code(mkt: str) -> str:
-    """Ensure enterprise marketplace codes match client intake formatting (e.g. ebay.ca - cafr, redbubble.com, printerval.com)."""
-    m = str(mkt or "").strip().lower()
+    """
+    Ensure enterprise marketplace codes strictly adhere to client intake formatting and Genesis specifications.
+    Strips all icons/emojis, whitespace, and normalizes canonical domain names (e.g. ebay.com, redbubble.com, printerval.com).
+    """
+    if not mkt:
+        return MARKETPLACE
+
+    raw_str = str(mkt).strip()
+    # Remove leading/trailing emojis and non-alphanumeric symbols
+    clean = re.sub(r'^[^\w\.\-]+|[^\w\.\-]+$', '', raw_str).strip()
+    m = clean.lower()
+
+    # 1. eBay & Regional Variations
     if any(k in m for k in ("cafr.ebay.ca", "cafr", "ca_fr", "canada (french)", "canada french", "ebay.ca (french)", "ebay.ca/cafr")):
         return "ebay.ca - cafr"
+    if "ebay.co.uk" in m or ("uk" in m and "ebay" in m):
+        return "ebay.co.uk"
+    if "ebay.de" in m or ("germany" in m and "ebay" in m):
+        return "ebay.de"
+    if "ebay.ca" in m:
+        return "ebay.ca"
+    if "ebay.fr" in m:
+        return "ebay.fr"
+    if "ebay.it" in m:
+        return "ebay.it"
+    if "ebay.es" in m:
+        return "ebay.es"
+    if "ebay.com.au" in m or ("australia" in m and "ebay" in m):
+        return "ebay.com.au"
+    if "ebay.nl" in m:
+        return "ebay.nl"
+    if "ebay.pl" in m:
+        return "ebay.pl"
+    if "ebay.ch" in m:
+        return "ebay.ch"
+    if "ebay.at" in m:
+        return "ebay.at"
+    if "ebay.ie" in m:
+        return "ebay.ie"
+    if "ebay" in m:
+        return "ebay.com"
+
+    # 2. POD Platforms
     if "redbubble" in m:
         return "redbubble.com"
     if "printerval" in m:
         return "printerval.com"
-    return mkt or MARKETPLACE
+
+    # 3. Global Retail & Social Marketplaces
+    if "tiktok" in m:
+        return "shop.tiktok.com"
+    if "aliexpress" in m or m == "ali":
+        return "aliexpress.com"
+    if "wish" in m:
+        return "wish.com"
+    if "temu" in m:
+        return "temu.com"
+    if "scribd" in m:
+        return "scribd.com"
+
+    # 4. ManoMano Locales
+    if "manomano" in m:
+        if "es" in m or "spain" in m:
+            return "manomano.es"
+        if "de" in m or "germany" in m:
+            return "manomano.de"
+        if "it" in m or "italy" in m:
+            return "manomano.it"
+        if "uk" in m or "co.uk" in m:
+            return "manomano.co.uk"
+        return "manomano.fr"
+
+    # 5. Vinted Locales
+    if "vinted" in m:
+        if "fr" in m or "france" in m:
+            return "vinted.fr"
+        if "de" in m or "germany" in m:
+            return "vinted.de"
+        if "es" in m or "spain" in m:
+            return "vinted.es"
+        if "it" in m or "italy" in m:
+            return "vinted.it"
+        if "pl" in m or "poland" in m:
+            return "vinted.pl"
+        if "com" in m or "us" in m:
+            return "vinted.com"
+        return "vinted.co.uk"
+
+    # 6. Mercado Libre Regional Domains
+    if any(k in m for k in ("mercadolibre", "mercadolivre", "mercado", "meli")):
+        if any(k in m for k in ("brazil", "brasil", "livre", "mlb", ".com.br")):
+            return "mercadolivre.com.br"
+        if any(k in m for k in ("argentina", "mla", ".com.ar")):
+            return "mercadolibre.com.ar"
+        if any(k in m for k in ("colombia", "mco", ".com.co")):
+            return "mercadolibre.com.co"
+        if any(k in m for k in ("chile", "mlc", ".cl")):
+            return "mercadolibre.cl"
+        if any(k in m for k in ("peru", "mpe", ".com.pe")):
+            return "mercadolibre.com.pe"
+        if any(k in m for k in ("uruguay", "mlu", ".com.uy")):
+            return "mercadolibre.com.uy"
+        return "listado.mercadolibre.com.mx"
+
+    if "." in clean:
+        return clean.lower()
+    return f"{clean.lower()}.com" if clean else MARKETPLACE
 ROW_FILL_A   = PatternFill("solid", fgColor="F8F8F2")
 ROW_FILL_B   = PatternFill("solid", fgColor="EEEEEE")
 BORDER_SIDE  = Side(style="thin", color="CCCCCC")

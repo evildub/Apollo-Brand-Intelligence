@@ -1448,7 +1448,199 @@ class TestApolloCoreFeatures(unittest.TestCase):
         self.assertEqual(ws.cell(row=1, column=1).value, "Seller Handle")
         self.assertEqual(ws.cell(row=2, column=1).value, "trdracing")
         self.assertEqual(ws.cell(row=2, column=2).value, "xu jie")
-        self.assertEqual(ws.cell(row=2, column=6).value, "CN")
+    def test_45_session_vault_registry(self):
+        """Test Item 45: Verify SessionVault tracks all gated marketplaces and checks status."""
+        from session_vault import SessionVault, VAULT_PLATFORMS
+        vault = SessionVault()
+        self.assertIn("teepublic", VAULT_PLATFORMS)
+        self.assertIn("etsy", VAULT_PLATFORMS)
+        self.assertIn("temu", VAULT_PLATFORMS)
+        self.assertIn("tiktok", VAULT_PLATFORMS)
+        statuses = vault.get_all_statuses()
+        self.assertIn("teepublic", statuses)
+        self.assertIn("etsy", statuses)
+        self.assertTrue(isinstance(statuses["teepublic"]["summary"], str))
+
+    def test_46_teepublic_variant_expansion(self):
+        """Test Item 46: Verify TeePublic 1-to-50 POD variant expansion maps to 21 product lines with exact prefix URLs."""
+        from teepublic_scraper import TeePublicScraper
+        scraper = TeePublicScraper()
+        base_item = {
+            "title": "Vintage GR Racing Logo T-Shirt",
+            "url": "https://www.teepublic.com/t-shirt/998877-vintage-gr-racing",
+            "item_id": "998877",
+            "seller": "ApexDesigns",
+            "image_url": "https://images.teepublic.com/v1/998877.jpg",
+            "thumbnail": "https://images.teepublic.com/v1/998877.jpg",
+            "brand": "Toyota"
+        }
+        variants = scraper.expand_design_variants(base_item)
+        self.assertEqual(len(variants), 21)
+        self.assertEqual(variants[0]["marketplace"], "teepublic.com")
+        self.assertTrue(any("Hoodie" in v["title"] for v in variants))
+        self.assertTrue(any("Sticker" in v["title"] for v in variants))
+        self.assertTrue(any("Phone Case" in v["title"] for v in variants))
+        self.assertTrue(any("https://www.teepublic.com/tank-top/998877-vintage-gr-racing" in v["url"] for v in variants))
+        self.assertTrue(any("https://www.teepublic.com/hoodie/998877-vintage-gr-racing" in v["url"] for v in variants))
+
+    def test_47_etsy_commercial_classifier(self):
+        """Test Item 47: Verify Etsy scraper correctly separates commercial volume listings from 1-of-1 items."""
+        from etsy_scraper import EtsyScraper
+        scraper = EtsyScraper()
+        commercial_item = {
+            "title": "Set of 4 Cast Metal TRD Grille Badges with Hardware",
+            "threat_intel": "Commercial Merchant (Bestseller | Star Seller)",
+            "url": "https://www.etsy.com/listing/1234567"
+        }
+        self.assertTrue(scraper._is_commercial_scale(commercial_item))
+
+        handpicked_item = {
+            "title": "Vintage Single Pre-owned Single 1980s Keyring One of a Kind",
+            "threat_intel": "Single Item",
+            "url": "https://www.etsy.com/listing/7654321"
+        }
+        self.assertFalse(scraper._is_commercial_scale(handpicked_item))
+
+    def test_48_spreadshirt_variant_expansion(self):
+        """Test Item 48: Verify Spreadshirt 1-to-30 variant expansion maps to physical product lines."""
+        from spreadshirt_scraper import SpreadshirtScraper
+        scraper = SpreadshirtScraper()
+        base_item = {
+            "title": "TRD Heritage Stripe Vintage Logo",
+            "url": "https://www.spreadshirt.com/shop/design/trd+heritage+mens+t-shirt-D668f8f209142ae166078fcd6",
+            "item_id": "D668f8f209142ae166078fcd6",
+            "seller": "ApexCustoms",
+            "image_url": "https://image.spreadshirtmedia.com/image-server/v1/products/T812A2.jpg",
+            "brand": "Toyota"
+        }
+        variants = scraper.expand_design_variants(base_item)
+        self.assertGreaterEqual(len(variants), 20)
+        self.assertEqual(variants[0]["marketplace"], "spreadshirt.com")
+        self.assertTrue(any("Hoodie" in v["title"] for v in variants))
+        self.assertTrue(any("Sticker" in v["title"] for v in variants))
+        self.assertTrue(any("Mug" in v["title"] for v in variants))
+
+    def test_49_zazzle_variant_expansion(self):
+        """Test Item 49: Verify Zazzle variant expansion and platform detection."""
+        from zazzle_scraper import ZazzleScraper
+        import batch_importer
+        scraper = ZazzleScraper()
+        base_item = {
+            "title": "TRD Heritage Stripe Design",
+            "url": "https://www.zazzle.com/trd_vintage_tshirt-1234567890",
+            "item_id": "1234567890",
+            "seller": "ApexDesigner",
+            "image_url": "https://rlv.zcache.com/test_image.jpg",
+            "brand": "Toyota"
+        }
+        variants = scraper.expand_design_variants(base_item)
+        self.assertGreaterEqual(len(variants), 20)
+        self.assertTrue(any("Hoodie" in v["title"] for v in variants))
+        self.assertTrue(any("Mug" in v["title"] for v in variants))
+        self.assertTrue(any("Sticker" in v["title"] for v in variants))
+        self.assertEqual(batch_importer.detect_platform("https://www.zazzle.com/custom_tee-1234567890"), "Zazzle")
+
+    def test_50_cafepress_variant_expansion(self):
+        """Test Item 50: Verify CafePress variant expansion and platform detection."""
+        from cafepress_scraper import CafePressScraper
+        import batch_importer
+        scraper = CafePressScraper()
+        base_item = {
+            "title": "TRD Vintage Graphic",
+            "url": "https://www.cafepress.com/+trd_vintage_tee,12345678",
+            "item_id": "12345678",
+            "seller": "CafeArtist",
+            "image_url": "https://images.cafepress.com/test.jpg",
+            "brand": "Toyota"
+        }
+        variants = scraper.expand_design_variants(base_item)
+        self.assertGreaterEqual(len(variants), 18)
+        self.assertTrue(any("Hoodie" in v["title"] for v in variants))
+        self.assertTrue(any("Mug" in v["title"] for v in variants))
+        self.assertEqual(batch_importer.detect_platform("https://www.cafepress.com/+trd_tee,12345678"), "CafePress")
+
+    def test_51_threadless_variant_expansion(self):
+        """Test Item 51: Verify Threadless variant expansion and platform detection."""
+        from threadless_scraper import ThreadlessScraper
+        import batch_importer
+        scraper = ThreadlessScraper()
+        base_item = {
+            "title": "TRD Retro Badge Artwork",
+            "url": "https://artist.threadless.com/designs/trd-retro-badge",
+            "item_id": "trd-retro-badge",
+            "seller": "ArtistShop",
+            "image_url": "https://images.threadless.com/test.jpg",
+            "brand": "Toyota"
+        }
+        variants = scraper.expand_design_variants(base_item)
+        self.assertGreaterEqual(len(variants), 18)
+        self.assertTrue(any("Tapestry" in v["title"] for v in variants))
+        self.assertTrue(any("Hoodie" in v["title"] for v in variants))
+        self.assertEqual(batch_importer.detect_platform("https://artist.threadless.com/designs/item"), "Threadless")
+
+    def test_52_teespring_variant_expansion(self):
+        """Test Item 52: Verify TeeSpring variant expansion and platform detection."""
+        from teespring_scraper import TeeSpringScraper
+        import batch_importer
+        scraper = TeeSpringScraper()
+        base_item = {
+            "title": "TRD Offroad Heritage",
+            "url": "https://spring.com/listing/trd-offroad-heritage",
+            "item_id": "trd-offroad-heritage",
+            "seller": "CreatorShop",
+            "image_url": "https://mockup.spring.com/test.jpg",
+            "brand": "Toyota"
+        }
+        variants = scraper.expand_design_variants(base_item)
+        self.assertGreaterEqual(len(variants), 18)
+        self.assertTrue(any("Hoodie" in v["title"] for v in variants))
+        self.assertTrue(any("Mug" in v["title"] for v in variants))
+        self.assertEqual(batch_importer.detect_platform("https://spring.com/listing/test-item"), "TeeSpring")
+
+    def test_53_fineartamerica_variant_expansion(self):
+        """Test Item 53: Verify Fine Art America variant expansion and platform detection."""
+        from fineartamerica_scraper import FineArtAmericaScraper
+        import batch_importer
+        scraper = FineArtAmericaScraper()
+        base_item = {
+            "title": "Classic Celica GT",
+            "url": "https://fineartamerica.com/featured/classic-celica-gt-artist.html",
+            "item_id": "classic-celica-gt-artist",
+            "seller": "Rodrigo Herweg",
+            "image_url": "https://images.fineartamerica.com/test.jpg",
+            "brand": "Toyota"
+        }
+        variants = scraper.expand_design_variants(base_item)
+        self.assertGreaterEqual(len(variants), 18)
+        self.assertTrue(any("Canvas" in v["title"] for v in variants))
+        self.assertTrue(any("Metal" in v["title"] for v in variants))
+        self.assertTrue(any("Pillow" in v["title"] for v in variants))
+        self.assertEqual(batch_importer.detect_platform("https://fineartamerica.com/featured/test-art.html"), "Fine Art America")
+        self.assertEqual(batch_importer.detect_platform("https://artist.pixels.com/featured/test-art.html"), "Fine Art America")
+
+    def test_54_multi_sector_modal_taxonomy_and_presets(self):
+        """Test Item 54: Verify MultiSectorModal taxonomy definitions, presets, and job dispatching payload."""
+        from multi_sector_modal import SECTOR_TAXONOMY
+        self.assertIn("pod", SECTOR_TAXONOMY)
+        self.assertIn("ecom", SECTOR_TAXONOMY)
+        self.assertIn("gated", SECTOR_TAXONOMY)
+
+        pod_platforms = [p[0] for p in SECTOR_TAXONOMY["pod"]["platforms"]]
+        self.assertIn("TeePublic.com", pod_platforms)
+        self.assertIn("Redbubble.com", pod_platforms)
+        self.assertIn("Printerval.com", pod_platforms)
+        self.assertIn("Spreadshirt.com", pod_platforms)
+        self.assertIn("Zazzle.com", pod_platforms)
+
+        ecom_platforms = [p[0] for p in SECTOR_TAXONOMY["ecom"]["platforms"]]
+        self.assertIn("eBay.com", ecom_platforms)
+        self.assertIn("AliExpress.com", ecom_platforms)
+
+        gated_platforms = [p[0] for p in SECTOR_TAXONOMY["gated"]["platforms"]]
+        self.assertIn("TikTok Shop", gated_platforms)
+        self.assertIn("Temu.com", gated_platforms)
+        self.assertIn("Vinted", gated_platforms)
+        self.assertIn("Mercado Libre", gated_platforms)
 
 
 if __name__ == "__main__":

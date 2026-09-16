@@ -93,6 +93,22 @@ def normalize_marketplace_code(mkt: str) -> str:
         return "redbubble.com"
     if "printerval" in m:
         return "printerval.com"
+    if "teepublic" in m:
+        return "teepublic.com"
+    if "spreadshirt" in m:
+        return "spreadshirt.com"
+    if "zazzle" in m:
+        return "zazzle.com"
+    if "etsy" in m:
+        return "etsy.com"
+    if "cafepress" in m:
+        return "cafepress.com"
+    if any(k in m for k in ("fineartamerica", "fine art america", "fineart", "pixels.com")):
+        return "fineartamerica.com"
+    if "threadless" in m:
+        return "threadless.com"
+    if any(k in m for k in ("teespring", "spring.com", "creator-spring")):
+        return "teespring.com"
 
     # 3. Global Retail & Social Marketplaces
     if "tiktok" in m:

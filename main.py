@@ -29,6 +29,17 @@ from vinted_scraper import VintedScraper
 from tiktok_scraper import TikTokScraper
 from manomano_scraper import ManoManoScraper
 from scribd_scraper import ScribdScraper
+from teepublic_scraper import TeePublicScraper
+from etsy_scraper import EtsyScraper
+from spreadshirt_scraper import SpreadshirtScraper
+from zazzle_scraper import ZazzleScraper
+from cafepress_scraper import CafePressScraper
+from threadless_scraper import ThreadlessScraper
+from teespring_scraper import TeeSpringScraper
+from fineartamerica_scraper import FineArtAmericaScraper
+from session_vault import SessionVault
+from session_vault_modal import SessionVaultModal
+from multi_sector_modal import MultiSectorModal
 from exporter import ExcelExporter
 from data_store import DataStore
 import batch_importer
@@ -592,6 +603,15 @@ class EbayTool(tk.Tk):
         self.tiktok_scraper = TikTokScraper(headless=self.headless_var.get())
         self.manomano_scraper = ManoManoScraper(headless=self.headless_var.get())
         self.scribd_scraper = ScribdScraper(headless=self.headless_var.get())
+        self.session_vault = SessionVault()
+        self.teepublic_scraper = TeePublicScraper(headless=self.headless_var.get(), session_vault=self.session_vault)
+        self.etsy_scraper = EtsyScraper(headless=self.headless_var.get(), session_vault=self.session_vault)
+        self.spreadshirt_scraper = SpreadshirtScraper(headless=self.headless_var.get(), session_vault=self.session_vault)
+        self.zazzle_scraper = ZazzleScraper(headless=self.headless_var.get(), session_vault=self.session_vault)
+        self.cafepress_scraper = CafePressScraper(headless=self.headless_var.get(), session_vault=self.session_vault)
+        self.threadless_scraper = ThreadlessScraper(headless=self.headless_var.get(), session_vault=self.session_vault)
+        self.teespring_scraper = TeeSpringScraper(headless=self.headless_var.get(), session_vault=self.session_vault)
+        self.fineartamerica_scraper = FineArtAmericaScraper(headless=self.headless_var.get(), session_vault=self.session_vault)
         self.marketplace_var= tk.StringVar(value="🛒 eBay.com")
         self.exporter       = ExcelExporter()
         self.visual_catalog = VisualCatalogManager()
@@ -803,7 +823,7 @@ class EbayTool(tk.Tk):
         self.themed_widgets["subtext_labels"].append(market_lbl)
 
         self.market_combo = ttk.Combobox(top_right, textvariable=self.marketplace_var,
-                                         values=["🛒 eBay.com", "📚 Scribd.com", "🧰 ManoMano", "🎵 TikTok Shop", "👗 Vinted", "🌐 AliExpress.com", "🌠 Wish.com", "🟠 Temu.com", "🛍 Mercado Libre", "🎨 Redbubble.com", "👕 Printerval.com"],
+                                         values=["🛒 eBay.com", "📚 Scribd.com", "🧰 ManoMano", "🎵 TikTok Shop", "👗 Vinted", "🌐 AliExpress.com", "🌠 Wish.com", "🟠 Temu.com", "🛍 Mercado Libre", "🎨 Redbubble.com", "👕 Printerval.com", "👕 TeePublic.com", "🧶 Etsy.com", "🌿 Spreadshirt.com", "🎨 Zazzle.com", "☕ CafePress.com", "🧵 Threadless.com", "🌱 TeeSpring (Spring)", "🖼 Fine Art America"],
                                          state="readonly", width=19, font=FONT_SM)
         self.market_combo.pack(side="left", padx=(0, 4))
         self.market_combo.bind("<<ComboboxSelected>>", self._on_market_changed)
@@ -967,7 +987,106 @@ class EbayTool(tk.Tk):
         )
         self.pv_depth_combo.bind("<<ComboboxSelected>>", lambda e: self._log(f"👕 Printerval scan depth set to: {self.pv_depth_var.get()}"))
 
+        # TeePublic Scan Depth Controls
+        self.tp_depth_var = tk.StringVar(value="2 Pages (100)")
+        self.tp_depth_combo = ttk.Combobox(
+            top_right,
+            textvariable=self.tp_depth_var,
+            values=["1 Page (50)", "2 Pages (100)", "3 Pages (150)", "5 Pages (250)", "10 Pages (500)"],
+            state="readonly",
+            width=14,
+            font=FONT_SM
+        )
+        self.tp_depth_combo.bind("<<ComboboxSelected>>", lambda e: self._log(f"👕 TeePublic scan depth set to: {self.tp_depth_var.get()}"))
+
+        # Etsy Scan Depth Controls
+        self.etsy_depth_var = tk.StringVar(value="2 Pages (120)")
+        self.etsy_depth_combo = ttk.Combobox(
+            top_right,
+            textvariable=self.etsy_depth_var,
+            values=["1 Page (60)", "2 Pages (120)", "3 Pages (180)", "5 Pages (300)"],
+            state="readonly",
+            width=14,
+            font=FONT_SM
+        )
+        self.etsy_depth_combo.bind("<<ComboboxSelected>>", lambda e: self._log(f"🧶 Etsy scan depth set to: {self.etsy_depth_var.get()}"))
+
+        # Spreadshirt Scan Depth Controls
+        self.spreadshirt_depth_var = tk.StringVar(value="2 Pages (120)")
+        self.spreadshirt_depth_combo = ttk.Combobox(
+            top_right,
+            textvariable=self.spreadshirt_depth_var,
+            values=["1 Page (60)", "2 Pages (120)", "3 Pages (180)", "5 Pages (300)"],
+            state="readonly",
+            width=14,
+            font=FONT_SM
+        )
+        self.spreadshirt_depth_combo.bind("<<ComboboxSelected>>", lambda e: self._log(f"🌿 Spreadshirt scan depth set to: {self.spreadshirt_depth_var.get()}"))
+
+        # Zazzle Scan Depth Controls
+        self.zazzle_depth_var = tk.StringVar(value="2 Pages (120)")
+        self.zazzle_depth_combo = ttk.Combobox(
+            top_right,
+            textvariable=self.zazzle_depth_var,
+            values=["1 Page (60)", "2 Pages (120)", "3 Pages (180)", "5 Pages (300)"],
+            state="readonly",
+            width=14,
+            font=FONT_SM
+        )
+        self.zazzle_depth_combo.bind("<<ComboboxSelected>>", lambda e: self._log(f"🎨 Zazzle scan depth set to: {self.zazzle_depth_var.get()}"))
+
+        # CafePress Scan Depth Controls
+        self.cafepress_depth_var = tk.StringVar(value="2 Pages (120)")
+        self.cafepress_depth_combo = ttk.Combobox(
+            top_right,
+            textvariable=self.cafepress_depth_var,
+            values=["1 Page (60)", "2 Pages (120)", "3 Pages (180)", "5 Pages (300)"],
+            state="readonly",
+            width=14,
+            font=FONT_SM
+        )
+        self.cafepress_depth_combo.bind("<<ComboboxSelected>>", lambda e: self._log(f"☕ CafePress scan depth set to: {self.cafepress_depth_var.get()}"))
+
+        # Threadless Scan Depth Controls
+        self.threadless_depth_var = tk.StringVar(value="2 Pages (120)")
+        self.threadless_depth_combo = ttk.Combobox(
+            top_right,
+            textvariable=self.threadless_depth_var,
+            values=["1 Page (60)", "2 Pages (120)", "3 Pages (180)", "5 Pages (300)"],
+            state="readonly",
+            width=14,
+            font=FONT_SM
+        )
+        self.threadless_depth_combo.bind("<<ComboboxSelected>>", lambda e: self._log(f"🧵 Threadless scan depth set to: {self.threadless_depth_var.get()}"))
+
+        # TeeSpring Scan Depth Controls
+        self.teespring_depth_var = tk.StringVar(value="2 Pages (120)")
+        self.teespring_depth_combo = ttk.Combobox(
+            top_right,
+            textvariable=self.teespring_depth_var,
+            values=["1 Page (60)", "2 Pages (120)", "3 Pages (180)", "5 Pages (300)"],
+            state="readonly",
+            width=14,
+            font=FONT_SM
+        )
+        self.teespring_depth_combo.bind("<<ComboboxSelected>>", lambda e: self._log(f"🌱 TeeSpring scan depth set to: {self.teespring_depth_var.get()}"))
+
+        # Fine Art America Scan Depth Controls
+        self.fineartamerica_depth_var = tk.StringVar(value="2 Pages (120)")
+        self.fineartamerica_depth_combo = ttk.Combobox(
+            top_right,
+            textvariable=self.fineartamerica_depth_var,
+            values=["1 Page (60)", "2 Pages (120)", "3 Pages (180)", "5 Pages (300)"],
+            state="readonly",
+            width=14,
+            font=FONT_SM
+        )
+        self.fineartamerica_depth_combo.bind("<<ComboboxSelected>>", lambda e: self._log(f"🖼 Fine Art America scan depth set to: {self.fineartamerica_depth_var.get()}"))
+
         # Main Toolbar Operational Action Buttons
+        self.btn_multi_sector = self._btn(top_right, "🌐 Multi-Sector", self._open_multi_sector_modal, accent=True)
+        self.btn_multi_sector.pack(side="left", padx=(0, 2))
+
         self.btn_import = self._btn(top_right, "📥 Import", self._open_adhoc_importer_window, accent=True)
         self.btn_import.pack(side="left", padx=(0, 2))
         
@@ -1098,6 +1217,10 @@ class EbayTool(tk.Tk):
         self.settings_menu.add_command(
             label="📄 VeRO Seller Disclosure Parser (.pdf / text)...",
             command=self._open_vero_disclosure_modal
+        )
+        self.settings_menu.add_command(
+            label="🔐 Marketplace Session Vault...",
+            command=self._open_session_vault_modal
         )
         self.settings_menu.add_command(
             label="📚 Open Analyst Field Guide (F1)",
@@ -2289,6 +2412,22 @@ class EbayTool(tk.Tk):
             return "Printerval"
         elif "Redbubble" in mkt:
             return "Redbubble"
+        elif "TeePublic" in mkt:
+            return "TeePublic"
+        elif "Etsy" in mkt:
+            return "Etsy"
+        elif "Spreadshirt" in mkt:
+            return "Spreadshirt"
+        elif "Zazzle" in mkt:
+            return "Zazzle"
+        elif "CafePress" in mkt:
+            return "CafePress"
+        elif "Threadless" in mkt:
+            return "Threadless"
+        elif "TeeSpring" in mkt or "Spring" in mkt:
+            return "TeeSpring"
+        elif "Fine Art America" in mkt or "Pixels" in mkt:
+            return "Fine Art America"
         elif "Scribd" in mkt:
             return "Scribd"
         elif "Mercado" in mkt:
@@ -2428,9 +2567,57 @@ class EbayTool(tk.Tk):
             else:
                 self.pv_depth_combo.pack_forget()
 
+        if hasattr(self, "tp_depth_combo"):
+            if "TeePublic" in market:
+                self.tp_depth_combo.pack(side="left", padx=(0, 4), after=self.market_combo)
+            else:
+                self.tp_depth_combo.pack_forget()
+
+        if hasattr(self, "etsy_depth_combo"):
+            if "Etsy" in market:
+                self.etsy_depth_combo.pack(side="left", padx=(0, 4), after=self.market_combo)
+            else:
+                self.etsy_depth_combo.pack_forget()
+
+        if hasattr(self, "spreadshirt_depth_combo"):
+            if "Spreadshirt" in market:
+                self.spreadshirt_depth_combo.pack(side="left", padx=(0, 4), after=self.market_combo)
+            else:
+                self.spreadshirt_depth_combo.pack_forget()
+
+        if hasattr(self, "zazzle_depth_combo"):
+            if "Zazzle" in market:
+                self.zazzle_depth_combo.pack(side="left", padx=(0, 4), after=self.market_combo)
+            else:
+                self.zazzle_depth_combo.pack_forget()
+
+        if hasattr(self, "cafepress_depth_combo"):
+            if "CafePress" in market:
+                self.cafepress_depth_combo.pack(side="left", padx=(0, 4), after=self.market_combo)
+            else:
+                self.cafepress_depth_combo.pack_forget()
+
+        if hasattr(self, "threadless_depth_combo"):
+            if "Threadless" in market:
+                self.threadless_depth_combo.pack(side="left", padx=(0, 4), after=self.market_combo)
+            else:
+                self.threadless_depth_combo.pack_forget()
+
+        if hasattr(self, "teespring_depth_combo"):
+            if "TeeSpring" in market:
+                self.teespring_depth_combo.pack(side="left", padx=(0, 4), after=self.market_combo)
+            else:
+                self.teespring_depth_combo.pack_forget()
+
+        if hasattr(self, "fineartamerica_depth_combo"):
+            if "Fine Art America" in market:
+                self.fineartamerica_depth_combo.pack(side="left", padx=(0, 4), after=self.market_combo)
+            else:
+                self.fineartamerica_depth_combo.pack_forget()
+
         if hasattr(self, "pod_expand_btn"):
-            if "Printerval" in market or "Redbubble" in market:
-                after_w = self.rb_depth_combo if ("Redbubble" in market and hasattr(self, "rb_depth_combo")) else (self.pv_depth_combo if ("Printerval" in market and hasattr(self, "pv_depth_combo")) else self.market_combo)
+            if any(k in market for k in ("Printerval", "Redbubble", "TeePublic", "Spreadshirt", "Zazzle", "CafePress", "Threadless", "TeeSpring", "Fine Art America")):
+                after_w = self.fineartamerica_depth_combo if ("Fine Art America" in market and hasattr(self, "fineartamerica_depth_combo")) else (self.teespring_depth_combo if ("TeeSpring" in market and hasattr(self, "teespring_depth_combo")) else (self.threadless_depth_combo if ("Threadless" in market and hasattr(self, "threadless_depth_combo")) else (self.cafepress_depth_combo if ("CafePress" in market and hasattr(self, "cafepress_depth_combo")) else (self.zazzle_depth_combo if ("Zazzle" in market and hasattr(self, "zazzle_depth_combo")) else (self.spreadshirt_depth_combo if ("Spreadshirt" in market and hasattr(self, "spreadshirt_depth_combo")) else (self.tp_depth_combo if ("TeePublic" in market and hasattr(self, "tp_depth_combo")) else (self.rb_depth_combo if ("Redbubble" in market and hasattr(self, "rb_depth_combo")) else (self.pv_depth_combo if ("Printerval" in market and hasattr(self, "pv_depth_combo")) else self.market_combo))))))))
                 self.pod_expand_btn.pack(side="left", padx=(0, 4), after=after_w)
             else:
                 self.pod_expand_btn.pack_forget()
@@ -2505,6 +2692,62 @@ class EbayTool(tk.Tk):
                 self.store_text.insert("1.0", self.store_placeholder)
                 self.store_text.config(fg=t["subtext"])
             self._log("👕 Switched platform to: Printerval.com (Global Catalog & Creator Sweeps active)")
+        elif "TeePublic" in market:
+            self.store_placeholder = "🌐 Global TeePublic Search: https://www.teepublic.com/t-shirts\n(Leave blank to sweep entire TeePublic catalog, or enter specific artist shop URLs: https://www.teepublic.com/user/artist)"
+            if not current_text or any(k in current_text for k in ("ebay.com", "aliexpress.com", "wish.com", "temu.com", "mercadolibre", "redbubble.com", "printerval.com", "store2", "Global")):
+                self.store_text.delete("1.0", "end")
+                self.store_text.insert("1.0", self.store_placeholder)
+                self.store_text.config(fg=t["subtext"])
+            self._log("👕 Switched platform to: TeePublic.com (Global Catalog & Artist Sweeps active)")
+        elif "Etsy" in market:
+            self.store_placeholder = "🌐 Global Etsy Search: https://www.etsy.com/search\n(Leave blank to sweep entire Etsy marketplace, or enter specific shop URLs: https://www.etsy.com/shop/ShopName)"
+            if not current_text or any(k in current_text for k in ("ebay.com", "aliexpress.com", "wish.com", "temu.com", "mercadolibre", "redbubble.com", "printerval.com", "store2", "Global")):
+                self.store_text.delete("1.0", "end")
+                self.store_text.insert("1.0", self.store_placeholder)
+                self.store_text.config(fg=t["subtext"])
+            self._log("🧶 Switched platform to: Etsy.com (Commercial Listings & Shop Sweeps active)")
+        elif "Spreadshirt" in market:
+            self.store_placeholder = "🌐 Global Spreadshirt Search: https://www.spreadshirt.com/shop/\n(Leave blank to sweep entire Spreadshirt / Spreadshop catalog, or enter designer storefronts: https://www.spreadshirt.com/user/creator)"
+            if not current_text or any(k in current_text for k in ("ebay.com", "aliexpress.com", "wish.com", "temu.com", "mercadolibre", "redbubble.com", "printerval.com", "store2", "Global")):
+                self.store_text.delete("1.0", "end")
+                self.store_text.insert("1.0", self.store_placeholder)
+                self.store_text.config(fg=t["subtext"])
+            self._log("🌿 Switched platform to: Spreadshirt.com (Global Catalog & Designer Sweeps active)")
+        elif "Zazzle" in market:
+            self.store_placeholder = "🌐 Global Zazzle Search: https://www.zazzle.com/s/\n(Leave blank to sweep entire Zazzle catalog, or enter creator store URLs: https://www.zazzle.com/store/creatorname)"
+            if not current_text or any(k in current_text for k in ("ebay.com", "aliexpress.com", "wish.com", "temu.com", "mercadolibre", "redbubble.com", "printerval.com", "store2", "Global")):
+                self.store_text.delete("1.0", "end")
+                self.store_text.insert("1.0", self.store_placeholder)
+                self.store_text.config(fg=t["subtext"])
+            self._log("🎨 Switched platform to: Zazzle.com (Global Catalog & Creator Sweeps active)")
+        elif "CafePress" in market:
+            self.store_placeholder = "🌐 Global CafePress Search: https://www.cafepress.com/+\n(Leave blank to sweep entire CafePress catalog, or enter profile/shop URLs: https://www.cafepress.com/profile/creator)"
+            if not current_text or any(k in current_text for k in ("ebay.com", "aliexpress.com", "wish.com", "temu.com", "mercadolibre", "redbubble.com", "printerval.com", "store2", "Global")):
+                self.store_text.delete("1.0", "end")
+                self.store_text.insert("1.0", self.store_placeholder)
+                self.store_text.config(fg=t["subtext"])
+            self._log("☕ Switched platform to: CafePress.com (Global Catalog & Store Sweeps active)")
+        elif "Threadless" in market:
+            self.store_placeholder = "🌐 Global Threadless Search: https://www.threadless.com/search/\n(Leave blank to sweep entire Threadless catalog, or enter Artist Shop URLs: https://artistname.threadless.com)"
+            if not current_text or any(k in current_text for k in ("ebay.com", "aliexpress.com", "wish.com", "temu.com", "mercadolibre", "redbubble.com", "printerval.com", "store2", "Global")):
+                self.store_text.delete("1.0", "end")
+                self.store_text.insert("1.0", self.store_placeholder)
+                self.store_text.config(fg=t["subtext"])
+            self._log("🧵 Switched platform to: Threadless.com (Global Catalog & Artist Shops active)")
+        elif "TeeSpring" in market or "Spring" in market:
+            self.store_placeholder = "🌐 Global TeeSpring (Spring) Search: https://spring.com/search\n(Leave blank to sweep Spring creator marketplace, or enter creator store URLs: https://storename.creator-spring.com)"
+            if not current_text or any(k in current_text for k in ("ebay.com", "aliexpress.com", "wish.com", "temu.com", "mercadolibre", "redbubble.com", "printerval.com", "store2", "Global")):
+                self.store_text.delete("1.0", "end")
+                self.store_text.insert("1.0", self.store_placeholder)
+                self.store_text.config(fg=t["subtext"])
+            self._log("🌱 Switched platform to: TeeSpring / Spring (Creator Marketplace active)")
+        elif "Fine Art America" in market or "Pixels" in market:
+            self.store_placeholder = "🌐 Global Fine Art America Search: https://fineartamerica.com/art/\n(Leave blank to sweep Fine Art America catalog, or enter artist profile URLs: https://fineartamerica.com/profiles/artistname)"
+            if not current_text or any(k in current_text for k in ("ebay.com", "aliexpress.com", "wish.com", "temu.com", "mercadolibre", "redbubble.com", "printerval.com", "store2", "Global")):
+                self.store_text.delete("1.0", "end")
+                self.store_text.insert("1.0", self.store_placeholder)
+                self.store_text.config(fg=t["subtext"])
+            self._log("🖼 Switched platform to: Fine Art America (Global Art & Prints active)")
         else:
             self.store_placeholder = "🌐 Global eBay Search: https://www.ebay.com/sch/\n(Leave blank to sweep entire eBay marketplace by keyword, or enter specific store/seller URLs)"
             if not current_text or "vinted.co" in current_text or "aliexpress.com" in current_text or "wish.com" in current_text or "temu.com" in current_text or "mercadolibre" in current_text or "redbubble.com" in current_text or "printerval.com" in current_text or "store1" in current_text or "Global" in current_text:
@@ -2525,6 +2768,16 @@ class EbayTool(tk.Tk):
         if "Mercado" in market: return ["🌐 Global Mercado Libre Search"]
         if "Redbubble" in market: return ["🌐 Global Redbubble Search"]
         if "Printerval" in market: return ["🌐 Global Printerval Search"]
+        if "TeePublic" in market: return ["🌐 Global TeePublic Search"]
+        if "Etsy" in market: return ["🌐 Global Etsy Search"]
+        if "Spreadshirt" in market: return ["🌐 Global Spreadshirt Search"]
+        if "Zazzle" in market: return ["🌐 Global Zazzle Search"]
+        if "CafePress" in market: return ["🌐 Global CafePress Search"]
+        if "Threadless" in market: return ["🌐 Global Threadless Search"]
+        if "TeeSpring" in market or "Spring" in market: return ["🌐 Global TeeSpring (Spring) Search"]
+        if "Fine Art America" in market or "Pixels" in market: return ["🌐 Global Fine Art America Search"]
+        if "Scribd" in market: return ["📚 Global Scribd Search"]
+        return ["🛒 Global eBay Search"]
         return ["🛒 Global eBay Search"]
 
     def _get_stores_from_input(self):
@@ -3607,6 +3860,61 @@ class EbayTool(tk.Tk):
         self._status(f"📦 1-Click Sweep: Queued {queued_count} job(s) for {len(stores)} target(s) [{platform_name}]!")
         messagebox.showinfo("Portfolio Sweep Queued", f"Successfully queued {queued_count} search job(s) for '{preset_name}' across {len(stores)} target(s) on {platform_name}!\n\nClick '▶ Run' to start harvesting!")
 
+    def _open_multi_sector_modal(self):
+        """Open Multi-Sector Target Dispatcher modal dialog."""
+        active_q = ""
+        if hasattr(self, "include_text"):
+            inc_txt = self.include_text.get("1.0", "end").strip()
+            if inc_txt:
+                active_q = inc_txt.splitlines()[0].strip()
+        if not active_q and hasattr(self, "brand_tree"):
+            sel = self.brand_tree.selection()
+            if sel:
+                active_q = sel[0].split("/")[-1]
+
+        active_excl = ", ".join(self._get_active_exclusions()[:4]) if hasattr(self, "_get_active_exclusions") else ""
+        active_cond = self.condition_var.get() if hasattr(self, "condition_var") else "all"
+
+        MultiSectorModal(
+            self,
+            theme=self.theme,
+            initial_query=active_q,
+            initial_excludes=active_excl,
+            initial_condition=active_cond,
+            on_enqueue_callback=self._enqueue_multi_sector_jobs
+        )
+
+    def _enqueue_multi_sector_jobs(self, brand: str, excludes: list, condition: str, selected_platforms: list):
+        """Enqueue individual, distinct search jobs for all selected platforms in multi-sector dispatcher."""
+        if not brand or not selected_platforms:
+            return
+
+        queued_count = 0
+        generic_excludes = set(self._get_active_exclusions()) if hasattr(self, "_get_active_exclusions") else set()
+        all_excludes = list(generic_excludes.union(set(excludes)))
+
+        for platform_name in selected_platforms:
+            store_token = f"🌐 Global {platform_name} Search"
+            job = {
+                "store": store_token,
+                "brand": brand,
+                "includes": [brand],
+                "excludes": all_excludes,
+                "condition": condition,
+                "marketplace": platform_name,
+                "vinted_country": "All Locales",
+                "vinted_depth": "2 Pages (192)",
+                "manomano_country": "All European Locales"
+            }
+            self.queue.append(job)
+            label = f"🌐 [{platform_name}] Global Sweep ▸ '{brand}' ({len(all_excludes)} excl)"
+            self.queue_list.insert("end", label)
+            queued_count += 1
+
+        self._log(f"🌐 [MULTI-SECTOR DISPATCH] Successfully queued {queued_count} batch job(s) for '{brand}' across: {', '.join(selected_platforms)}")
+        self._status(f"🌐 Multi-Sector Dispatch: Queued {queued_count} job(s) for '{brand}'!")
+        messagebox.showinfo("Multi-Sector Jobs Queued", f"Successfully queued {queued_count} search job(s) for '{brand}' across {len(selected_platforms)} marketplaces!\n\nClick '▶ Run' to start harvesting!")
+
     # ══════════════════════════════════════════════════════════════════════════
     #  QUEUE & BATCH EXECUTION (MULTI-STORE + MULTI-BRAND)
     # ══════════════════════════════════════════════════════════════════════════
@@ -3965,6 +4273,14 @@ class EbayTool(tk.Tk):
         self.printerval_scraper.headless = is_headless
         self.vinted_scraper.headless = is_headless
         self.manomano_scraper.headless = is_headless
+        self.teepublic_scraper.headless = is_headless
+        self.etsy_scraper.headless = is_headless
+        self.spreadshirt_scraper.headless = is_headless
+        self.zazzle_scraper.headless = is_headless
+        self.cafepress_scraper.headless = is_headless
+        self.threadless_scraper.headless = is_headless
+        self.teespring_scraper.headless = is_headless
+        self.fineartamerica_scraper.headless = is_headless
 
         total_new_items = 0
         total_initial_jobs = len(self.queue)
@@ -3990,11 +4306,21 @@ class EbayTool(tk.Tk):
             is_meli = "mercado" in p_low or "mercadolibre" in p_low or "mercadolivre" in p_low or "mercadolibre" in s_low or "mercadolivre" in s_low or "meli" in p_low
             is_redbubble = "redbubble" in p_low or "redbubble.com" in s_low
             is_printerval = "printerval" in p_low or "printerval.com" in s_low
+            is_teepublic = "teepublic" in p_low or "teepublic.com" in s_low or "tee.pub" in s_low
+            is_etsy = "etsy" in p_low or "etsy.com" in s_low
+            is_spreadshirt = "spreadshirt" in p_low or "spreadshirt.com" in s_low or "spreadshop.com" in s_low
+            is_zazzle = "zazzle" in p_low or "zazzle.com" in s_low
+            is_cafepress = "cafepress" in p_low or "cafepress.com" in s_low
+            is_threadless = "threadless" in p_low or "threadless.com" in s_low
+            is_teespring = "teespring" in p_low or "spring.com" in s_low or "creator-spring.com" in s_low
+            is_faa = "fineartamerica" in p_low or "pixels.com" in s_low or "fine art america" in p_low
 
             mkt_map = {
                 "ManoMano": "manomano.fr", "Scribd": "scribd.com", "TikTok Shop": "shop.tiktok.com", "Vinted": "vinted.co.uk", "Wish": "wish.com", "Temu": "temu.com",
                 "AliExpress": "aliexpress.com", "Mercado Libre": "mercadolibre.com",
-                "Redbubble": "redbubble.com", "Printerval": "printerval.com", "eBay": "ebay.com"
+                "Redbubble": "redbubble.com", "Printerval": "printerval.com", "TeePublic": "teepublic.com", "Etsy": "etsy.com", "Spreadshirt": "spreadshirt.com",
+                "Zazzle": "zazzle.com", "CafePress": "cafepress.com", "Threadless": "threadless.com", "TeeSpring": "teespring.com", "Fine Art America": "fineartamerica.com",
+                "eBay": "ebay.com"
             }
             mkt_tag = mkt_map.get(platform_name, "ebay.com")
 
@@ -4059,6 +4385,38 @@ class EbayTool(tk.Tk):
                     resolved = self.printerval_scraper.resolve_store_info(store_raw).get("store_name", seller_label)
                     job_record["resolved_seller"] = resolved
                     self._log(f"👕 [Printerval] Target store resolved: '{resolved}'")
+                elif is_teepublic:
+                    resolved = "TeePublic Artist Community" if any(k in store_raw.lower() for k in ("global", "search", "all")) or not store_raw else store_raw
+                    job_record["resolved_seller"] = resolved
+                    self._log(f"👕 [TeePublic] Target store resolved: '{resolved}'")
+                elif is_etsy:
+                    resolved = "Etsy Commercial Makers" if any(k in store_raw.lower() for k in ("global", "search", "all")) or not store_raw else store_raw
+                    job_record["resolved_seller"] = resolved
+                    self._log(f"🧶 [Etsy] Target store resolved: '{resolved}'")
+                elif is_spreadshirt:
+                    resolved = "Spreadshirt Creator Community" if any(k in store_raw.lower() for k in ("global", "search", "all", "community", "spreadshop")) or not store_raw else store_raw
+                    job_record["resolved_seller"] = resolved
+                    self._log(f"🌿 [Spreadshirt] Target store resolved: '{resolved}'")
+                elif is_zazzle:
+                    resolved = "Zazzle Creator Community" if any(k in store_raw.lower() for k in ("global", "search", "all", "community", "store")) or not store_raw else store_raw
+                    job_record["resolved_seller"] = resolved
+                    self._log(f"🎨 [Zazzle] Target store resolved: '{resolved}'")
+                elif is_cafepress:
+                    resolved = "CafePress Designer Community" if any(k in store_raw.lower() for k in ("global", "search", "all", "community", "profile", "shop")) or not store_raw else store_raw
+                    job_record["resolved_seller"] = resolved
+                    self._log(f"☕ [CafePress] Target store resolved: '{resolved}'")
+                elif is_threadless:
+                    resolved = "Threadless Artist Community" if any(k in store_raw.lower() for k in ("global", "search", "all", "community", "shop")) or not store_raw else store_raw
+                    job_record["resolved_seller"] = resolved
+                    self._log(f"🧵 [Threadless] Target store resolved: '{resolved}'")
+                elif is_teespring:
+                    resolved = "Spring Creator Community" if any(k in store_raw.lower() for k in ("global", "search", "all", "community", "store")) or not store_raw else store_raw
+                    job_record["resolved_seller"] = resolved
+                    self._log(f"🌱 [TeeSpring] Target store resolved: '{resolved}'")
+                elif is_faa:
+                    resolved = "Fine Art America Artist Community" if any(k in store_raw.lower() for k in ("global", "search", "all", "community", "profile", "artist")) or not store_raw else store_raw
+                    job_record["resolved_seller"] = resolved
+                    self._log(f"🖼 [Fine Art America] Target store resolved: '{resolved}'")
                 else:
                     resolved = self.scraper.resolve_seller(store_raw)
                     job_record["resolved_seller"] = resolved
@@ -4295,6 +4653,135 @@ class EbayTool(tk.Tk):
                             pause_event=self.pause_event
                         )
                         job_record["url"] = f"https://shop.tiktok.com/us/search?q={actual_term.replace(' ', '+')}"
+                    elif is_teepublic:
+                        self.teepublic_scraper.headless = is_headless
+                        tp_pages = 2
+                        if hasattr(self, "tp_depth_var"):
+                            m = re.search(r'(\d+)\s+Page', self.tp_depth_var.get())
+                            if m: tp_pages = int(m.group(1))
+                        clean_tp_store = store_raw if (store_raw and not any(k in store_raw.lower() for k in ("global", "search", "all", "artist community"))) else None
+                        items = self.teepublic_scraper.search(
+                            actual_term,
+                            depth_pages=tp_pages,
+                            store_filter=clean_tp_store,
+                            condition=job.get("condition", "all"),
+                            log_callback=self._log,
+                            status_callback=self._status
+                        )
+                        job_record["url"] = f"https://www.teepublic.com/t-shirts?query={actual_term.replace(' ', '+')}"
+                    elif is_etsy:
+                        self.etsy_scraper.headless = is_headless
+                        etsy_pages = 2
+                        if hasattr(self, "etsy_depth_var"):
+                            m = re.search(r'(\d+)\s+Page', self.etsy_depth_var.get())
+                            if m: etsy_pages = int(m.group(1))
+                        clean_etsy_store = store_raw if (store_raw and not any(k in store_raw.lower() for k in ("global", "search", "all", "commercial makers"))) else None
+                        items = self.etsy_scraper.search(
+                            actual_term,
+                            depth_pages=etsy_pages,
+                            commercial_only=True,
+                            store_filter=clean_etsy_store,
+                            condition=job.get("condition", "all"),
+                            log_callback=self._log,
+                            status_callback=self._status
+                        )
+                        job_record["url"] = f"https://www.etsy.com/search?q={actual_term.replace(' ', '+')}"
+                    elif is_spreadshirt:
+                        self.spreadshirt_scraper.headless = is_headless
+                        sp_pages = 2
+                        if hasattr(self, "spreadshirt_depth_var"):
+                            m = re.search(r'(\d+)\s+Page', self.spreadshirt_depth_var.get())
+                            if m: sp_pages = int(m.group(1))
+                        clean_sp_store = store_raw if (store_raw and not any(k in store_raw.lower() for k in ("global", "search", "all", "community", "spreadshop"))) else None
+                        items = self.spreadshirt_scraper.search(
+                            actual_term,
+                            depth_pages=sp_pages,
+                            store_filter=clean_sp_store,
+                            condition=job.get("condition", "all"),
+                            log_callback=self._log,
+                            status_callback=self._status
+                        )
+                        job_record["url"] = f"https://www.spreadshirt.com/shop/{actual_term.replace(' ', '+')}/"
+                    elif is_zazzle:
+                        self.zazzle_scraper.headless = is_headless
+                        z_pages = 2
+                        if hasattr(self, "zazzle_depth_var"):
+                            m = re.search(r'(\d+)\s+Page', self.zazzle_depth_var.get())
+                            if m: z_pages = int(m.group(1))
+                        clean_z_store = store_raw if (store_raw and not any(k in store_raw.lower() for k in ("global", "search", "all", "community", "store"))) else None
+                        items = self.zazzle_scraper.search(
+                            actual_term,
+                            depth_pages=z_pages,
+                            store_filter=clean_z_store,
+                            condition=job.get("condition", "all"),
+                            log_callback=self._log,
+                            status_callback=self._status
+                        )
+                        job_record["url"] = f"https://www.zazzle.com/s/{actual_term.replace(' ', '+')}"
+                    elif is_cafepress:
+                        self.cafepress_scraper.headless = is_headless
+                        cp_pages = 2
+                        if hasattr(self, "cafepress_depth_var"):
+                            m = re.search(r'(\d+)\s+Page', self.cafepress_depth_var.get())
+                            if m: cp_pages = int(m.group(1))
+                        clean_cp_store = store_raw if (store_raw and not any(k in store_raw.lower() for k in ("global", "search", "all", "community", "profile", "shop"))) else None
+                        items = self.cafepress_scraper.search(
+                            actual_term,
+                            depth_pages=cp_pages,
+                            store_filter=clean_cp_store,
+                            condition=job.get("condition", "all"),
+                            log_callback=self._log,
+                            status_callback=self._status
+                        )
+                        job_record["url"] = f"https://www.cafepress.com/+{actual_term.replace(' ', '+')}"
+                    elif is_threadless:
+                        self.threadless_scraper.headless = is_headless
+                        th_pages = 2
+                        if hasattr(self, "threadless_depth_var"):
+                            m = re.search(r'(\d+)\s+Page', self.threadless_depth_var.get())
+                            if m: th_pages = int(m.group(1))
+                        clean_th_store = store_raw if (store_raw and not any(k in store_raw.lower() for k in ("global", "search", "all", "community", "shop"))) else None
+                        items = self.threadless_scraper.search(
+                            actual_term,
+                            depth_pages=th_pages,
+                            store_filter=clean_th_store,
+                            condition=job.get("condition", "all"),
+                            log_callback=self._log,
+                            status_callback=self._status
+                        )
+                        job_record["url"] = f"https://www.threadless.com/search/?q={actual_term.replace(' ', '+')}"
+                    elif is_teespring:
+                        self.teespring_scraper.headless = is_headless
+                        ts_pages = 2
+                        if hasattr(self, "teespring_depth_var"):
+                            m = re.search(r'(\d+)\s+Page', self.teespring_depth_var.get())
+                            if m: ts_pages = int(m.group(1))
+                        clean_ts_store = store_raw if (store_raw and not any(k in store_raw.lower() for k in ("global", "search", "all", "community", "store"))) else None
+                        items = self.teespring_scraper.search(
+                            actual_term,
+                            depth_pages=ts_pages,
+                            store_filter=clean_ts_store,
+                            condition=job.get("condition", "all"),
+                            log_callback=self._log,
+                            status_callback=self._status
+                        )
+                        job_record["url"] = f"https://spring.com/search?q={actual_term.replace(' ', '+')}"
+                    elif is_faa:
+                        self.fineartamerica_scraper.headless = is_headless
+                        faa_pages = 2
+                        if hasattr(self, "fineartamerica_depth_var"):
+                            m = re.search(r'(\d+)\s+Page', self.fineartamerica_depth_var.get())
+                            if m: faa_pages = int(m.group(1))
+                        clean_faa_store = store_raw if (store_raw and not any(k in store_raw.lower() for k in ("global", "search", "all", "community", "profile", "artist"))) else None
+                        items = self.fineartamerica_scraper.search(
+                            actual_term,
+                            depth_pages=faa_pages,
+                            store_filter=clean_faa_store,
+                            condition=job.get("condition", "all"),
+                            log_callback=self._log,
+                            status_callback=self._status
+                        )
+                        job_record["url"] = f"https://fineartamerica.com/art/{actual_term.replace(' ', '+')}"
                     else:
                         ebay_loc = job.get("ebay_locale") or (self.ebay_country_var.get() if hasattr(self, "ebay_country_var") else "United States")
                         domain = self.scraper._clean_ebay_domain(ebay_loc)
@@ -4837,6 +5324,22 @@ class EbayTool(tk.Tk):
             return "Redbubble"
         elif "printerval" in mkt_low or "printerval.com" in url:
             return "Printerval"
+        elif "teepublic" in mkt_low or "teepublic.com" in url or "tee.pub" in url:
+            return "TeePublic"
+        elif "etsy" in mkt_low or "etsy.com" in url:
+            return "Etsy"
+        elif "spreadshirt" in mkt_low or "spreadshirt.com" in url or "spreadshop.com" in url:
+            return "Spreadshirt"
+        elif "zazzle" in mkt_low or "zazzle.com" in url:
+            return "Zazzle"
+        elif "cafepress" in mkt_low or "cafepress.com" in url:
+            return "CafePress"
+        elif "threadless" in mkt_low or "threadless.com" in url:
+            return "Threadless"
+        elif "teespring" in mkt_low or "spring.com" in url or "creator-spring.com" in url:
+            return "TeeSpring"
+        elif "fineartamerica" in mkt_low or "pixels.com" in url or "fineartamerica.com" in url:
+            return "Fine Art America"
         elif "tiktok" in mkt_low or "tiktok.com" in url or "shop.tiktok" in url:
             return "TikTok Shop"
         elif "aliexpress" in mkt_low or "aliexpress.com" in url or "aliexpress.us" in url:
@@ -5729,6 +6232,10 @@ class EbayTool(tk.Tk):
             pass
         return False
 
+    def _open_session_vault_modal(self):
+        """Open the Universal Marketplace Session & Account Vault Modal."""
+        SessionVaultModal(self, self.theme, self.session_vault)
+
     def _open_field_guide_modal(self):
         """Open the searchable Analyst Field Guide & Threat Intelligence Glossary."""
         if self._win_field_guide and self._win_field_guide.winfo_exists():
@@ -6620,6 +7127,9 @@ class EbayTool(tk.Tk):
         self.temu_scraper.headless = is_headless
         self.printerval_scraper.headless = is_headless
         self.mercadolibre_scraper.headless = is_headless
+        self.zazzle_scraper.headless = is_headless
+        self.spreadshirt_scraper.headless = is_headless
+        self.cafepress_scraper.headless = is_headless
 
         self._log(f"🏪 Starting Seller Name Enrichment for {len(target_items)} item(s)...")
         self._status(f"🏪 Enriching {len(target_items)} sellers...")
@@ -6715,6 +7225,9 @@ class EbayTool(tk.Tk):
                 meli_items = [it for it in target_items if "mercado" in it.get("marketplace", "").lower() or "mercadolibre" in it.get("marketplace", "").lower() or "mercadolivre" in it.get("marketplace", "").lower() or "mercadolibre" in it.get("url", "").lower() or "mercadolivre" in it.get("url", "").lower()]
                 printerval_items = [it for it in target_items if "printerval" in it.get("marketplace", "").lower() or "printerval" in it.get("url", "").lower()]
                 tiktok_items = [it for it in target_items if "tiktok" in it.get("marketplace", "").lower() or "tiktok" in it.get("url", "").lower()]
+                zazzle_items = [it for it in target_items if "zazzle" in it.get("marketplace", "").lower() or "zazzle.com" in it.get("url", "").lower()]
+                spreadshirt_items = [it for it in target_items if "spreadshirt" in it.get("marketplace", "").lower() or "spreadshirt.com" in it.get("url", "").lower()]
+                cafepress_items = [it for it in target_items if "cafepress" in it.get("marketplace", "").lower() or "cafepress.com" in it.get("url", "").lower()]
 
                 if ebay_items and not self.stop_event.is_set():
                     self.scraper.enrich_ebay_seller_info(
@@ -6761,6 +7274,27 @@ class EbayTool(tk.Tk):
                 if tiktok_items and not self.stop_event.is_set():
                     self.tiktok_scraper.enrich_seller_info(
                         tiktok_items,
+                        progress_callback=_on_prog,
+                        stop_event=self.stop_event
+                    )
+
+                if zazzle_items and not self.stop_event.is_set():
+                    self.zazzle_scraper.enrich_seller_info(
+                        zazzle_items,
+                        progress_callback=_on_prog,
+                        stop_event=self.stop_event
+                    )
+
+                if spreadshirt_items and not self.stop_event.is_set():
+                    self.spreadshirt_scraper.enrich_seller_info(
+                        spreadshirt_items,
+                        progress_callback=_on_prog,
+                        stop_event=self.stop_event
+                    )
+
+                if cafepress_items and not self.stop_event.is_set():
+                    self.cafepress_scraper.enrich_seller_info(
+                        cafepress_items,
                         progress_callback=_on_prog,
                         stop_event=self.stop_event
                     )
@@ -6822,26 +7356,39 @@ class EbayTool(tk.Tk):
             it for it in target_items
             if "printerval" in it.get("marketplace", "").lower() or "printerval.com" in it.get("url", "").lower()
             or "redbubble" in it.get("marketplace", "").lower() or "redbubble.com" in it.get("url", "").lower()
+            or "teepublic" in it.get("marketplace", "").lower() or "teepublic.com" in it.get("url", "").lower()
+            or "spreadshirt" in it.get("marketplace", "").lower() or "spreadshirt.com" in it.get("url", "").lower() or "spreadshop.com" in it.get("url", "").lower()
+            or "zazzle" in it.get("marketplace", "").lower() or "zazzle.com" in it.get("url", "").lower()
+            or "cafepress" in it.get("marketplace", "").lower() or "cafepress.com" in it.get("url", "").lower()
+            or "threadless" in it.get("marketplace", "").lower() or "threadless.com" in it.get("url", "").lower()
+            or "teespring" in it.get("marketplace", "").lower() or "spring.com" in it.get("url", "").lower() or "creator-spring.com" in it.get("url", "").lower()
+            or "fineartamerica" in it.get("marketplace", "").lower() or "fineartamerica.com" in it.get("url", "").lower() or "pixels.com" in it.get("url", "").lower()
         ]
 
         if not pod_targets:
             messagebox.showinfo(
                 "Expand POD Variants",
-                "No Print-on-Demand (Printerval / Redbubble) listings found in current selection.\n\n"
-                "Please select one or more Printerval/Redbubble listings to expand."
+                "No Print-on-Demand (Printerval / Redbubble / TeePublic / Spreadshirt / Zazzle / CafePress / Threadless / TeeSpring / Fine Art America) listings found in current selection.\n\n"
+                "Please select one or more POD design listings to expand."
             )
             return
 
         scope_desc = f"{len(pod_targets)} selected design(s)" if (selected_only or selected_iids) else f"all {len(pod_targets)} POD design(s)"
         if not messagebox.askyesno(
             "Expand POD Variants",
-            f"Expand all product merchandise variants (Hoodies, Mugs, Onesies, Stickers, Flags, Caps, etc.) for {scope_desc}?\n\n"
-            f"This will visit each confirmed design and pull in ~40-50+ real product URLs into your results table."
+            f"Expand all product merchandise variants (T-Shirts, Hoodies, Mugs, Stickers, Canvas, Phone Cases, Hats, etc.) for {scope_desc}?\n\n"
+            f"This will visit each confirmed design and generate full physical product URLs into your results table."
         ):
             return
 
         is_headless = self.headless_var.get()
         self.printerval_scraper.headless = is_headless
+        self.spreadshirt_scraper.headless = is_headless
+        self.zazzle_scraper.headless = is_headless
+        self.cafepress_scraper.headless = is_headless
+        self.threadless_scraper.headless = is_headless
+        self.teespring_scraper.headless = is_headless
+        self.fineartamerica_scraper.headless = is_headless
 
         self._log(f"👕 Starting POD Variant Expansion for {len(pod_targets)} parent design(s)...")
         self._status(f"👕 Expanding POD variants for {len(pod_targets)} design(s)...")
@@ -6910,6 +7457,163 @@ class EbayTool(tk.Tk):
                             except Exception:
                                 pass
                         total_added += len(new_rb_variants)
+
+                teepublic_targets = [
+                    it for it in pod_targets
+                    if "teepublic" in it.get("marketplace", "").lower() or "teepublic.com" in it.get("url", "").lower()
+                ]
+                if teepublic_targets and not self.stop_event.is_set():
+                    new_tp_variants = self.teepublic_scraper.expand_design_variants(
+                        teepublic_targets,
+                        existing_item_ids=existing_ids,
+                        progress_callback=_on_prog,
+                        stop_event=self.stop_event,
+                        log_callback=lambda msg: self.after(0, lambda: self._log(msg))
+                    )
+                    if new_tp_variants:
+                        for v in new_tp_variants:
+                            self.results.append(v)
+                            vid = str(v.get("item_id", "")).strip()
+                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
+                            if vurl: self.seen_item_ids.add(vurl)
+                            if vid: self.seen_item_ids.add(f"TeePublic_{vid}")
+                            try:
+                                if hasattr(self, "data_store"):
+                                    self.data_store.add_or_update_listing(v)
+                            except Exception:
+                                pass
+                        total_added += len(new_tp_variants)
+
+                spreadshirt_targets = [
+                    it for it in pod_targets
+                    if "spreadshirt" in it.get("marketplace", "").lower() or "spreadshirt.com" in it.get("url", "").lower() or "spreadshop.com" in it.get("url", "").lower()
+                ]
+                if spreadshirt_targets and not self.stop_event.is_set():
+                    new_sp_variants = self.spreadshirt_scraper.expand_design_variants(
+                        spreadshirt_targets,
+                        existing_item_ids=existing_ids,
+                        progress_callback=_on_prog,
+                        stop_event=self.stop_event,
+                        log_callback=lambda msg: self.after(0, lambda: self._log(msg))
+                    )
+                    if new_sp_variants:
+                        for v in new_sp_variants:
+                            self.results.append(v)
+                            vid = str(v.get("item_id", "")).strip()
+                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
+                            if vurl: self.seen_item_ids.add(vurl)
+                            if vid: self.seen_item_ids.add(f"Spreadshirt_{vid}")
+                            try:
+                                if hasattr(self, "data_store"):
+                                    self.data_store.add_or_update_listing(v)
+                            except Exception:
+                                pass
+                        total_added += len(new_sp_variants)
+
+                # Zazzle POD Expansion
+                zazzle_targets = [
+                    it for it in pod_targets
+                    if "zazzle" in it.get("marketplace", "").lower() or "zazzle.com" in it.get("url", "").lower()
+                ]
+                for p_item in zazzle_targets:
+                    if self.stop_event.is_set(): break
+                    new_z_variants = self.zazzle_scraper.expand_design_variants(
+                        p_item,
+                        log_callback=lambda msg: self.after(0, lambda: self._log(msg))
+                    )
+                    for v in new_z_variants:
+                        vid = str(v.get("item_id", "")).strip()
+                        if vid and vid not in existing_ids:
+                            existing_ids.add(vid)
+                            self.results.append(v)
+                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
+                            if vurl: self.seen_item_ids.add(vurl)
+                            if vid: self.seen_item_ids.add(f"Zazzle_{vid}")
+                            total_added += 1
+
+                # CafePress POD Expansion
+                cafepress_targets = [
+                    it for it in pod_targets
+                    if "cafepress" in it.get("marketplace", "").lower() or "cafepress.com" in it.get("url", "").lower()
+                ]
+                for p_item in cafepress_targets:
+                    if self.stop_event.is_set(): break
+                    new_cp_variants = self.cafepress_scraper.expand_design_variants(
+                        p_item,
+                        log_callback=lambda msg: self.after(0, lambda: self._log(msg))
+                    )
+                    for v in new_cp_variants:
+                        vid = str(v.get("item_id", "")).strip()
+                        if vid and vid not in existing_ids:
+                            existing_ids.add(vid)
+                            self.results.append(v)
+                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
+                            if vurl: self.seen_item_ids.add(vurl)
+                            if vid: self.seen_item_ids.add(f"CafePress_{vid}")
+                            total_added += 1
+
+                # Threadless POD Expansion
+                threadless_targets = [
+                    it for it in pod_targets
+                    if "threadless" in it.get("marketplace", "").lower() or "threadless.com" in it.get("url", "").lower()
+                ]
+                for p_item in threadless_targets:
+                    if self.stop_event.is_set(): break
+                    new_th_variants = self.threadless_scraper.expand_design_variants(
+                        p_item,
+                        log_callback=lambda msg: self.after(0, lambda: self._log(msg))
+                    )
+                    for v in new_th_variants:
+                        vid = str(v.get("item_id", "")).strip()
+                        if vid and vid not in existing_ids:
+                            existing_ids.add(vid)
+                            self.results.append(v)
+                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
+                            if vurl: self.seen_item_ids.add(vurl)
+                            if vid: self.seen_item_ids.add(f"Threadless_{vid}")
+                            total_added += 1
+
+                # TeeSpring POD Expansion
+                teespring_targets = [
+                    it for it in pod_targets
+                    if "teespring" in it.get("marketplace", "").lower() or "spring.com" in it.get("url", "").lower() or "creator-spring.com" in it.get("url", "").lower()
+                ]
+                for p_item in teespring_targets:
+                    if self.stop_event.is_set(): break
+                    new_ts_variants = self.teespring_scraper.expand_design_variants(
+                        p_item,
+                        log_callback=lambda msg: self.after(0, lambda: self._log(msg))
+                    )
+                    for v in new_ts_variants:
+                        vid = str(v.get("item_id", "")).strip()
+                        if vid and vid not in existing_ids:
+                            existing_ids.add(vid)
+                            self.results.append(v)
+                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
+                            if vurl: self.seen_item_ids.add(vurl)
+                            if vid: self.seen_item_ids.add(f"TeeSpring_{vid}")
+                            total_added += 1
+
+                # Fine Art America POD Expansion
+                faa_targets = [
+                    it for it in pod_targets
+                    if "fineartamerica" in it.get("marketplace", "").lower() or "fineartamerica.com" in it.get("url", "").lower() or "pixels.com" in it.get("url", "").lower()
+                ]
+                for p_item in faa_targets:
+                    if self.stop_event.is_set(): break
+                    new_faa_variants = self.fineartamerica_scraper.expand_design_variants(
+                        p_item,
+                        log_callback=lambda msg: self.after(0, lambda: self._log(msg))
+                    )
+                    for v in new_faa_variants:
+                        vid = str(v.get("item_id", "")).strip()
+                        if vid and vid not in existing_ids:
+                            existing_ids.add(vid)
+                            self.results.append(v)
+                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
+                            if vurl: self.seen_item_ids.add(vurl)
+                            if vid: self.seen_item_ids.add(f"FineArtAmerica_{vid}")
+                            total_added += 1
 
             finally:
                 self.after(0, lambda: self.stop_btn.config(state="disabled"))

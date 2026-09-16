@@ -464,6 +464,22 @@ def detect_platform(url: str) -> str:
         return "Vinted"
     if "tiktok.com" in low or "shop.tiktok" in low:
         return "TikTok Shop"
+    if "teepublic.com" in low or "tee.pub" in low:
+        return "TeePublic"
+    if "etsy.com" in low:
+        return "Etsy"
+    if "spreadshirt." in low or "spreadshop." in low:
+        return "Spreadshirt"
+    if "zazzle." in low:
+        return "Zazzle"
+    if "cafepress." in low:
+        return "CafePress"
+    if "threadless." in low:
+        return "Threadless"
+    if "teespring." in low or "spring.com" in low or "creator-spring.com" in low:
+        return "TeeSpring"
+    if "fineartamerica." in low or "pixels.com" in low:
+        return "Fine Art America"
     return "Web Listing"
 
 
@@ -1199,6 +1215,366 @@ def _fetch_tiktok_item(url: str, headless: bool = True) -> dict:
         }
 
 
+def _fetch_teepublic_item(url: str, headless: bool = True) -> dict:
+    """Fetch TeePublic item detail by URL."""
+    clean_url = url.split("?")[0]
+    m = re.search(r'/(\d+)-([a-zA-Z0-9\-]+)', clean_url)
+    if m:
+        item_id = m.group(1)
+        slug = m.group(2)
+        parts = slug.split("-")
+        prod_slug = parts[-1].title() if parts else "Merchandise"
+        title_slug = " ".join(parts[:-1]).title() if len(parts) > 1 else slug.title()
+        title = f"{title_slug} - {prod_slug}" if title_slug else f"TeePublic {prod_slug} #{item_id}"
+    else:
+        item_id = re.sub(r'\D+', '', clean_url)[-8:] or "100000"
+        title = f"TeePublic Listing #{item_id}"
+
+    seller = "TeePublic Artist"
+    price = "$22.00"
+    image_url = ""
+
+    try:
+        from teepublic_scraper import TeePublicScraper
+        scraper = TeePublicScraper(headless=headless)
+        res = scraper.fetch_single_item(clean_url)
+        if res:
+            res["location"] = "Print-on-Demand (Global Fulfillment)"
+            res["marketplace"] = "teepublic.com"
+            return res
+    except Exception as e:
+        logger.debug(f"TeePublic scraper fetch notice: {e}")
+
+    if HAS_PLAYWRIGHT:
+        try:
+            profile_dir = os.path.abspath("data/teepublic_session")
+            with sync_playwright() as p:
+                context = p.chromium.launch_persistent_context(
+                    user_data_dir=profile_dir,
+                    channel="msedge",
+                    headless=headless,
+                    args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--window-position=-2400,-2400"]
+                )
+                page = context.pages[0] if context.pages else context.new_page()
+                page.goto(clean_url, wait_until="domcontentloaded", timeout=20000)
+                page.wait_for_timeout(1000)
+
+                html = page.content()
+                soup = BeautifulSoup(html, "html.parser")
+
+                t_el = soup.select_one("h1.m-product-details__title, h1[itemprop='name'], h1")
+                if t_el:
+                    title = t_el.get_text(strip=True)
+
+                a_el = soup.select_one("a.m-product-details__designer, a[href*='/user/'], .designer-name")
+                if a_el:
+                    seller = re.sub(r"^by\s+", "", a_el.get_text(strip=True), flags=re.I).strip()
+
+                p_el = soup.select_one(".m-product-details__price, .price, .jsCurrentPrice")
+                if p_el:
+                    p_match = re.search(r"\$\d+(\.\d{2})?", p_el.get_text(strip=True))
+                    if p_match:
+                        price = p_match.group(0)
+
+                img_el = soup.select_one("img.jsProductMainImage, img.mockup, img.front, .m-product-viewer__image, meta[property='og:image']")
+                if img_el:
+                    if img_el.name == "meta":
+                        image_url = img_el.get("content", "")
+                    else:
+                        image_url = img_el.get("src") or img_el.get("data-src") or ""
+
+                context.close()
+        except Exception as e:
+            logger.debug(f"TeePublic item fetch notice: {e}")
+
+    return {
+        "title": title,
+        "item_id": item_id,
+        "url": clean_url,
+        "price": price,
+        "seller": seller,
+        "location": "Print-on-Demand (Global Fulfillment)",
+        "image_url": image_url,
+        "thumbnail": image_url,
+        "marketplace": "teepublic.com",
+    }
+
+
+def _fetch_etsy_item(url: str, headless: bool = True) -> dict:
+    """Fetch Etsy item detail by URL."""
+    clean_url = url.split("?")[0]
+    m_id = re.search(r'/listing/(\d+)', clean_url)
+    item_id = m_id.group(1) if m_id else re.sub(r'\D+', '', clean_url)[-10:]
+
+    title = f"Etsy Listing #{item_id}"
+    seller = "Etsy Merchant"
+    price = "$15.00"
+    image_url = ""
+
+    try:
+        from etsy_scraper import EtsyScraper
+        scraper = EtsyScraper(headless=headless)
+        res = scraper.fetch_single_item(clean_url)
+        if res:
+            res["location"] = "United States / Global Maker"
+            res["marketplace"] = "etsy.com"
+            return res
+    except Exception as e:
+        logger.debug(f"Etsy scraper fetch notice: {e}")
+
+    if HAS_PLAYWRIGHT:
+        try:
+            profile_dir = os.path.abspath("data/etsy_session")
+            with sync_playwright() as p:
+                context = p.chromium.launch_persistent_context(
+                    user_data_dir=profile_dir,
+                    channel="msedge",
+                    headless=headless,
+                    args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--window-position=-2400,-2400"]
+                )
+                page = context.pages[0] if context.pages else context.new_page()
+                page.goto(clean_url, wait_until="domcontentloaded", timeout=20000)
+                page.wait_for_timeout(1000)
+
+                html = page.content()
+                soup = BeautifulSoup(html, "html.parser")
+
+                t_el = soup.select_one("h1[data-buy-box-listing-title='true'], h1.wt-text-body-01, h1")
+                if t_el:
+                    title = t_el.get_text(strip=True)
+                    if "·" in title:
+                        title = title.split("·")[0].strip()
+                    title = re.sub(r"from\s+shop[\s:-]+.*$", "", title, flags=re.IGNORECASE).strip()
+                    title = re.sub(r"\bAd\s*[-–—:]?\s*(by\s+Etsy\s+seller|from\s+Etsy\s+seller|by|from)?\b.*$", "", title, flags=re.IGNORECASE).strip()
+
+                s_el = soup.select_one("a[href*='/shop/'], .wt-text-link-no-underline")
+                if s_el:
+                    raw_s = s_el.get_text(strip=True)
+                    raw_s = re.sub(r"from\s+shop[\s:-]+.*$", "", raw_s, flags=re.IGNORECASE)
+                    raw_s = re.sub(r"\bAd\s*[-–—:]?\s*(by\s+Etsy\s+seller|from\s+Etsy\s+seller|by|from)?\b", "", raw_s, flags=re.IGNORECASE)
+                    raw_s = re.sub(r"\bEtsy\s+seller\b", "", raw_s, flags=re.IGNORECASE)
+                    raw_s = re.sub(r"^by\s*[\(:\[]?", "", raw_s, flags=re.IGNORECASE)
+                    raw_s = re.sub(r"^[·\s\-_:,\(\)\[\]]+|[·\s\-_:,\(\)\[\]]+$", "", raw_s).strip()
+                    if raw_s:
+                        seller = raw_s
+
+                p_el = soup.select_one(".wt-text-title-larger, .wt-text-title-01, [data-buy-box-region='price']")
+                if p_el:
+                    p_match = re.search(r"\$\d+(\.\d{2})?", p_el.get_text(strip=True))
+                    if p_match:
+                        price = p_match.group(0)
+
+                img_el = soup.select_one("img[data-src-zoom-image], img[data-preload-lp-src], img.wt-max-width-full, meta[property='og:image']")
+                if img_el:
+                    if img_el.name == "meta":
+                        image_url = img_el.get("content", "")
+                    else:
+                        image_url = img_el.get("data-src-zoom-image") or img_el.get("data-preload-lp-src") or img_el.get("src") or ""
+
+                context.close()
+        except Exception as e:
+            logger.debug(f"Etsy item fetch notice: {e}")
+
+    return {
+        "title": title,
+        "item_id": item_id,
+        "url": clean_url,
+        "price": price,
+        "seller": seller,
+        "location": "United States / Global Maker",
+        "image_url": image_url,
+        "thumbnail": image_url,
+        "marketplace": "etsy.com",
+    }
+
+
+def _fetch_spreadshirt_item(url: str, headless: bool = True) -> dict:
+    """Fetch and parse single Spreadshirt / Spreadshop PDP listing."""
+    try:
+        from spreadshirt_scraper import SpreadshirtScraper
+        scraper = SpreadshirtScraper(headless=headless)
+        res = scraper.fetch_single_item(url)
+        if res:
+            res["location"] = "Print-on-Demand (Global Fulfillment)"
+            res["marketplace"] = "spreadshirt.com"
+            return res
+    except Exception as e:
+        logger.debug(f"Spreadshirt fetch exception: {e}")
+
+    clean_url = url.split("?")[0] if "?" in url else url
+    m = re.search(r"-D([a-fA-F0-9]+)", clean_url)
+    item_id = f"D{m.group(1)}" if m else str(abs(hash(clean_url)) % 1000000000)
+
+    title = "Spreadshirt Custom Merchandise"
+    seller = "Spreadshirt Creator"
+    price = "$24.99"
+    image_url = ""
+
+    return {
+        "title": title,
+        "item_id": item_id,
+        "url": url,
+        "price": price,
+        "seller": seller,
+        "location": "Print-on-Demand (Global Fulfillment)",
+        "image_url": image_url,
+        "thumbnail": image_url,
+        "marketplace": "spreadshirt.com",
+    }
+
+
+def _fetch_zazzle_item(url: str, headless: bool = True) -> dict:
+    """Fetch Zazzle item detail by URL."""
+    try:
+        from zazzle_scraper import ZazzleScraper
+        scraper = ZazzleScraper(headless=headless)
+        res = scraper.fetch_single_item(url)
+        if res:
+            res["location"] = "Print-on-Demand (Global Fulfillment)"
+            res["marketplace"] = "zazzle.com"
+            return res
+    except Exception as e:
+        logger.debug(f"Zazzle fetch exception: {e}")
+
+    slug_part = url.split("?")[0].split("/")[-1]
+    title = slug_part.replace("-", " ").replace("_", " ").title()
+    item_id = ""
+    id_m = re.search(r"-(\d{10,20})", url)
+    if id_m: item_id = id_m.group(1)
+    return {
+        "title": title or "Zazzle Custom Product",
+        "item_id": item_id,
+        "url": url,
+        "price": "$19.95",
+        "seller": "Zazzle Creator",
+        "location": "Print-on-Demand (Global Fulfillment)",
+        "image_url": "",
+        "thumbnail": "",
+        "marketplace": "zazzle.com",
+    }
+
+
+def _fetch_cafepress_item(url: str, headless: bool = True) -> dict:
+    """Fetch CafePress item detail by URL."""
+    try:
+        from cafepress_scraper import CafePressScraper
+        scraper = CafePressScraper(headless=headless)
+        res = scraper.fetch_single_item(url)
+        if res:
+            res["location"] = "Print-on-Demand (Global Fulfillment)"
+            res["marketplace"] = "cafepress.com"
+            return res
+    except Exception as e:
+        logger.debug(f"CafePress fetch exception: {e}")
+
+    slug_part = url.split("?")[0].split("/")[-1]
+    title = slug_part.replace("-", " ").replace("+", " ").title()
+    item_id = ""
+    id_m = re.search(r",(\d{6,15})", url) or re.search(r"[-_](\d{6,15})", url)
+    if id_m: item_id = id_m.group(1)
+    return {
+        "title": title or "CafePress Custom Product",
+        "item_id": item_id,
+        "url": url,
+        "price": "$19.99",
+        "seller": "CafePress Designer",
+        "location": "Print-on-Demand (Global Fulfillment)",
+        "image_url": "",
+        "thumbnail": "",
+        "marketplace": "cafepress.com",
+    }
+
+
+def _fetch_threadless_item(url: str, headless: bool = True) -> dict:
+    """Fetch Threadless item detail by URL."""
+    try:
+        from threadless_scraper import ThreadlessScraper
+        scraper = ThreadlessScraper(headless=headless)
+        res = scraper.fetch_single_item(url)
+        if res:
+            res["location"] = "Print-on-Demand (Global Fulfillment)"
+            res["marketplace"] = "threadless.com"
+            return res
+    except Exception as e:
+        logger.debug(f"Threadless fetch exception: {e}")
+
+    slug_part = url.split("?")[0].split("/")[-1]
+    title = slug_part.replace("-", " ").title()
+    item_id = ""
+    id_m = re.search(r"/product/(\d+)", url) or re.search(r"/designs/([^/]+)", url)
+    if id_m: item_id = id_m.group(1)
+    return {
+        "title": title or "Threadless Artist Product",
+        "item_id": item_id,
+        "url": url,
+        "price": "$24.95",
+        "seller": "Threadless Artist",
+        "location": "Print-on-Demand (Global Fulfillment)",
+        "image_url": "",
+        "thumbnail": "",
+        "marketplace": "threadless.com",
+    }
+
+
+def _fetch_teespring_item(url: str, headless: bool = True) -> dict:
+    """Fetch TeeSpring item detail by URL."""
+    try:
+        from teespring_scraper import TeeSpringScraper
+        scraper = TeeSpringScraper(headless=headless)
+        res = scraper.fetch_single_item(url)
+        if res:
+            res["location"] = "Print-on-Demand (Global Fulfillment)"
+            res["marketplace"] = "teespring.com"
+            return res
+    except Exception as e:
+        logger.debug(f"TeeSpring fetch exception: {e}")
+
+    slug_part = url.split("?")[0].split("/")[-1]
+    title = slug_part.replace("-", " ").title()
+    item_id = ""
+    id_m = re.search(r"/listing/([^/?#]+)", url)
+    if id_m: item_id = id_m.group(1)
+    return {
+        "title": title or "Spring Creator Product",
+        "item_id": item_id,
+        "url": url,
+        "price": "$22.99",
+        "seller": "Spring Creator",
+        "location": "Print-on-Demand (Global Fulfillment)",
+        "image_url": "",
+        "thumbnail": "",
+        "marketplace": "teespring.com",
+    }
+
+
+def _fetch_fineartamerica_item(url: str, headless: bool = True) -> dict:
+    """Fetch Fine Art America / Pixels item detail by URL."""
+    try:
+        from fineartamerica_scraper import FineArtAmericaScraper
+        scraper = FineArtAmericaScraper(headless=headless)
+        res = scraper.fetch_single_item(url)
+        if res:
+            res["location"] = "Print-on-Demand (Global Fulfillment)"
+            res["marketplace"] = "fineartamerica.com"
+            return res
+    except Exception as e:
+        logger.debug(f"Fine Art America fetch exception: {e}")
+
+    slug_part = url.split("?")[0].split("/")[-1].replace(".html", "")
+    title = slug_part.replace("-", " ").title()
+    return {
+        "title": title or "Fine Art America Artwork",
+        "item_id": slug_part,
+        "url": url,
+        "price": "$35.00",
+        "seller": "Fine Art America Artist",
+        "location": "Print-on-Demand (Global Fulfillment)",
+        "image_url": "",
+        "thumbnail": "",
+        "marketplace": "fineartamerica.com",
+    }
+
+
 def fetch_single_listing(url: str, default_brand: str = "", headless: bool = True) -> dict:
     """
     Directly scrapes and normalizes a single e-commerce listing URL.
@@ -1224,6 +1600,22 @@ def fetch_single_listing(url: str, default_brand: str = "", headless: bool = Tru
         data = _fetch_vinted_item(url, headless=headless)
     elif platform == "TikTok Shop":
         data = _fetch_tiktok_item(url, headless=headless)
+    elif platform == "TeePublic":
+        data = _fetch_teepublic_item(url, headless=headless)
+    elif platform == "Etsy":
+        data = _fetch_etsy_item(url, headless=headless)
+    elif platform == "Spreadshirt":
+        data = _fetch_spreadshirt_item(url, headless=headless)
+    elif platform == "Zazzle":
+        data = _fetch_zazzle_item(url, headless=headless)
+    elif platform == "CafePress":
+        data = _fetch_cafepress_item(url, headless=headless)
+    elif platform == "Threadless":
+        data = _fetch_threadless_item(url, headless=headless)
+    elif platform == "TeeSpring":
+        data = _fetch_teespring_item(url, headless=headless)
+    elif platform == "Fine Art America":
+        data = _fetch_fineartamerica_item(url, headless=headless)
     else:
         # Generic web fallback
         data = {
@@ -1234,6 +1626,7 @@ def fetch_single_listing(url: str, default_brand: str = "", headless: bool = Tru
             "seller": "E-Commerce Merchant",
             "location": "International",
             "image_url": "",
+            "thumbnail": "",
             "marketplace": "web",
         }
 

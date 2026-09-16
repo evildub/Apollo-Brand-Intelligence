@@ -1642,6 +1642,101 @@ class TestApolloCoreFeatures(unittest.TestCase):
         self.assertIn("Vinted", gated_platforms)
         self.assertIn("Mercado Libre", gated_platforms)
 
+    def test_55_scribd_document_classifier_and_gmw_shield(self):
+        """Test Item 55: Verify 3-layer GMW disambiguation shield, threat scoring, and document categorization."""
+        from scribd_scraper import classify_scribd_document
+
+        # 1. Verified GMW Engineering Standard with Spec Number
+        res1 = classify_scribd_document("GMW14872 Cyclic Corrosion Laboratory Test Procedure", query="GMW14872")
+        self.assertEqual(res1["category"], "OEM Engineering Standard")
+        self.assertIn("GMW Standard", res1["threat_badge"])
+        self.assertEqual(res1["threat_score"], 95)
+        self.assertFalse(res1["is_suppressed"])
+        self.assertEqual(res1["confidence"], "HIGH")
+        self.assertIn("GMW14872", res1["matched_spec"])
+
+        # 2. Verified GMW standard with space (e.g. GMW 3044)
+        res2 = classify_scribd_document("General Motors GMW 3044 Zinc Plating Specification")
+        self.assertEqual(res2["category"], "OEM Engineering Standard")
+        self.assertEqual(res2["threat_score"], 95)
+        self.assertFalse(res2["is_suppressed"])
+
+        # 3. Non-OEM False Positive: Gamer Media Workspace
+        res3 = classify_scribd_document("Gamer Media Workspace Season 2 Podcast Recording")
+        self.assertEqual(res3["category"], "Suppressed False Positive")
+        self.assertTrue(res3["is_suppressed"])
+        self.assertEqual(res3["threat_score"], 0)
+        self.assertIn("Suppressed", res3["threat_badge"])
+
+        # 4. Non-OEM False Positive: Gaming collision with GMW
+        res4 = classify_scribd_document("GMW Gaming Clan Minecraft Server Rules")
+        self.assertEqual(res4["category"], "Suppressed False Positive")
+        self.assertTrue(res4["is_suppressed"])
+        self.assertEqual(res4["threat_score"], 0)
+
+        # 5. Benign Corporate / Financial Filing
+        res5 = classify_scribd_document("General Motors Company Form 10-Q Quarterly Report Q3 2024")
+        self.assertEqual(res5["category"], "Corporate Public Report")
+        self.assertTrue(res5["is_suppressed"])
+        self.assertEqual(res5["threat_score"], 0)
+
+        # 6. Factory Service / Workshop Manual
+        res6 = classify_scribd_document("2023 Chevrolet Corvette C8 Factory Workshop Service Manual")
+        self.assertEqual(res6["category"], "Vehicle Service Manual")
+        self.assertEqual(res6["threat_score"], 85)
+        self.assertFalse(res6["is_suppressed"])
+        self.assertIn("Service Manual", res6["threat_badge"])
+
+        # 7. Electrical Wiring Diagram & Pinouts
+        res7 = classify_scribd_document("2022 GMC Sierra 1500 ECM Pinout and Electrical Wiring Diagram")
+        self.assertEqual(res7["category"], "Electrical / Wiring Diagram")
+        self.assertEqual(res7["threat_score"], 85)
+        self.assertFalse(res7["is_suppressed"])
+
+        # 8. Technical Service Bulletin (TSB)
+        res8 = classify_scribd_document("Technical Service Bulletin TSB 21-NA-149 Steering Column Vibration")
+        self.assertEqual(res8["category"], "Dealer Technical Bulletin")
+        self.assertEqual(res8["threat_score"], 80)
+        self.assertFalse(res8["is_suppressed"])
+
+        # 9. Ambiguous Standalone GMW without numeric spec
+        res9 = classify_scribd_document("GMW Regional Meeting Minutes and Agenda")
+        self.assertEqual(res9["category"], "Ambiguous Document")
+        self.assertEqual(res9["threat_score"], 25)
+        self.assertFalse(res9["is_suppressed"])
+        self.assertIn("Ambiguous", res9["threat_badge"])
+
+        # 10. Other OEM Standards: Ford WSS
+        res10 = classify_scribd_document("Ford WSS-M2C913-C Engine Lubricant Specification")
+        self.assertEqual(res10["category"], "OEM Engineering Standard")
+        self.assertIn("WSS", res10["threat_badge"])
+        self.assertEqual(res10["threat_score"], 95)
+
+    def test_56_document_intel_presets_and_datastore(self):
+        """Test Item 56: Verify Document Intel presets in data_store and Scribd platform detection in batch_importer."""
+        import batch_importer
+
+        # Verify DataStore preset accessors
+        presets = self.data_store.get_document_intel_presets()
+        self.assertIn("vehicle_manuals", presets)
+        self.assertIn("oem_standards", presets)
+        self.assertIn("benign_exclusions", presets)
+
+        manuals = presets["vehicle_manuals"]
+        self.assertTrue(any("service manual" in m.lower() for m in manuals))
+        self.assertTrue(any("workshop manual" in m.lower() for m in manuals))
+
+        standards = presets["oem_standards"]
+        self.assertTrue(any("gmw" in s.lower() for s in standards))
+
+        exclusions = presets["benign_exclusions"]
+        self.assertTrue(any("10-k" in e.lower() for e in exclusions))
+        self.assertTrue(any("gamer" in e.lower() for e in exclusions))
+
+        # Verify batch_importer platform detection
+        self.assertEqual(batch_importer.detect_platform("https://www.scribd.com/document/12345678/Sample-Spec"), "Scribd")
+        self.assertEqual(batch_importer.detect_platform("https://www.scribd.com/doc/98765432/Wiring-Diagram"), "Scribd")
+
 
 if __name__ == "__main__":
     unittest.main()

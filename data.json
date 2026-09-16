@@ -18,6 +18,40 @@
       "url": 61
     }
   },
+  "document_intel": {
+    "vehicle_manuals": [
+      "service manual",
+      "workshop manual",
+      "wiring diagram",
+      "electrical schematic",
+      "repair guide",
+      "factory manual",
+      "ECU pinout",
+      "shop manual"
+    ],
+    "oem_standards": [
+      "GMW",
+      "GMW*",
+      "material specification",
+      "engineering standard",
+      "test procedure",
+      "WSS-M",
+      "MS-"
+    ],
+    "benign_exclusions": [
+      "10-K",
+      "annual report",
+      "investor presentation",
+      "quarterly earnings",
+      "proxy statement",
+      "sustainability report",
+      "gamer",
+      "gaming",
+      "workspace",
+      "podcast",
+      "music"
+    ]
+  },
   "brands": {
     "Toyota": {
       "subs": {

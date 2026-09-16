@@ -1081,7 +1081,28 @@ class EbayTool(tk.Tk):
             width=14,
             font=FONT_SM
         )
-        self.fineartamerica_depth_combo.bind("<<ComboboxSelected>>", lambda e: self._log(f"🖼 Fine Art America scan depth set to: {self.fineartamerica_depth_var.get()}"))
+        # Scribd Scan Depth & Document Mode Controls
+        self.scribd_depth_var = tk.StringVar(value="2 Pages (120)")
+        self.scribd_depth_combo = ttk.Combobox(
+            top_right,
+            textvariable=self.scribd_depth_var,
+            values=["1 Page (60)", "2 Pages (120)", "3 Pages (180)", "5 Pages (300)"],
+            state="readonly",
+            width=14,
+            font=FONT_SM
+        )
+        self.scribd_depth_combo.bind("<<ComboboxSelected>>", lambda e: self._log(f"📚 Scribd scan depth set to: {self.scribd_depth_var.get()}"))
+
+        self.scribd_doc_mode_var = tk.StringVar(value="🌐 All Documents")
+        self.scribd_doc_mode_combo = ttk.Combobox(
+            top_right,
+            textvariable=self.scribd_doc_mode_var,
+            values=["🌐 All Documents", "🔧 Vehicle Service Manuals", "🚨 OEM Engineering Standards (GMW)", "📑 Technical Service Bulletins (TSB)"],
+            state="readonly",
+            width=26,
+            font=FONT_SM
+        )
+        self.scribd_doc_mode_combo.bind("<<ComboboxSelected>>", self._on_scribd_doc_mode_changed)
 
         # Main Toolbar Operational Action Buttons
         self.btn_multi_sector = self._btn(top_right, "🌐 Multi-Sector", self._open_multi_sector_modal, accent=True)
@@ -2609,6 +2630,14 @@ class EbayTool(tk.Tk):
             else:
                 self.teespring_depth_combo.pack_forget()
 
+        if hasattr(self, "scribd_depth_combo") and hasattr(self, "scribd_doc_mode_combo"):
+            if "Scribd" in market:
+                self.scribd_depth_combo.pack(side="left", padx=(0, 4), after=self.market_combo)
+                self.scribd_doc_mode_combo.pack(side="left", padx=(0, 4), after=self.scribd_depth_combo)
+            else:
+                self.scribd_depth_combo.pack_forget()
+                self.scribd_doc_mode_combo.pack_forget()
+
         if hasattr(self, "fineartamerica_depth_combo"):
             if "Fine Art America" in market:
                 self.fineartamerica_depth_combo.pack(side="left", padx=(0, 4), after=self.market_combo)
@@ -2755,6 +2784,11 @@ class EbayTool(tk.Tk):
                 self.store_text.insert("1.0", self.store_placeholder)
                 self.store_text.config(fg=t["subtext"])
             self._log("🛒 Switched platform to: eBay.com (Global Search & Store Sweeps active)")
+
+    def _on_scribd_doc_mode_changed(self, event=None):
+        """Handle analyst selecting a Scribd document filtering mode."""
+        mode_val = self.scribd_doc_mode_var.get() if hasattr(self, "scribd_doc_mode_var") else "🌐 All Documents"
+        self._log(f"📚 Scribd document mode set to: {mode_val}")
 
     def _get_global_token(self):
         """Get the canonical global sweep token for current marketplace."""
@@ -4632,11 +4666,27 @@ class EbayTool(tk.Tk):
                         job_record["url"] = f"https://www.manomano.{dom_ext}/recherche/{actual_term.replace(' ', '+')}"
                     elif is_scribd:
                         self.scribd_scraper.headless = is_headless
+                        sc_pages = 2
+                        if hasattr(self, "scribd_depth_var"):
+                            m = re.search(r'(\d+)\s+Page', self.scribd_depth_var.get())
+                            if m: sc_pages = int(m.group(1))
+
+                        raw_mode = self.scribd_doc_mode_var.get() if hasattr(self, "scribd_doc_mode_var") else "🌐 All Documents"
+                        doc_mode_map = {
+                            "🌐 All Documents": "all",
+                            "🔧 Vehicle Service Manuals": "manuals",
+                            "🚨 OEM Engineering Standards (GMW)": "standards",
+                            "📑 Technical Service Bulletins (TSB)": "tsb"
+                        }
+                        sc_doc_mode = doc_mode_map.get(raw_mode, "all")
+
                         items = self.scribd_scraper.search(
                             store_raw,
                             actual_term,
                             job["excludes"],
                             condition=job.get("condition", "all"),
+                            max_pages=sc_pages,
+                            doc_mode=sc_doc_mode,
                             stop_event=self.stop_event,
                             pause_event=self.pause_event,
                             log_callback=self._log

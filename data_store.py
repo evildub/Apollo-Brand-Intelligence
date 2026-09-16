@@ -767,3 +767,29 @@ class DataStore:
         if found_key and found_key in wl:
             del wl[found_key]
             self._save()
+
+    def get_document_intel_presets(self) -> dict:
+        """Return editable document and technical standards presets."""
+        defaults = {
+            "vehicle_manuals": [
+                "service manual", "workshop manual", "wiring diagram",
+                "electrical schematic", "repair guide", "factory manual",
+                "ECU pinout", "shop manual"
+            ],
+            "oem_standards": [
+                "GMW", "GMW*", "material specification",
+                "engineering standard", "test procedure", "WSS-M", "MS-"
+            ],
+            "benign_exclusions": [
+                "10-K", "annual report", "investor presentation",
+                "quarterly earnings", "proxy statement", "sustainability report",
+                "gamer", "gaming", "workspace", "podcast", "music"
+            ]
+        }
+        return self._data.get("document_intel", defaults)
+
+    def set_document_intel_presets(self, presets: dict):
+        """Update and persist editable document intelligence presets."""
+        self._data["document_intel"] = presets
+        self._save()
+

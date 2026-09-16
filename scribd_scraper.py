@@ -22,6 +22,195 @@ from playwright.sync_api import sync_playwright
 logger = logging.getLogger("Apollo.ScribdScraper")
 
 
+OEM_SPEC_PATTERNS = [
+    # GMW and GM legacy standards: GMW14872, GMW 3044, GMW-3172, GM4350M, GME00201, GMP.E/P.001
+    (re.compile(r'\b(GMW|GM\d{4}M|GME\d{4,5}|GMP\.[A-Z0-9.]+)\s*[-_]?\s*(\d{3,6}[A-Z0-9-]*)?\b', re.IGNORECASE), "General Motors", "GMW"),
+    # Ford: WSS-M2C913-C, WSK-M2G379-A, WSB-M1P83-A
+    (re.compile(r'\b(WSS|WSK|WSB|WSD|WSE)\s*[-_]?\s*M\d+[A-Z0-9-]*\b', re.IGNORECASE), "Ford", "WSS"),
+    # Chrysler / Stellantis: MS-6395, MS-90032, PS-8555
+    (re.compile(r'\b(MS|PS)\s*[-_.]?\s*([A-Z]?\d{3,6}[A-Z0-9-]*)\b', re.IGNORECASE), "Chrysler / Stellantis", "MS"),
+    # Toyota: TSM5500G, TSK5705G
+    (re.compile(r'\bTS[MKFG]\s*[-_]?\s*\d{4,5}[A-Z]?\b', re.IGNORECASE), "Toyota", "TSM"),
+    # VW / Audi: TL 52146, PV 1200
+    (re.compile(r'\b(TL\s*\d{3,5}|PV\s*\d{3,5})\b', re.IGNORECASE), "Volkswagen Group", "TL"),
+    # Mercedes: DBL 5400, MBN 10435
+    (re.compile(r'\b(DBL\s*\d{3,5}|MBN\s*\d{3,5})\b', re.IGNORECASE), "Mercedes-Benz", "DBL"),
+]
+
+OEM_CORROBORATING_TERMS = {
+    "specification", "standard", "test method", "procedure", "material", "coating",
+    "corrosion", "fastener", "plating", "engineering", "durability", "oem", "requirement",
+    "requirements", "spec", "drawing", "norm", "norma", "vibration", "tensile", "hardness",
+    "weld", "welding", "torque", "flammability", "paint", "steel", "aluminum", "resin",
+    "gmw", "general motors", "worldwide", "engineering standard", "material spec"
+}
+
+NON_OEM_FALSE_POSITIVE_TERMS = {
+    "gamer", "gaming", "workspace", "podcast", "music", "radio", "charity", "ministry",
+    "west", "global money week", "gameplay", "youtube", "discord", "roblox", "minecraft",
+    "twitch", "streamer", "let's play", "esports", "novel", "fiction", "poetry", "church"
+}
+
+SERVICE_MANUAL_TERMS = {
+    "service manual", "workshop manual", "repair manual", "shop manual", "factory manual",
+    "owner manual", "owners manual", "engine overhaul", "transmission rebuild",
+    "chassis repair", "body repair", "maintenance manual", "technical service manual",
+    "factory service manual", "repair guide", "service guide"
+}
+
+WIRING_DIAGRAM_TERMS = {
+    "wiring diagram", "wiring schematic", "electrical schematic", "electrical diagram",
+    "ecu pinout", "pinout", "pin outs", "fuse box diagram", "connector pinout",
+    "circuit diagram", "ecm pinout", "bcm pinout", "pcm pinout", "engine harness",
+    "schematic diagram", "electrical wiring"
+}
+
+TSB_BULLETIN_TERMS = {
+    "technical service bulletin", "tsb", "service bulletin", "dealer bulletin",
+    "recall bulletin", "special policy bulletin", "campaign bulletin"
+}
+
+CORPORATE_BENIGN_TERMS = {
+    "10-k", "10-q", "annual report", "investor presentation", "quarterly earnings",
+    "proxy statement", "sustainability report", "financial statement", "esg report",
+    "shareholder", "press release", "board of directors", "investor day", "form 8-k"
+}
+
+
+def classify_scribd_document(title: str, query: str = "", uploader: str = "") -> Dict:
+    """
+    Intelligently classify a Scribd document into threat categories with 3-Layer GMW Acronym Disambiguation.
+    """
+    if not title:
+        return {
+            "category": "Unknown Document",
+            "threat_badge": "📄 Document",
+            "threat_score": 10,
+            "is_suppressed": False,
+            "confidence": "LOW",
+            "matched_spec": "",
+            "detected_brand": ""
+        }
+
+    t_low = title.lower()
+    q_low = query.lower() if query else ""
+    u_low = uploader.lower() if uploader else ""
+    combined = f"{t_low} {q_low} {u_low}"
+
+    # 1. Check for Benign Corporate / Financial Reports first
+    if any(b in t_low for b in CORPORATE_BENIGN_TERMS):
+        return {
+            "category": "Corporate Public Report",
+            "threat_badge": "📄 Corporate Report (Benign)",
+            "threat_score": 0,
+            "is_suppressed": True,
+            "confidence": "HIGH",
+            "matched_spec": "",
+            "detected_brand": ""
+        }
+
+    # 2. Check for Non-OEM False Positive Collision Terms (e.g. "Gamer Media Workspace")
+    is_non_oem = any(fp in t_low for fp in NON_OEM_FALSE_POSITIVE_TERMS)
+    if is_non_oem:
+        return {
+            "category": "Suppressed False Positive",
+            "threat_badge": "🛡️ Suppressed False Positive",
+            "threat_score": 0,
+            "is_suppressed": True,
+            "confidence": "HIGH",
+            "matched_spec": "",
+            "detected_brand": ""
+        }
+
+    # 3. Check for OEM Engineering Standards (GMW, WSS, MS, TSM, TL, DBL)
+    for pattern, brand_name, code_prefix in OEM_SPEC_PATTERNS:
+        match = pattern.search(title)
+        if match:
+            spec_str = match.group(0).strip()
+            has_numeric_spec = bool(re.search(r'\d{3,6}', spec_str))
+            has_corroborating = any(c in combined for c in OEM_CORROBORATING_TERMS)
+
+            if has_numeric_spec and (has_corroborating or len(spec_str) >= 6):
+                badge_label = f"🚨 Verified {code_prefix} Standard" if code_prefix == "GMW" else f"🚨 Verified OEM Standard ({code_prefix})"
+                return {
+                    "category": "OEM Engineering Standard",
+                    "threat_badge": badge_label,
+                    "threat_score": 95,
+                    "is_suppressed": False,
+                    "confidence": "HIGH",
+                    "matched_spec": spec_str,
+                    "detected_brand": brand_name
+                }
+            elif has_numeric_spec:
+                return {
+                    "category": "OEM Engineering Standard",
+                    "threat_badge": f"🔍 Unconfirmed Spec ({code_prefix})",
+                    "threat_score": 70,
+                    "is_suppressed": False,
+                    "confidence": "MEDIUM",
+                    "matched_spec": spec_str,
+                    "detected_brand": brand_name
+                }
+            elif "gmw" in spec_str.lower() and not has_numeric_spec:
+                # Standalone GMW acronym without standard number
+                return {
+                    "category": "Ambiguous Document",
+                    "threat_badge": "⚠️ Ambiguous (Review Required)",
+                    "threat_score": 25,
+                    "is_suppressed": False,
+                    "confidence": "LOW",
+                    "matched_spec": spec_str,
+                    "detected_brand": ""
+                }
+
+    # 4. Check for Electrical Wiring / Schematic / Pinout
+    if any(w in t_low for w in WIRING_DIAGRAM_TERMS):
+        return {
+            "category": "Electrical / Wiring Diagram",
+            "threat_badge": "⚡ Electrical / Wiring Diagram",
+            "threat_score": 85,
+            "is_suppressed": False,
+            "confidence": "HIGH",
+            "matched_spec": "",
+            "detected_brand": ""
+        }
+
+    # 5. Check for Technical Service Bulletins (TSB)
+    if any(tb in t_low for tb in TSB_BULLETIN_TERMS):
+        return {
+            "category": "Dealer Technical Bulletin",
+            "threat_badge": "📑 Dealer Service Bulletin (TSB)",
+            "threat_score": 80,
+            "is_suppressed": False,
+            "confidence": "HIGH",
+            "matched_spec": "",
+            "detected_brand": ""
+        }
+
+    # 6. Check for Factory / Workshop Service Manuals
+    if any(m in t_low for m in SERVICE_MANUAL_TERMS):
+        return {
+            "category": "Vehicle Service Manual",
+            "threat_badge": "🔧 Vehicle Service Manual",
+            "threat_score": 85,
+            "is_suppressed": False,
+            "confidence": "HIGH",
+            "matched_spec": "",
+            "detected_brand": ""
+        }
+
+    # 7. Generic / Automotive Document Fallback
+    return {
+        "category": "Automotive / Technical Document",
+        "threat_badge": "📄 Technical Document",
+        "threat_score": 50,
+        "is_suppressed": False,
+        "confidence": "MEDIUM",
+        "matched_spec": "",
+        "detected_brand": ""
+    }
+
+
 class ScribdScraper:
     def __init__(self, headless: bool = True):
         self.headless = headless
@@ -86,9 +275,10 @@ class ScribdScraper:
 
     def search(self, store: str, query: str, excludes: list, condition: str = "all",
                max_pages: Optional[int] = None, max_items: int = 200,
+               doc_mode: str = "all", suppress_false_positives: bool = True,
                stop_event=None, pause_event=None, log_callback=None) -> List[Dict]:
         """
-        Search Scribd for documents matching query keywords.
+        Search Scribd for documents matching query keywords with 3-Layer GMW Disambiguation and Smart Classification.
         """
         def _log(msg):
             if log_callback:
@@ -107,7 +297,7 @@ class ScribdScraper:
         encoded_q = urllib.parse.quote_plus(clean_q)
         limit_pages = max_pages if max_pages is not None else 2
 
-        _log(f"📚 [Scribd] Initiating document sweep for '{clean_q}' (Target: {limit_pages} page(s))...")
+        _log(f"📚 [Scribd] Initiating document sweep for '{clean_q}' (Target: {limit_pages} page(s), Mode: {doc_mode})...")
 
         try:
             context = self._get_context()
@@ -179,9 +369,22 @@ class ScribdScraper:
                         if any(ex.lower().strip() in t_low for ex in excludes if ex.strip()):
                             continue
 
+                    # Intelligent Document Classification & GMW Disambiguation
+                    doc_intel = classify_scribd_document(it.get("title", ""), query=query, uploader=it.get("seller", ""))
+                    
+                    if suppress_false_positives and doc_intel.get("is_suppressed"):
+                        _log(f"  🛡️ [Scribd Filter] Suppressed non-infringing/false positive: '{it.get('title', '')[:50]}' ({doc_intel.get('category')})")
+                        continue
+
+                    # Mode filtering if requested
+                    if doc_mode == "manuals" and doc_intel.get("category") not in ("Vehicle Service Manual", "Electrical / Wiring Diagram", "Dealer Technical Bulletin"):
+                        continue
+                    elif doc_mode == "standards" and doc_intel.get("category") != "OEM Engineering Standard":
+                        continue
+
                     results.append({
-                        "brand": "",
-                        "product_type": "Document / PDF",
+                        "brand": doc_intel.get("detected_brand", ""),
+                        "product_type": doc_intel.get("category", "Document / PDF"),
                         "title": it.get("title", ""),
                         "item_id": it.get("item_id", ""),
                         "price": "Free / Subscription",
@@ -192,11 +395,14 @@ class ScribdScraper:
                         "url": it.get("url", ""),
                         "marketplace": "Scribd",
                         "condition": "Digital Document",
+                        "threat_badge": doc_intel.get("threat_badge", "📄 Document"),
+                        "threat_score": doc_intel.get("threat_score", 50),
+                        "threat_intel": f"{doc_intel.get('category')} ({doc_intel.get('confidence')} Confidence)",
                         "keyword": query
                     })
                     page_new += 1
 
-                _log(f"📦 [Scribd] Harvested {page_new} documents from page {page_num} ({len(results)} total).")
+                _log(f"📦 [Scribd] Harvested {page_new} qualified documents from page {page_num} ({len(results)} total).")
                 if page_new == 0:
                     break
 

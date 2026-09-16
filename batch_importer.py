@@ -480,6 +480,8 @@ def detect_platform(url: str) -> str:
         return "TeeSpring"
     if "fineartamerica." in low or "pixels.com" in low:
         return "Fine Art America"
+    if "scribd.com" in low:
+        return "Scribd"
     return "Web Listing"
 
 

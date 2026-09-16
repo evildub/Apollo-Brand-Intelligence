@@ -50,20 +50,20 @@ graph TD
 
 ### Key Controls:
 - **API Credentials:** If optional eBay Developer API keys (`App ID`, `Cert ID`) are entered, they are stored locally in plaintext/user-space in `data.json` and transmitted strictly to `https://api.ebay.com/identity/v1/oauth2/token`.
-- **Local Disk Isolation:** All session caches and cookies are isolated in `%LOCALAPPDATA%\Valknut_*_Session` within the user's personal profile directory.
+- **Local Disk Isolation:** All session caches and cookies are isolated in `%LOCALAPPDATA%\Apollo_Brand_Intelligence` within the user's personal profile directory.
 - **Enterprise EDR Compatibility:** Operating in a fixed folder structure (`--onedir`) prevents heuristic behavioral flags triggered by one-file extraction into temporary folders.
 
 ---
 
 ## 4. Integrity Verification
 
-To verify the SHA-256 cryptographic checksum of `ValknutBrandIntelligence.exe` on your workstation:
+To verify the SHA-256 cryptographic checksum of `Apollo Brand Intelligence.exe` on your workstation:
 ```powershell
-Get-FileHash -Algorithm SHA256 .\ValknutBrandIntelligence.exe
+Get-FileHash -Algorithm SHA256 .\"Apollo Brand Intelligence.exe"
 ```
 
 ---
 
 ## 5. Security Attestation & Compliance Statement
 
-Valknut Brand Intelligence is engineered specifically for brand protection and intellectual property enforcement operations. It introduces no background services, no persistent system hooks, and adheres strictly to corporate data containment policies by maintaining all investigation records locally.
+Apollo Brand Intelligence v3.0 is engineered specifically for brand protection and intellectual property enforcement operations. It introduces no background services, no persistent system hooks, and adheres strictly to corporate data containment policies by maintaining all investigation records locally.

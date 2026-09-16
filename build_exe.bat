@@ -3,11 +3,9 @@ echo ===================================================
 echo   Building Apollo Brand Intelligence Standalone EXE
 echo ===================================================
 
-echo [1/5] Closing any running Apollo / Valknut instances...
+echo [1/5] Closing any running Apollo Brand Intelligence instances...
 taskkill /F /IM "Apollo Brand Intelligence.exe" 2>nul
 taskkill /F /IM ApolloBrandIntelligence.exe 2>nul
-taskkill /F /IM "Valknut Brand Intelligence.exe" 2>nul
-taskkill /F /IM ValknutBrandIntelligence.exe 2>nul
 timeout /t 1 /nobreak >nul
 
 echo [2/5] Running PyInstaller...

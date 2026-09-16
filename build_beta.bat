@@ -8,7 +8,7 @@ taskkill /F /IM "Apollo_Beta.exe" 2>nul
 timeout /t 1 /nobreak >nul
 
 echo [2/5] Running PyInstaller for Apollo_Beta...
-python -m PyInstaller --onedir --noconsole --noconfirm --name "Apollo_Beta" --distpath "dist\Apollo_Smart_Triage_Beta" --icon="%~dp0apollo.ico" --add-data "data.json;." --add-data "apollo.ico;." --add-data "apollo.png;." --add-data "valknut.ico;." --add-data "valknut.png;." --hidden-import "PIL" --hidden-import "PIL.ImageTk" --hidden-import "openpyxl" --hidden-import "bs4" --hidden-import "requests" --hidden-import "curl_cffi" --hidden-import "curl_cffi.requests" --hidden-import "playwright" --hidden-import "playwright.sync_api" --hidden-import "visual_catalog" --hidden-import "visual_catalog_modal" --hidden-import "visual_harvester" --hidden-import "vinted_scraper" --hidden-import "tiktok_scraper" --hidden-import "intel_pack_manager" main.py
+python -m PyInstaller --onedir --noconsole --noconfirm --name "Apollo_Beta" --distpath "dist\Apollo_Smart_Triage_Beta" --icon="%~dp0apollo.ico" --add-data "data.json;." --add-data "apollo.ico;." --add-data "apollo.png;." --hidden-import "PIL" --hidden-import "PIL.ImageTk" --hidden-import "openpyxl" --hidden-import "bs4" --hidden-import "requests" --hidden-import "curl_cffi" --hidden-import "curl_cffi.requests" --hidden-import "playwright" --hidden-import "playwright.sync_api" --hidden-import "visual_catalog" --hidden-import "visual_catalog_modal" --hidden-import "visual_harvester" --hidden-import "vinted_scraper" --hidden-import "tiktok_scraper" --hidden-import "intel_pack_manager" main.py
 
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] PyInstaller build failed with exit code %ERRORLEVEL%

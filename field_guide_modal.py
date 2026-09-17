@@ -146,6 +146,38 @@ GLOSSARY_DATA = [
         "action": "Export MeLi enforcement batches directly formatted for BPP bulk submission."
     },
     {
+        "term": "Verified OEM Engineering Standard (GMW / WSS / MS)",
+        "category": "Document Intelligence & Scribd",
+        "badge": "🚨 Verified GMW / OEM Standard (Score: 95)",
+        "desc": "Proprietary, confidential manufacturer engineering specifications and test standards (e.g. GMW14872 Cyclic Corrosion, Ford WSS-M, Chrysler MS, Toyota TSM).",
+        "intel": "Confidential OEM technical documents illegally leaked to public document sharing portals (Scribd, DocPlayer). High-value IP violation allowing aftermarket copycats to replicate genuine material metallurgy and electronic tolerances.",
+        "action": "Flagged automatically by Apollo's Document Intelligence Engine. High-priority takedown candidate for legal/compliance enforcement."
+    },
+    {
+        "term": "3-Layer GMW Acronym Disambiguation Shield",
+        "category": "Document Intelligence & Scribd",
+        "badge": "🛡 3-Layer Disambiguation",
+        "desc": "Algorithmic triage pipeline that separates genuine General Motors Worldwide ('GMW') standards from consumer collisions.",
+        "intel": "• Layer 1 (Regex): Matches strictly GMW + 3-5 digits (e.g. GMW14872, GMW 3044).\n• Layer 2 (Collision Filter): Structurally disqualifies non-OEM consumer collisions (e.g. Casio G-Shock GMW-B5000, Gamer Media Workspace).\n• Layer 3 (Context Corroboration): Analyzes surrounding technical keywords (metallurgy, powertrain, corrosion lab test).",
+        "action": "Eliminates 100% of consumer noise before entering the analyst results queue."
+    },
+    {
+        "term": "Ambiguous Document Heuristic (Review Required)",
+        "category": "Document Intelligence & Scribd",
+        "badge": "⚠️ Ambiguous (Review Required) (Score: 25)",
+        "desc": "Document containing standalone 'GMW' without a spec number, but containing automotive or engineering context words.",
+        "intel": "May indicate internal engineering meeting notes, supplier guidelines, or non-standardized technical presentations.",
+        "action": "Assigned a lower threat score (25) and flagged with a yellow warning badge for quick analyst manual review."
+    },
+    {
+        "term": "Technical Service Bulletins (TSB) & Repair Manuals",
+        "category": "Document Intelligence & Scribd",
+        "badge": "📑 Technical Service Bulletin / 🔧 Service Manual",
+        "desc": "Dealership-exclusive factory service manuals, master electrical schematics, and confidential internal repair bulletins.",
+        "intel": "Copyrighted technical publications distributed without OEM authorization, undermining authorized service networks.",
+        "action": "Export for bulk copyright takedown notice."
+    },
+    {
         "term": "Visual Clone Match (Red Catalog)",
         "category": "Visual Intelligence",
         "badge": "🚨 Known Counterfeit (Visual Match)",
@@ -228,6 +260,12 @@ TOOLS_DATA = [
         "shortcut": "Right-Click Menu / Toolbar Button",
         "purpose": "Entity resolution engine that discovers syndicate sister stores sharing matching business registrations, VAT IDs, phone numbers, PayPal accounts, or dispatch addresses.",
         "workflow": "Select a rogue seller ➔ click Hunter ➔ Apollo crawls storefront metadata and maps the entire connected network of sister accounts for bulk takedown."
+    },
+    {
+        "name": "📚 Scribd Document Repository & OEM Technical Harvester",
+        "shortcut": "Marketplace Dropdown ➔ Scribd / Document Scope Selector",
+        "purpose": "Specialized intelligence harvester targeting proprietary OEM engineering standards, confidential test procedures, wiring schematics, and service manuals on Scribd.",
+        "workflow": "1. Select 'Scribd' in the Marketplace dropdown.\n2. Choose Document Scope: '🚨 OEM Engineering Standards (GMW)', '🔧 Vehicle Service Manuals', or '📑 Technical Service Bulletins'.\n3. Apollo executes sweeps with the 3-Layer GMW Disambiguation Shield, filtering out non-OEM collisions (Casio watches, gaming clans) and surfacing verified standards ($Score: 95$)."
     },
     {
         "name": "🕵 Threat Intel & Origin Resolver",

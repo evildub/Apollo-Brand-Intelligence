@@ -146,6 +146,12 @@ class DataStore:
     def unlock_brundo(self):
         self.set_setting("unlocked_brundo", True)
 
+    def is_fir_unlocked(self) -> bool:
+        return bool(self.get_setting("unlocked_fir", False))
+
+    def unlock_fir(self):
+        self.set_setting("unlocked_fir", True)
+
     # ── brands ────────────────────────────────────────────────────────────────
     def get_brands(self):
         return self._data.get("brands", {})

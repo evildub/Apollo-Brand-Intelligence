@@ -308,6 +308,26 @@ THEMES = {
         "btn_accent_fg": "#06080F",
         "select_bg": "#00D2FF",
         "select_fg": "#06080F",
+    },
+    "falling_in_reverse": {
+        "name": "🔥 Falling In Reverse",
+        "hidden": True,
+        "bg": "#09090b",
+        "panel": "#141216",
+        "entry_bg": "#050507",
+        "accent": "#ff2a2a",
+        "accent2": "#ff6b1a",
+        "success": "#10b981",
+        "warning": "#ff8c00",
+        "danger": "#ff1a1a",
+        "text": "#fdf2f4",
+        "subtext": "#9ca3af",
+        "border": "#3b1d24",
+        "btn_normal_bg": "#1c1216",
+        "btn_normal_fg": "#ff3b30",
+        "btn_accent_fg": "#ffffff",
+        "select_bg": "#ff2a2a",
+        "select_fg": "#ffffff",
     }
 }
 
@@ -565,7 +585,21 @@ THEME_SUBHEADERS = {
     "catppuccin": "☕ MOCHA VELVET — ARTISAN BRAND ENFORCEMENT",
     "forest": "🌲 FOREST CANOPY — SUSTAINABLE IP COMPLIANCE",
     "nord": "❄ NORDIC ARCTIC — PRECISION ICE DEFENSE",
+    "falling_in_reverse": "🔥 FALLING IN REVERSE — POPULAR MONSTER SYMPHONY",
 }
+
+FIR_QUOTES = [
+    "🔥 Ronnie Radke: 'I'm a popular monster... I think I'm going crazy.'",
+    "🔥 Ronnie Radke: 'My life is like a video game, trying hard to beat the stage.'",
+    "🔥 Ronnie Radke: 'Voices in my head telling me I'm gonna end up dead.'",
+    "🔥 Ronnie Radke: 'I got the whole world watching me burn... and I'm loving every minute of it.'",
+    "🔥 Ronnie Radke: 'Zombified! Blinded by the media, you're so terrified!'",
+    "🔥 Ronnie Radke: 'They wanna cancel me, but I write the damn symphony!'",
+    "🔥 Ronnie Radke: 'The drug in me is you... Can't you see that you're suffocating me?'",
+    "🔥 Ronnie Radke: 'Fear is what keeps us alive, but revenge is what keeps us focused.'",
+    "🔥 Ronnie Radke: 'I'm coming back from the dead, like a phantom in your head!'",
+    "🔥 Ronnie Radke: 'All my life I've been running from the pain... now I'm standing in the rain.'"
+]
 
 CONTINENTAL_QUOTES = [
     "🪙 Winston: 'Rules... without them, we live with the animals.'",
@@ -1979,7 +2013,7 @@ class EbayTool(tk.Tk):
             self.theme_menu.delete(0, "end")
             current_key = self.current_theme_key
             for k, th in THEMES.items():
-                is_unlocked = (k == "continental" and self.data_store.is_wick_unlocked()) or (k == "brundo_recon" and self.data_store.is_brundo_unlocked())
+                is_unlocked = (k == "continental" and self.data_store.is_wick_unlocked()) or (k == "brundo_recon" and self.data_store.is_brundo_unlocked()) or (k == "falling_in_reverse" and self.data_store.is_fir_unlocked())
                 if not th.get("hidden", False) or k == current_key or is_unlocked:
                     self.theme_menu.add_radiobutton(
                         label=th["name"],
@@ -8157,6 +8191,63 @@ class EbayTool(tk.Tk):
                         relief="flat", padx=16, pady=5, activebackground="#E8C38F", cursor="hand2")
         btn.pack(anchor="center")
 
+    def _trigger_fir_easter_egg(self):
+        """Falling in Reverse / Ronnie Radke Easter Egg."""
+        try:
+            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+        except Exception:
+            pass
+
+        self.data_store.unlock_fir()
+        self._refresh_theme_menu()
+        secret_name = THEMES["falling_in_reverse"]["name"]
+        self.theme_var.set(secret_name)
+        self._on_theme_changed()
+
+        self._log("=" * 75)
+        self._log("🔥 ─────────────────────────────────────────────────────────────────────────")
+        self._log("🔥 [FALLING IN REVERSE — POPULAR MONSTER SYMPHONY ENGAGED]")
+        self._log("🔥 'I got the whole world watching me burn... and I'm loving every minute of it.'")
+        self._log("🔥 'They wanna cancel me, but I write the damn symphony!'")
+        self._log("🔥 [MAXIMUM HEAT BRAND TAKEDOWN ENGINE INITIALIZED]")
+        self._log("🔥 ─────────────────────────────────────────────────────────────────────────")
+        self._log("=" * 75)
+        self._status("🔥 FALLING IN REVERSE: Popular Monster Mode Active • Maximum Flame!")
+
+        # Custom Themed FIR Crimson Obsidian Flame Modal
+        win = tk.Toplevel(self)
+        win.title("🔥 Falling In Reverse — Popular Monster")
+        win.configure(bg="#09090B")
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+        self._apply_dark_titlebar(win)
+
+        # Center modal
+        self._center_window(win, 520, 360)
+
+        card = tk.Frame(win, bg="#141216", padx=20, pady=18, highlightbackground="#FF2A2A", highlightthickness=2)
+        card.pack(fill="both", expand=True, padx=10, pady=10)
+
+        tk.Label(card, text="🔥 FALLING IN REVERSE", font=("Segoe UI", 16, "bold"), bg="#141216", fg="#FF2A2A").pack(anchor="center")
+        tk.Label(card, text="POPULAR MONSTER • WATCH THE WORLD BURN", font=("Segoe UI", 8, "bold"), bg="#141216", fg="#FF6B1A").pack(anchor="center", pady=(2, 10))
+
+        div = tk.Frame(card, bg="#FF2A2A", height=1)
+        div.pack(fill="x", pady=(0, 12))
+
+        tk.Label(card, text="I Think I'm Going Crazy • Zero Mercy on Counterfeits", font=("Segoe UI", 11, "bold"), bg="#141216", fg="#FDF2F4").pack(anchor="center")
+        tk.Label(card, text="Flame Thrower Brand Protection  •  Pure Rock & Roll Precision", font=FONT_SM, bg="#141216", fg="#9CA3AF").pack(anchor="center", pady=(3, 10))
+
+        quote_box = tk.Frame(card, bg="#09090B", padx=12, pady=8, highlightbackground="#3B1D24", highlightthickness=1)
+        quote_box.pack(fill="x", pady=(0, 14))
+        tk.Label(quote_box, text='"They wanna cancel me, but I write the damn symphony!"', font=("Georgia", 10, "italic"), bg="#09090B", fg="#FF2A2A").pack(anchor="center")
+        tk.Label(quote_box, text="— Ronnie Radke", font=("Segoe UI", 8), bg="#09090B", fg="#9CA3AF").pack(anchor="center", pady=(2, 0))
+
+        btn = tk.Button(card, text="🔥 Unleash The Symphony", command=win.destroy,
+                        bg="#FF2A2A", fg="#FFFFFF", font=("Segoe UI", 10, "bold"),
+                        relief="flat", padx=16, pady=5, activebackground="#FF6B1A", cursor="hand2")
+        btn.pack(anchor="center")
+
     def _trigger_heimvis_easter_egg(self):
         """All-Seeing Eye & Heimvis / Jarvis AI Co-Pilot Easter Egg."""
         try:
@@ -8253,6 +8344,8 @@ class EbayTool(tk.Tk):
         theme_quote_list = THEME_QUOTES.get(t_key)
         if theme_quote_list and isinstance(theme_quote_list, list):
             quote = theme_quote_list[self.quote_idx % len(theme_quote_list)]
+        elif t_key == "falling_in_reverse":
+            quote = FIR_QUOTES[self.quote_idx % len(FIR_QUOTES)]
         elif t_key == "continental":
             quote = CONTINENTAL_QUOTES[self.quote_idx % len(CONTINENTAL_QUOTES)]
         else:
@@ -9547,6 +9640,9 @@ class EbayTool(tk.Tk):
                     about_word_buf[0] = ""
                 elif any(w in about_word_buf[0] for w in ("brundo", "goodboy", "lab", "k9")):
                     self._trigger_brundo_easter_egg()
+                    about_word_buf[0] = ""
+                elif any(w in about_word_buf[0] for w in ("fir", "fallinginreverse", "ronnie", "radke")):
+                    self._trigger_fir_easter_egg()
                     about_word_buf[0] = ""
         win.bind("<Key>", _on_about_key)
 

@@ -2273,19 +2273,23 @@ class EbayTool(tk.Tk):
         self._load_app_icon(target)
         try:
             target.update_idletasks()
-            hwnd = ctypes.windll.user32.GetParent(target.winfo_id())
+            w_id = target.winfo_id()
+            hwnd = ctypes.windll.user32.GetAncestor(w_id, 2)  # GA_ROOT = 2
             if not hwnd:
-                hwnd = target.winfo_id()
+                hwnd = ctypes.windll.user32.GetParent(w_id)
+            if not hwnd:
+                hwnd = w_id
 
-            # 1. Immersive dark mode (Windows 10 1809+ / Windows 11)
-            for attr in (19, 20):
-                v = ctypes.c_int(2)
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v), ctypes.sizeof(v))
+            # 1. Immersive dark mode (Windows 10 1809+ / Windows 11) - must use BOOL TRUE (1)
+            v_dark = ctypes.c_int(1)
+            for attr in (20, 19):
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v_dark), ctypes.sizeof(v_dark))
 
-            # 2. Windows 11 custom title bar caption & text colors (Build 22000+)
-            t = self.theme
+            # 2. Windows 11 custom title bar caption, text & border colors (Build 22000+)
+            t = self.theme or {}
             bg_hex = t.get("panel", t.get("bg", "#0A0B0E"))
             fg_hex = t.get("text", "#FFFFFF")
+            border_hex = t.get("border", t.get("panel", "#1e1e1e"))
 
             if bg_hex and len(bg_hex) == 7:
                 r = int(bg_hex[1:3], 16)
@@ -2302,6 +2306,25 @@ class EbayTool(tk.Tk):
                 t_color = (b << 16) | (g << 8) | r
                 c_text = ctypes.c_int(t_color)
                 ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 36, ctypes.byref(c_text), ctypes.sizeof(c_text))
+
+            if border_hex and len(border_hex) == 7:
+                r = int(border_hex[1:3], 16)
+                g = int(border_hex[3:5], 16)
+                b = int(border_hex[5:7], 16)
+                br_color = (b << 16) | (g << 8) | r
+                c_border = ctypes.c_int(br_color)
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(c_border), ctypes.sizeof(c_border))
+
+            # 3. Re-assert dark titlebar on focus changes so Windows does not revert to white when inactive
+            if not getattr(target, "_dwm_focus_bound", False):
+                target._dwm_focus_bound = True
+                def _reassert_dark(e=None):
+                    try:
+                        self.after(20, lambda: self._apply_dark_titlebar(target))
+                    except Exception:
+                        pass
+                target.bind("<FocusOut>", _reassert_dark, add="+")
+                target.bind("<Deactivate>", _reassert_dark, add="+")
         except Exception:
             pass
 

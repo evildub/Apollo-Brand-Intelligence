@@ -191,13 +191,13 @@ class VisualCatalogModal(tk.Toplevel):
 
         init_sens = getattr(self.vcm, "match_threshold", 6)
         def _get_scope_desc(v):
-            return "Exact Clones" if v <= 4 else ("Balanced" if v <= 7 else ("Broad Catch" if v <= 10 else "Wide Net"))
+            return "Exact Clones" if v <= 4 else ("Balanced" if v <= 7 else ("Broad Catch" if v <= 10 else ("Wide Net" if v <= 14 else "Deep Dredge")))
 
         tk.Label(slider_box, text="Visual Match Scope:", font=FONT_BOLD, bg=panel_bg, fg=text_color).pack(side="left", padx=(0, 6))
         self.sens_lbl = tk.Label(slider_box, text=f"{init_sens} ({_get_scope_desc(init_sens)})", font=FONT_BOLD, bg=panel_bg, fg=accent_color)
         self.sens_lbl.pack(side="right", padx=(4, 0))
 
-        self.sens_slider = tk.Scale(slider_box, from_=2, to=14, orient="horizontal", length=140,
+        self.sens_slider = tk.Scale(slider_box, from_=2, to=20, orient="horizontal", length=140,
                                     showvalue=False, bg=panel_bg, fg=text_color, highlightthickness=0,
                                     activebackground=accent_color, command=self._on_slider_change)
         self.sens_slider.set(init_sens)
@@ -245,7 +245,7 @@ class VisualCatalogModal(tk.Toplevel):
 
     def _on_slider_change(self, val):
         v = int(val)
-        desc = "Exact Clones" if v <= 4 else ("Balanced" if v <= 7 else ("Broad Catch" if v <= 10 else "Wide Net"))
+        desc = "Exact Clones" if v <= 4 else ("Balanced" if v <= 7 else ("Broad Catch" if v <= 10 else ("Wide Net" if v <= 14 else "Deep Dredge")))
         self.sens_lbl.config(text=f"{v} ({desc})")
         self.vcm.match_threshold = v
         if hasattr(self.master, "data_store"):

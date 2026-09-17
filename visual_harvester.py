@@ -131,6 +131,7 @@ class VisualHarvester:
         _log(f"⚡ High-Speed Parallel Scan: Analyzing {len(candidates)} {mkt_name} candidates across 35 worker threads...")
 
         # 4. Parallel pHash Verification on candidates
+        all_evaluated_candidates = []
         verified_matches = []
         seen_ids = set()
         unique_candidates = []
@@ -144,58 +145,91 @@ class VisualHarvester:
             img_url = cand.get("image_url", "")
             if not img_url:
                 return None
-            try:
-                req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                with urllib.request.urlopen(req, timeout=5) as r:
-                    cand_pil = Image.open(io.BytesIO(r.read())).convert("RGBA")
-                cand_phash = compute_phash(cand_pil)
-                if not cand_phash:
-                    return None
+            if "ebayimg.com" in img_url:
+                img_url = re.sub(r's-l\d+\.(jpg|webp|png|jpeg)', r's-l500.\1', img_url)
+                cand["image_url"] = img_url
 
-                dist = hamming_distance(target_phash, cand_phash)
-                if dist <= max_distance:
-                    sim_pct = max(0, int((1.0 - (dist / 64.0)) * 100))
-                    if dist <= 6:
-                        match_label = f"🎯 Exact Match ({sim_pct}%)"
-                        badge_label = f"🚨 Exact Clone ({sim_pct}%)"
-                    elif dist <= 12:
-                        match_label = f"🖼 Visual Clone ({sim_pct}%)"
-                        badge_label = f"🚨 Visual Clone ({sim_pct}%)"
-                    else:
-                        match_label = f"🔍 Possible Match ({sim_pct}%)"
-                        badge_label = f"🔍 Visual Candidate ({sim_pct}%)"
+            cand_pil = None
+            for attempt in range(2):
+                try:
+                    req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+                    with urllib.request.urlopen(req, timeout=10) as r:
+                        cand_pil = Image.open(io.BytesIO(r.read())).convert("RGBA")
+                    if cand_pil:
+                        break
+                except Exception:
+                    pass
 
-                    cand["similarity"] = match_label
-                    cand["match_type"] = match_label
-                    cand["threat_badge"] = badge_label
-                    cand["threat_score"] = max(cand.get("threat_score", 0), 95 if dist <= 12 else 75)
-                    cand["visual_counterfeit"] = True if dist <= 12 else False
-                    cand["distance"] = dist
-                    cand["sim_pct"] = sim_pct
-                    cand["condition"] = f"📸 Visual Match (Dist {dist})"
-                    return (cand, dist, sim_pct)
-            except Exception:
-                pass
-            return None
+            if not cand_pil:
+                # If image download failed, return candidate with distance 99
+                cand["distance"] = 99
+                cand["sim_pct"] = 0
+                cand["similarity"] = "Photo Unavailable"
+                cand["threat_badge"] = "Unverified Candidate"
+                cand["is_verified_match"] = False
+                return (cand, 99, 0, False)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=35) as executor:
+            cand_phash = compute_phash(cand_pil)
+            if not cand_phash:
+                cand["distance"] = 99
+                cand["sim_pct"] = 0
+                cand["similarity"] = "Hash Computation Failed"
+                cand["threat_badge"] = "Unverified Candidate"
+                cand["is_verified_match"] = False
+                return (cand, 99, 0, False)
+
+            dist = hamming_distance(target_phash, cand_phash)
+            sim_pct = max(0, int((1.0 - (dist / 64.0)) * 100))
+            is_match = bool(dist <= max_distance)
+
+            if dist <= 6:
+                match_label = f"🎯 Exact Match ({sim_pct}%)"
+                badge_label = f"🚨 Exact Clone ({sim_pct}%)"
+            elif dist <= 12:
+                match_label = f"🖼 Visual Clone ({sim_pct}%)"
+                badge_label = f"🚨 Visual Clone ({sim_pct}%)"
+            elif dist <= 18:
+                match_label = f"🔍 High Similarity ({sim_pct}%)"
+                badge_label = f"🔍 Visual Candidate ({sim_pct}%)"
+            else:
+                match_label = f"📷 Candidate (Dist {dist})"
+                badge_label = f"Candidate ({sim_pct}%)"
+
+            cand["similarity"] = match_label
+            cand["match_type"] = match_label
+            cand["threat_badge"] = badge_label
+            cand["threat_score"] = max(cand.get("threat_score", 0), 95 if dist <= 12 else (75 if dist <= 18 else 30))
+            cand["visual_counterfeit"] = True if dist <= 12 else False
+            cand["distance"] = dist
+            cand["sim_pct"] = sim_pct
+            cand["condition"] = f"📸 Visual Match (Dist {dist})"
+            cand["is_verified_match"] = is_match
+            return (cand, dist, sim_pct, is_match)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(35, max(4, len(unique_candidates)))) as executor:
             futures = [executor.submit(_verify_worker, c) for c in unique_candidates]
             for fut in concurrent.futures.as_completed(futures):
                 try:
                     res = fut.result()
                     if res:
-                        cand, dist, sim_pct = res
-                        verified_matches.append(cand)
-                        _log(f"  🎯 [MATCH FOUND] {cand.get('title', '')[:42]} | pHash Dist: {dist} ({sim_pct}% match)")
+                        cand, dist, sim_pct, is_match = res
+                        all_evaluated_candidates.append(cand)
+                        if is_match:
+                            verified_matches.append(cand)
+                            _log(f"  🎯 [MATCH FOUND] {cand.get('title', '')[:42]} | pHash Dist: {dist} ({sim_pct}% match)")
+                        else:
+                            _log(f"  🔍 [Candidate Evaluated] {cand.get('title', '')[:42]} | Dist: {dist} ({sim_pct}%)")
                 except Exception:
                     pass
 
-        # Sort matches by similarity (lowest distance first)
+        # Sort by similarity (lowest Hamming distance first)
+        all_evaluated_candidates.sort(key=lambda x: x.get("distance", 999))
         verified_matches.sort(key=lambda x: x.get("distance", 999))
 
-        # 5. Parallel Seller Handle & Origin Enrichment for Discovered Clones
-        if verified_matches:
-            _log(f"🏪 Enriching real seller handles & origin intel for {len(verified_matches)} visual clone(s)...")
+        # 5. Parallel Seller Handle & Origin Enrichment for Discovered Clones / Top Candidates
+        target_enrich = all_evaluated_candidates[:25]
+        if target_enrich:
+            _log(f"🏪 Enriching real seller handles & origin intel for {len(target_enrich)} discovered candidate(s)...")
             def _enrich_single_match(m):
                 item_url = m.get("url") or (f"https://www.ebay.com/itm/{m.get('item_id', '')}" if m.get("item_id") else "")
                 seller_curr = m.get("seller", "")
@@ -215,8 +249,8 @@ class VisualHarvester:
                     except Exception as e:
                         logger.debug(f"Visual clone seller enrichment error: {e}")
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(verified_matches))) as enrich_exec:
-                list(enrich_exec.map(_enrich_single_match, verified_matches))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(target_enrich))) as enrich_exec:
+                list(enrich_exec.map(_enrich_single_match, target_enrich))
 
-        _log(f"✅ High-Speed Dredge Complete: Found {len(verified_matches)} verified photo clone(s) with resolved merchant profiles.")
-        return verified_matches
+        _log(f"✅ High-Speed Dredge Complete: {len(verified_matches)} verified clone(s) matched tolerance | {len(all_evaluated_candidates)} total candidates harvested.")
+        return all_evaluated_candidates

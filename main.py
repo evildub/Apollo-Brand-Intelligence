@@ -6738,13 +6738,14 @@ class EbayTool(tk.Tk):
                 def _done():
                     self.progress.stop()
                     if not hits:
-                        self._status(f"Reverse visual search on {mkt}{loc_label} found no matching listings.")
-                        messagebox.showinfo("Visual Search", f"No additional {mkt}{loc_label} listings found matching the reference photo for '{label}'.")
+                        self._status(f"Reverse visual search on {mkt}{loc_label} found no candidate listings.")
+                        messagebox.showinfo("Visual Search", f"No {mkt}{loc_label} candidates could be harvested for '{label}'.")
                         return
 
-                    total_matches = len(hits)
-                    self._log(f"📸 Reverse Visual Dredge Complete: Found {total_matches} verified photo clone(s) on {mkt}{loc_label}. Launching Triage Modal...")
-                    self._status(f"Visual search identified {total_matches} matching listings on {mkt}.")
+                    total_candidates = len(hits)
+                    verified_count = sum(1 for h in hits if h.get("is_verified_match", h.get("distance", 99) <= thresh))
+                    self._log(f"📸 Reverse Visual Dredge Complete: Found {verified_count} verified photo clone(s) ({total_candidates} candidates evaluated) on {mkt}{loc_label}. Launching Triage Modal...")
+                    self._status(f"Visual search evaluated {total_candidates} candidates ({verified_count} verified clones) on {mkt}.")
                     
                     # Launch dedicated Discovery & Triage Modal for Analyst Verification
                     ReverseVisualModal(self, hits, img_url, label=label, marketplace=mkt, region=reg, target_phash=str(thresh))
@@ -10158,7 +10159,7 @@ class ConnectedNetworkModal(tk.Toplevel):
         f_row.pack(side="top", fill="x", padx=12, pady=(2, 4))
 
         tk.Label(f_row, text="Thumbnails:", font=FONT_SM, bg=t["panel"], fg=t["subtext"]).pack(side="left", padx=(0, 4))
-        self.thumb_size_var = tk.StringVar(value="Medium (96px)")
+        self.thumb_size_var = tk.StringVar(value="Medium (100px)")
         self.thumb_size_combo = ttk.Combobox(f_row, textvariable=self.thumb_size_var, values=list(THUMB_CONFIG.keys()), width=14, state="readonly", font=FONT_SM)
         self.thumb_size_combo.pack(side="left", padx=(0, 10))
         self.thumb_size_combo.bind("<<ComboboxSelected>>", self._on_thumb_size_changed)
@@ -10183,19 +10184,19 @@ class ConnectedNetworkModal(tk.Toplevel):
         targeted_cb.pack(side="left", padx=(0, 8))
 
         # ── 4. Action Toolbar (Docked to Bottom First) ────────────────────────
-        btn_bar = tk.Frame(self, bg=t["panel"], padx=16, pady=10, relief="flat", highlightbackground=t["border"], highlightthickness=1)
-        btn_bar.pack(side="bottom", fill="x", padx=12, pady=(4, 10))
+        btn_bar = tk.Frame(self, bg=t["panel"], padx=10, pady=8, relief="flat", highlightbackground=t["border"], highlightthickness=1)
+        btn_bar.pack(side="bottom", fill="x", padx=12, pady=(4, 8))
 
         self.count_var = tk.StringVar(value="0 connected listings discovered")
         count_lbl = tk.Label(btn_bar, textvariable=self.count_var, bg=t["panel"], fg=t["text"], font=FONT_HEAD)
         count_lbl.pack(side="left")
 
-        tk.Button(btn_bar, text="✕ Close", command=self.destroy, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=12, pady=6, font=FONT_SM).pack(side="right", padx=4)
-        tk.Button(btn_bar, text="🏪 Enrich Sellers", command=self._enrich_selected_sellers, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=12, pady=6, font=FONT_SM).pack(side="right", padx=4)
-        tk.Button(btn_bar, text="📥 Add to Results Table", command=self._add_to_results, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=12, pady=6, font=FONT_SM).pack(side="right", padx=4)
-        tk.Button(btn_bar, text="📋 Copy Seller Handles", command=self._copy_sellers, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=12, pady=6, font=FONT_SM).pack(side="right", padx=4)
-        tk.Button(btn_bar, text="🏪 Add to Stores Box", command=self._add_all_to_stores, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=12, pady=6, font=FONT_SM).pack(side="right", padx=4)
-        tk.Button(btn_bar, text="➕ Add Sellers to Target Queue", command=self._add_sellers_to_queue, bg=t["accent"], fg="white", font=("Segoe UI", 9, "bold"), relief="flat", padx=16, pady=6).pack(side="right", padx=6)
+        tk.Button(btn_bar, text="✕ Close", command=self.destroy, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=8, pady=4, font=FONT_SM).pack(side="right", padx=3)
+        tk.Button(btn_bar, text="⚡ Enrich", command=self._enrich_selected_sellers, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=8, pady=4, font=FONT_SM).pack(side="right", padx=3)
+        tk.Button(btn_bar, text="📥 To Table", command=self._add_to_results, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=8, pady=4, font=FONT_SM).pack(side="right", padx=3)
+        tk.Button(btn_bar, text="📋 Copy Handles", command=self._copy_sellers, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=8, pady=4, font=FONT_SM).pack(side="right", padx=3)
+        tk.Button(btn_bar, text="🏪 To Stores", command=self._add_all_to_stores, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=8, pady=4, font=FONT_SM).pack(side="right", padx=3)
+        tk.Button(btn_bar, text="➕ Queue Sellers", command=self._add_sellers_to_queue, bg=t["accent"], fg="white", font=("Segoe UI", 9, "bold"), relief="flat", padx=10, pady=4).pack(side="right", padx=4)
 
         # ── 3. Discovered Network Table (Fills Remaining Space) ───────────────
         table_frame = tk.Frame(self, bg=t["bg"])
@@ -10612,24 +10613,35 @@ class ConnectedNetworkModal(tk.Toplevel):
                 itm.get("item_id", "")
             ), tags=tuple(tags))
 
-            if show_images and img_url and img_url not in self.thumb_cache:
-                self._fetch_thumb(iid, img_url, img_size)
+            if show_images and img_url:
+                if img_url in self.thumb_cache:
+                    self.tree.item(iid, image=self.thumb_cache[img_url])
+                else:
+                    self._fetch_thumb(iid, img_url, img_size)
 
             shown_count += 1
 
         self.count_var.set(f"{shown_count} listings shown | {len(self.discovered_items)} discovered")
 
     def _fetch_thumb(self, iid, url, size):
-        """Asynchronously download and scale thumbnail with retry loop."""
+        """Asynchronously download and scale thumbnail with multi-row listener tracking."""
+        if not hasattr(self, "_pending_thumb_iids"):
+            self._pending_thumb_iids = {}
+        if url in self._pending_thumb_iids:
+            if iid not in self._pending_thumb_iids[url]:
+                self._pending_thumb_iids[url].append(iid)
+            return
+        self._pending_thumb_iids[url] = [iid]
+
         def _w():
             referer = "https://www.redbubble.com/" if "redbubble" in url else ("https://printerval.com/" if "printerval" in url else "")
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
             if referer:
                 headers["Referer"] = referer
             for attempt in range(2):
                 try:
                     req = urllib.request.Request(url, headers=headers)
-                    with urllib.request.urlopen(req, timeout=7) as r:
+                    with urllib.request.urlopen(req, timeout=10) as r:
                         pimg = Image.open(io.BytesIO(r.read())).convert("RGBA")
                     pimg.thumbnail((size, size), Image.Resampling.LANCZOS)
                     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
@@ -10637,10 +10649,13 @@ class ConnectedNetworkModal(tk.Toplevel):
                     
                     def _update_ui(c=canvas):
                         try:
-                            if self.winfo_exists() and self.tree.exists(iid):
+                            if self.winfo_exists():
                                 photo = ImageTk.PhotoImage(c, master=self)
                                 self.thumb_cache[url] = photo
-                                self.tree.item(iid, image=photo)
+                                waiting = self._pending_thumb_iids.pop(url, [iid])
+                                for wid in waiting:
+                                    if self.tree.exists(wid):
+                                        self.tree.item(wid, image=photo)
                         except Exception:
                             pass
                     self.after(0, _update_ui)
@@ -10648,6 +10663,8 @@ class ConnectedNetworkModal(tk.Toplevel):
                 except Exception:
                     if attempt == 0:
                         time.sleep(0.3)
+                    else:
+                        self._pending_thumb_iids.pop(url, None)
         threading.Thread(target=_w, daemon=True).start()
 
     def _open_selected_url(self, event=None):
@@ -11355,7 +11372,8 @@ class ReverseVisualModal(tk.Toplevel):
         title_lbl = tk.Label(info_box, text=f"Target: {self.label}", font=FONT_HEAD, bg=t["panel"], fg=t["text"], wraplength=820, justify="left")
         title_lbl.pack(anchor="w")
 
-        sub_text = f"⚡ Total Matches: {len(self.hits)} listings discovered across multiple merchant accounts"
+        verified_count = sum(1 for h in self.hits if h.get("is_verified_match", h.get("distance", 99) <= 18))
+        sub_text = f"⚡ Total Discovered: {verified_count} verified photo clones | {len(self.hits)} total candidate listings evaluated"
         sub_lbl = tk.Label(info_box, text=sub_text, font=FONT_SM, bg=t["panel"], fg=t["subtext"])
         sub_lbl.pack(anchor="w", pady=(4, 0))
 
@@ -11369,9 +11387,17 @@ class ReverseVisualModal(tk.Toplevel):
         self.thumb_size_combo.pack(side="left", padx=(0, 10))
         self.thumb_size_combo.bind("<<ComboboxSelected>>", self._on_thumb_size_changed)
 
-        self.match_filter_var = tk.StringVar(value="(All Discovered Matches)")
-        match_filters = ["(All Discovered Matches)", "🎯 Exact Matches (90%+)", "🖼 High Similarity (80%+)", "🔍 Possible Candidates (70%+)"]
-        self.match_filter_combo = ttk.Combobox(f_row, textvariable=self.match_filter_var, values=match_filters, width=26, state="readonly", font=FONT_SM)
+        match_filters = [
+            "(All Harvested Candidates)",
+            "🎯 Verified Clones Only",
+            "🎯 Exact Matches (90%+)",
+            "🖼 High Similarity (80%+)",
+            "🔍 Close Candidates (70%+)",
+            "📷 Broad Visual Sweep (50%+)"
+        ]
+        default_match_filter = "🎯 Verified Clones Only" if verified_count > 0 else "(All Harvested Candidates)"
+        self.match_filter_var = tk.StringVar(value=default_match_filter)
+        self.match_filter_combo = ttk.Combobox(f_row, textvariable=self.match_filter_var, values=match_filters, width=28, state="readonly", font=FONT_SM)
         self.match_filter_combo.pack(side="left", padx=(0, 10))
         self.match_filter_combo.bind("<<ComboboxSelected>>", lambda e: self._populate_tree())
 
@@ -11384,19 +11410,19 @@ class ReverseVisualModal(tk.Toplevel):
         wl_cb.pack(side="left", padx=(0, 8))
 
         # ── 3. Action Toolbar (Pack bottom first to prevent table overflow clipping) ──
-        btn_bar = tk.Frame(self, bg=t["panel"], padx=16, pady=12, relief="flat", highlightbackground=t["border"], highlightthickness=1)
-        btn_bar.pack(side="bottom", fill="x", padx=12, pady=(6, 12))
+        btn_bar = tk.Frame(self, bg=t["panel"], padx=10, pady=8, relief="flat", highlightbackground=t["border"], highlightthickness=1)
+        btn_bar.pack(side="bottom", fill="x", padx=12, pady=(4, 8))
 
-        self.count_var = tk.StringVar(value=f"{len(self.hits)} photo clone listings discovered")
+        self.count_var = tk.StringVar(value=f"{len(self.hits)} candidate listings discovered")
         count_lbl = tk.Label(btn_bar, textvariable=self.count_var, bg=t["panel"], fg=t["text"], font=FONT_HEAD)
         count_lbl.pack(side="left")
 
-        tk.Button(btn_bar, text="✕ Close", command=self.destroy, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=12, pady=6, font=FONT_SM).pack(side="right", padx=4)
-        tk.Button(btn_bar, text="🔄 Enrich Threat Intel", command=self._enrich_all_hits, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=12, pady=6, font=FONT_SM).pack(side="right", padx=4)
-        tk.Button(btn_bar, text="📋 Copy Seller Handles", command=self._copy_sellers, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=12, pady=6, font=FONT_SM).pack(side="right", padx=4)
-        tk.Button(btn_bar, text="🏪 Add to Stores Box", command=self._add_all_to_stores, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=12, pady=6, font=FONT_SM).pack(side="right", padx=4)
-        tk.Button(btn_bar, text="📥 Add to Results Table", command=self._add_to_results, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=12, pady=6, font=FONT_SM).pack(side="right", padx=4)
-        tk.Button(btn_bar, text="➕ Add Sellers to Queue", command=self._add_sellers_to_queue, bg=t["accent"], fg="white", relief="flat", padx=14, pady=6, font=("Segoe UI", 9, "bold")).pack(side="right", padx=4)
+        tk.Button(btn_bar, text="✕ Close", command=self.destroy, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=8, pady=4, font=FONT_SM).pack(side="right", padx=3)
+        tk.Button(btn_bar, text="🔄 Enrich Intel", command=self._enrich_all_hits, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=8, pady=4, font=FONT_SM).pack(side="right", padx=3)
+        tk.Button(btn_bar, text="📋 Copy Handles", command=self._copy_sellers, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=8, pady=4, font=FONT_SM).pack(side="right", padx=3)
+        tk.Button(btn_bar, text="🏪 To Stores", command=self._add_all_to_stores, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=8, pady=4, font=FONT_SM).pack(side="right", padx=3)
+        tk.Button(btn_bar, text="📥 To Table", command=self._add_to_results, bg=t["entry_bg"], fg=t["text"], relief="flat", padx=8, pady=4, font=FONT_SM).pack(side="right", padx=3)
+        tk.Button(btn_bar, text="➕ Queue Sellers", command=self._add_sellers_to_queue, bg=t["accent"], fg="white", relief="flat", padx=10, pady=4, font=("Segoe UI", 9, "bold")).pack(side="right", padx=4)
 
         # ── 4. Discovered Network Table ───────────────────────────────────────
         table_frame = tk.Frame(self, bg=t["bg"])
@@ -11414,6 +11440,7 @@ class ReverseVisualModal(tk.Toplevel):
 
         self.tree.tag_configure("whitelisted", foreground=t["success"])
         self.tree.tag_configure("clone", foreground=t.get("danger", "#E63946"))
+        self.tree.tag_configure("candidate", foreground=t["subtext"])
 
         self.tree.heading("#0", text="Photo Preview", anchor="center")
         self.tree.column("#0", width=120, minwidth=100, anchor="center", stretch=False)
@@ -11502,9 +11529,9 @@ class ReverseVisualModal(tk.Toplevel):
         vis_count = len(self.tree.get_children())
         total_count = len(self.hits)
         if sel_count > 0:
-            self.count_var.set(f"{vis_count} listings shown ({sel_count} selected) | {total_count} total matches")
+            self.count_var.set(f"{vis_count} listings shown ({sel_count} selected) | {total_count} total candidates")
         else:
-            self.count_var.set(f"{vis_count} listings shown | {total_count} total matches")
+            self.count_var.set(f"{vis_count} listings shown | {total_count} total candidates")
 
     def _populate_tree(self):
         self.tree.delete(*self.tree.get_children())
@@ -11536,11 +11563,17 @@ class ReverseVisualModal(tk.Toplevel):
 
             sim_txt = itm.get("match_type") or itm.get("threat_badge") or itm.get("similarity") or "🎯 Exact Photo Match (100%)"
             dist = itm.get("distance", 0)
-            if "Exact Matches" in match_filter and dist > 6:
+            is_verified = itm.get("is_verified_match", dist <= 18)
+
+            if match_filter == "🎯 Verified Clones Only" and not is_verified:
+                continue
+            elif "Exact Matches" in match_filter and dist > 6:
                 continue
             elif "High Similarity" in match_filter and dist > 12:
                 continue
-            elif "Possible Candidates" in match_filter and dist > 18:
+            elif "Close Candidates" in match_filter and dist > 18:
+                continue
+            elif "50%+" in match_filter and dist > 32:
                 continue
 
             if is_wl:
@@ -11555,13 +11588,19 @@ class ReverseVisualModal(tk.Toplevel):
             assessment = ds.compute_threat_assessment(seller_country or loc_val, loc_val) if ds else {}
             c_name = assessment.get("country", "Unknown")
             orig_txt = f"{assessment.get('flag', '❓')} {c_name}" if c_name not in ("Unknown", "Unresolved", "") else (f"📍 {loc_val}" if loc_val else "❓ Unresolved")
-            threat_txt = assessment.get("badge", "🚨 Rogue Photo Clone")
+            threat_txt = assessment.get("badge", ("🚨 Rogue Photo Clone" if is_verified else "Candidate"))
 
             price_txt = str(itm.get("price", "N/A"))
             title_txt = str(itm.get("title", "Unknown Title"))
             item_id_txt = str(itm.get("item_id", "N/A"))
 
-            row_tag = "whitelisted" if is_wl else "clone"
+            if is_wl:
+                row_tag = "whitelisted"
+            elif is_verified:
+                row_tag = "clone"
+            else:
+                row_tag = "candidate"
+
             iid = self.tree.insert("", "end", text="", values=(
                 sim_txt,
                 seller_display,
@@ -11577,7 +11616,7 @@ class ReverseVisualModal(tk.Toplevel):
             if show_images and itm.get("image_url"):
                 self._load_row_thumbnail(iid, itm["image_url"], img_size)
 
-        self.count_var.set(f"{shown_count} matching listings shown across {len(seen_sellers)} seller account(s)")
+        self.count_var.set(f"{shown_count} listings shown across {len(seen_sellers)} seller account(s)")
 
     def _load_row_thumbnail(self, iid, url, img_size):
         if not url:

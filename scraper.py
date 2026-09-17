@@ -935,15 +935,29 @@ class EbayScraper:
                 card.select_one(".s-card__price") or
                 card.select_one(".s-item__price") or
                 card.select_one(".str-item-card__price") or
-                card.select_one(".text-display-2")
+                card.select_one(".s-item__detail--primary .s-item__price") or
+                card.select_one("[class*='price']")
             )
-            price = price_el.get_text(strip=True) if price_el else ""
+            price = ""
+            if price_el:
+                # Remove child discount / shipping / logistics spans to prevent badge contamination
+                for bad_span in price_el.select(".s-item__discount, .s-item__logisticsCost, .s-item__purchase-options, .clipped, .s-item__dynamic, [class*='discount'], [class*='shipping']"):
+                    bad_span.decompose()
+                raw_price = price_el.get_text(strip=True)
+                # Regex search for genuine currency or explicit decimal price pattern (e.g. $19.99, US $24.50, 19.99)
+                m_price = re.search(r'(?:[\$\£\€\¥\₹]|(?:US|USD|EUR|GBP|AUD|CAD|MXN|BRL)\s*\$?)\s*[\d,]+(?:\.\d{2})?|\b[\d,]+\.\d{2}\b', raw_price, flags=re.IGNORECASE)
+                if m_price and not any(w in raw_price.lower() for w in ("free", "off", "delivery", "shipping", "%", "save")):
+                    price = m_price.group(0).strip()
+                elif raw_price and any(c in raw_price for c in ("$", "£", "€", "¥")) and not any(w in raw_price.lower() for w in ("free", "delivery", "shipping", "%")):
+                    price = raw_price
 
             # 4. Thumbnail Image URL & Authoritative Title Extraction
             img_url = ""
             img_el = (
                 card.select_one('img[src*="ebayimg.com"]') or
                 card.select_one('img[data-src*="ebayimg.com"]') or
+                card.select_one('img[data-defer-src*="ebayimg.com"]') or
+                card.select_one('img[data-lazy-src*="ebayimg.com"]') or
                 card.select_one("img.s-card__image") or
                 card.select_one("img.s-item__image-img") or
                 card.select_one(".str-item-card__image img") or
@@ -957,11 +971,15 @@ class EbayScraper:
                         title = alt_txt
 
                 candidates = [
+                    img_el.get("data-defer-src"),
+                    img_el.get("data-lazy-src"),
+                    img_el.get("data-highres-src"),
+                    img_el.get("data-retina-src"),
                     img_el.get("data-src"),
                     img_el.get("data-lazy"),
                     img_el.get("src"),
                 ]
-                srcset = img_el.get("srcset", "")
+                srcset = img_el.get("srcset", "") or img_el.get("data-srcset", "")
                 if srcset:
                     candidates.insert(0, srcset.split()[0].strip())
                 for cand in candidates:
@@ -973,6 +991,15 @@ class EbayScraper:
                         if cand and not cand.startswith("data:") and not cand.endswith(".gif"):
                             img_url = cand
                             break
+                # Fallback: scan raw card HTML for ebayimg.com if img_url is still empty or placeholder
+                if not img_url or "1x1" in img_url:
+                    m_card_img = re.search(r'https://i\.ebayimg\.com/(?:thumbs/)?images/g/[^"\'\s<>]+', str(card))
+                    if m_card_img:
+                        img_url = m_card_img.group(0)
+
+                # Promote thumbnail to clean high-res 500px image
+                if img_url and "ebayimg.com" in img_url:
+                    img_url = re.sub(r's-l\d+\.(jpg|webp|png|jpeg)', r's-l500.\1', img_url)
 
             # 5. Seller Extraction (URL-First Architecture)
             INVALID_SELLER_WORDS = {
@@ -1239,19 +1266,59 @@ class EbayScraper:
                             
                             let img = '';
                             if (imgEl) {
-                                img = imgEl.getAttribute('data-defer-src') || 
-                                      imgEl.getAttribute('data-highres-src') || 
-                                      imgEl.getAttribute('data-retina-src') || 
-                                      imgEl.getAttribute('data-src') || 
-                                      imgEl.getAttribute('data-lazy-src') || 
-                                      imgEl.src || '';
-                                if (img.includes(' ')) img = img.split(' ')[0];
+                                for (const attr of imgEl.getAttributeNames()) {
+                                    const val = imgEl.getAttribute(attr);
+                                    if (val && val.includes('ebayimg.com') && !val.includes('1x') && !val.includes('.gif') && !val.startsWith('data:')) {
+                                        img = val.split(' ')[0].trim();
+                                        break;
+                                    }
+                                }
+                                if (!img) {
+                                    img = imgEl.getAttribute('data-defer-src') || 
+                                          imgEl.getAttribute('data-lazy-src') || 
+                                          imgEl.getAttribute('data-highres-src') || 
+                                          imgEl.getAttribute('data-retina-src') || 
+                                          imgEl.getAttribute('data-src') || 
+                                          imgEl.getAttribute('data-lazy') || 
+                                          imgEl.src || '';
+                                    if (img.includes(' ')) img = img.split(' ')[0];
+                                }
+                            }
+                            if (!img || img.includes('1x') || img.includes('.gif') || img.startsWith('data:')) {
+                                if (card) {
+                                    const mImg = card.innerHTML.match(/https:\\/\\/i\\.ebayimg\\.com\\/(?:thumbs\\/)?images\\/g\\/[a-zA-Z0-9~_-]+\\/[a-zA-Z0-9~_-]+\\.(?:jpg|webp|png|jpeg)/i) ||
+                                                 card.innerHTML.match(/https:\\/\\/i\\.ebayimg\\.com\\/[^"'\\s<>]+\\.(?:jpg|webp|png|jpeg)/i);
+                                    if (mImg) img = mImg[0];
+                                }
+                            }
+                            if (img && img.includes('ebayimg.com')) {
+                                img = img.replace(/s-l\\d+\\.(jpg|webp|png|jpeg)/i, 's-l500.$1');
                             }
                             
                             let price = '';
                             if (card) {
-                                const pEl = card.querySelector('[class*="price"], [class*="Price"], span[class*="bold"]');
-                                if (pEl) price = pEl.innerText.trim();
+                                // 1. Remove all discount, badge, shipping, logistics, and strikethrough original-price spans
+                                const bad = card.querySelectorAll('[class*="discount"], [class*="shipping"], [class*="logistics"], [class*="coupon"], [class*="badge"], [class*="was-price"], [class*="strikethrough"], .clipped');
+                                bad.forEach(b => b.remove());
+                                
+                                // 2. Search candidate price elements
+                                const priceCandidates = card.querySelectorAll('.s-card__price, .s-item__price, [class*="price"], [class*="Price"], span');
+                                for (const el of priceCandidates) {
+                                    const rawT = (el.innerText || '').trim();
+                                    if (!rawT || /free|delivery|shipping|off|%|save|watch|sold|viewed|bid/i.test(rawT)) continue;
+                                    const pMatch = rawT.match(/(?:\\$\\s*[\\d,]+(?:\\.\\d{2})?|US\\s*\\$\\s*[\\d,]+(?:\\.\\d{2})?|[\\£\\€\\¥\\₹]\\s*[\\d,]+(?:\\.\\d{2})?|(?:USD|EUR|GBP|AUD|CAD|MXN)\\s*\\$?\\s*[\\d,]+(?:\\.\\d{2})?|\\b[\\d,]+\\.\\d{2}\\b)/i);
+                                    if (pMatch) {
+                                        price = pMatch[0].trim();
+                                        break;
+                                    }
+                                }
+                                // 3. Fallback: card HTML currency search
+                                if (!price) {
+                                    const mHtml = card.innerHTML.match(/(?:\\$\\s*[\\d,]+(?:\\.\\d{2})?|US\\s*\\$\\s*[\\d,]+(?:\\.\\d{2})?|[\\£\\€\\¥\\₹]\\s*[\\d,]+(?:\\.\\d{2})?|(?:USD|EUR|GBP|AUD|CAD|MXN)\\s*\\$?\\s*[\\d,]+(?:\\.\\d{2})?|\\b[\\d,]+\\.\\d{2}\\b)/i);
+                                    if (mHtml && !/free|shipping|delivery|off|sold|watch/i.test(mHtml[0])) {
+                                        price = mHtml[0].trim();
+                                    }
+                                }
                             }
                             
                             let seller = '';
@@ -1273,39 +1340,52 @@ class EbayScraper:
                     return res;
                 }""")
 
-                # In-page parallel seller handle resolution for all discovered candidate IDs
+                # In-page parallel seller handle, image, and price resolution for candidate IDs
                 candidate_ids = list(dict.fromkeys([itm['id'] for itm in raw_data if itm.get('id') and itm['id'] not in seen_ids]))
                 seller_map = {}
                 if candidate_ids:
                     try:
                         seller_map = page.evaluate("""async (ids) => {
                             const out = {};
-                            const batch = ids.slice(0, 40);
+                            const batch = ids.slice(0, 50);
                             await Promise.all(batch.map(async (id) => {
                                 try {
                                     const resp = await fetch('https://www.ebay.com/itm/' + id);
                                     const txt = await resp.text();
+                                    let sName = '';
+                                    let sImg = '';
+                                    let sPrice = '';
                                     
                                     // 1. Check JSON sellerName attribute
                                     const m_json = txt.match(/"sellerName":\\s*"([a-zA-Z0-9_.-]+)"/);
                                     if (m_json && !['help', 'about', 'contact', 'signin', 'register'].includes(m_json[1].toLowerCase())) {
-                                        out[id] = m_json[1];
-                                        return;
-                                    }
-                                    
-                                    // 2. Check Seller Profile /usr/ Link
-                                    const m_usr = txt.match(/\\/usr\\/([a-zA-Z0-9_.-]+)/);
-                                    if (m_usr && !['help', 'about', 'contact', 'signin', 'register'].includes(m_usr[1].toLowerCase())) {
-                                        out[id] = m_usr[1];
-                                        return;
+                                        sName = m_json[1];
+                                    } else {
+                                        const m_usr = txt.match(/\\/usr\\/([a-zA-Z0-9_.-]+)/);
+                                        if (m_usr && !['help', 'about', 'contact', 'signin', 'register'].includes(m_usr[1].toLowerCase())) {
+                                            sName = m_usr[1];
+                                        } else {
+                                            const m_str = txt.match(/\\/str\\/([a-zA-Z0-9_.-]+)/);
+                                            if (m_str && !m_str[1].includes('help') && !m_str[1].includes('about') && !m_str[1].includes('contact')) {
+                                                sName = m_str[1];
+                                            }
+                                        }
                                     }
 
-                                    // 3. Check Store Link in Header
-                                    const m_str = txt.match(/\\/str\\/([a-zA-Z0-9_.-]+)/);
-                                    if (m_str && !m_str[1].includes('help') && !m_str[1].includes('about') && !m_str[1].includes('contact')) {
-                                        out[id] = m_str[1];
-                                        return;
+                                    // 2. High-res image fallback from item page
+                                    const m_og = txt.match(/<meta\\s+property="og:image"\\s+content="([^"]+)"/i) ||
+                                                 txt.match(/"image":\\s*\\[?"(https:\\/\\/i\\.ebayimg\\.com\\/[^"]+)"/i) ||
+                                                 txt.match(/(https:\\/\\/i\\.ebayimg\\.com\\/(?:thumbs\\/)?images\\/g\\/[a-zA-Z0-9~_-]+\\/[a-zA-Z0-9~_-]+\\.(?:jpg|webp|png|jpeg))/i);
+                                    if (m_og) sImg = m_og[1];
+
+                                    // 3. Exact price fallback from item page
+                                    const m_p = txt.match(/"price":\\s*"([\\d.]+)"/i) ||
+                                                txt.match(/(?:\\$|US\\s*\\$|\\£|\\€)\\s*[\\d,]+(?:\\.\\d{2})?/i);
+                                    if (m_p) {
+                                        sPrice = m_p[1] ? (m_p[0].startsWith('"') ? '$' + m_p[1] : m_p[0]) : m_p[0];
                                     }
+
+                                    out[id] = { seller: sName, img: sImg, price: sPrice };
                                 } catch(e) {}
                             }));
                             return out;
@@ -1319,12 +1399,29 @@ class EbayScraper:
                         continue
                     seen_ids.add(iid)
 
+                    s_info = seller_map.get(iid, {}) if isinstance(seller_map, dict) else {}
+                    if isinstance(s_info, str):
+                        resolved_seller = s_info or itm.get('seller', '')
+                        resolved_img = itm['img']
+                        resolved_price = itm['price']
+                    else:
+                        resolved_seller = s_info.get('seller') or itm.get('seller', '')
+                        resolved_img = itm['img'] or s_info.get('img', '')
+                        resolved_price = itm['price'] or s_info.get('price', '')
+
+                    # Clean anomalous price strings
+                    if resolved_price and re.search(r'\bus\s*\d+\b', resolved_price, flags=re.IGNORECASE) and not '$' in resolved_price:
+                        resolved_price = s_info.get('price', '') if isinstance(s_info, dict) else ''
+
                     sim_label = "Related Listing"
                     dist_val = 99
-                    if target_hash and itm['img'] and str(itm['img']).startswith("http"):
+                    hi_img = resolved_img
+                    if hi_img and "ebayimg.com" in hi_img:
+                        hi_img = re.sub(r's-l\d+\.(jpg|webp|png|jpeg)', r's-l500.\1', hi_img)
+
+                    if target_hash and hi_img and str(hi_img).startswith("http"):
                         try:
-                            img_hi = str(itm['img']).replace("s-l96.jpg", "s-l500.jpg").replace("s-l140.jpg", "s-l500.jpg").replace("s-l225.jpg", "s-l500.jpg")
-                            req = urllib.request.Request(img_hi, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                            req = urllib.request.Request(hi_img, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
                             with urllib.request.urlopen(req, timeout=4) as r:
                                 c_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
                                 c_hash = self.compute_dhash(c_img)
@@ -1340,13 +1437,11 @@ class EbayScraper:
                         except Exception:
                             pass
 
-                    resolved_seller = seller_map.get(iid) or itm.get('seller', '')
-
                     discovered.append({
                         "item_id": iid,
                         "title": itm['title'],
-                        "price": itm['price'],
-                        "image_url": itm['img'],
+                        "price": resolved_price,
+                        "image_url": hi_img,
                         "seller": resolved_seller,
                         "similarity": sim_label,
                         "distance": dist_val,

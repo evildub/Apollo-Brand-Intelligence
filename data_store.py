@@ -10,15 +10,6 @@ def get_base_dir():
     """Return persistent user AppData directory to guarantee user configurations are never wiped by updates."""
     appdata = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or os.path.expanduser("~")
     user_dir = os.path.join(appdata, "Apollo_Brand_Intelligence")
-    legacy_dir = os.path.join(appdata, "Valknut_Brand_Intelligence")
-
-    # Seamless automatic migration from legacy Valknut directory if present
-    if not os.path.exists(user_dir) and os.path.exists(legacy_dir):
-        try:
-            shutil.copytree(legacy_dir, user_dir)
-        except Exception:
-            pass
-
     os.makedirs(user_dir, exist_ok=True)
     return user_dir
 

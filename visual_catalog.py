@@ -73,13 +73,6 @@ class VisualCatalogManager:
         if not base_dir:
             appdata = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
             base_dir = os.path.join(appdata, "Apollo_Visual_Catalog")
-            legacy_dir = os.path.join(appdata, "Valknut_Visual_Catalog")
-            # Seamless automatic migration from legacy Valknut catalog if present
-            if not os.path.exists(base_dir) and os.path.exists(legacy_dir):
-                try:
-                    shutil.copytree(legacy_dir, base_dir)
-                except Exception:
-                    pass
         self.base_dir = base_dir
         self.thumbs_dir = os.path.join(self.base_dir, "thumbs")
         self.catalog_file = os.path.join(self.base_dir, "visual_catalog.json")

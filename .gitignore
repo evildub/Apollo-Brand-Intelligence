@@ -11,7 +11,6 @@ dist/
 *.zip
 
 # Session profiles & Browser state
-Valknut_*_Session/
 Apollo_*_Session/
 data/*_session/
 data/browser_session/

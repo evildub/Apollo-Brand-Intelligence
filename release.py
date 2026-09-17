@@ -26,9 +26,7 @@ def get_dist_dir():
     """Locate the compiled distribution directory."""
     candidates = [
         os.path.join(TOOL_DIR, "dist", "Apollo Brand Intelligence"),
-        os.path.join(TOOL_DIR, "dist", "ApolloBrandIntelligence"),
-        os.path.join(TOOL_DIR, "dist", "Valknut Brand Intelligence"),
-        os.path.join(TOOL_DIR, "dist", "ValknutBrandIntelligence")
+        os.path.join(TOOL_DIR, "dist", "ApolloBrandIntelligence")
     ]
     for c in candidates:
         if os.path.exists(c):
@@ -44,7 +42,7 @@ def get_current_version():
                 m = re.search(r'VERSION\s*=\s*["\']([0-9\.]+)["\']', line)
                 if m:
                     return m.group(1)
-    return "1.5.0"
+    return "3.0.0"
 
 def zip_distribution(version_tag):
     """Create a zip archive of the compiled dist folder."""
@@ -56,8 +54,6 @@ def zip_distribution(version_tag):
 
     zip_filename = f"ApolloBrandIntelligence-{version_tag}.zip"
     zip_path = os.path.join(TOOL_DIR, "dist", zip_filename)
-    valknut_filename = f"ValknutBrandIntelligence-{version_tag}.zip"
-    valknut_zip_path = os.path.join(TOOL_DIR, "dist", valknut_filename)
 
     print(f"📦 Compressing distribution into: {zip_filename}...")
     total_files = sum(len(files) for _, _, files in os.walk(dist_dir))
@@ -74,12 +70,9 @@ def zip_distribution(version_tag):
                     pct = int((processed / total_files) * 100)
                     print(f"  [{pct}%] Archived {processed}/{total_files} files...")
 
-    # Copy to Valknut name for backward compatibility with older work PC updaters
-    shutil.copy2(zip_path, valknut_zip_path)
-
     zip_size_mb = os.path.getsize(zip_path) / (1024 * 1024)
-    print(f"✅ Successfully created {zip_filename} & {valknut_filename} ({zip_size_mb:.1f} MB)")
-    return [zip_path, valknut_zip_path]
+    print(f"✅ Successfully created {zip_filename} ({zip_size_mb:.1f} MB)")
+    return [zip_path]
 
 def git_commit_and_push(version_tag, message=""):
     """Commit tracked changes and push to GitHub origin."""
@@ -161,7 +154,7 @@ def main():
     publish_github_release(tag, zip_paths, title=args.title, notes=notes_content)
 
     print(f"\n🏆 All steps complete! Download your release on your work PC from:")
-    print(f"   https://github.com/evildub/Valknut/releases/tag/{tag}\n")
+    print(f"   https://github.com/evildub/Apollo-Brand-Intelligence/releases/tag/{tag}\n")
 
 if __name__ == "__main__":
     main()

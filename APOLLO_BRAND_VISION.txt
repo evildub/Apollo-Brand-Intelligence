@@ -96,6 +96,6 @@ adjustments while the heavy weight carries the burden. We are agile."
   - NEVER commit or push to Git/GitHub releases without explicit user instruction.
 
 ================================================================================
-Generated for Jerry Seidenstucker • Valknut / Apollo Intelligence Systems
+Generated for Jerry Seidenstucker • Apollo Brand Intelligence Systems
 ================================================================================
 

@@ -9,7 +9,7 @@ echo.
 set TARGET_DIR=%~dp0
 
 echo [1/3] Checking and downloading latest release from GitHub...
-gh release download --repo evildub/Valknut --pattern "*.zip" --clobber --dir "%TARGET_DIR%"
+gh release download --repo evildub/Apollo-Brand-Intelligence --pattern "*.zip" --clobber --dir "%TARGET_DIR%"
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [ERROR] Failed to download latest release from GitHub.
@@ -26,10 +26,8 @@ echo.
 echo [3/3] Launching latest Apollo Brand Intelligence...
 if exist "%TARGET_DIR%Apollo Brand Intelligence\Apollo Brand Intelligence.exe" (
     start "" "%TARGET_DIR%Apollo Brand Intelligence\Apollo Brand Intelligence.exe"
-) else if exist "%TARGET_DIR%ApolloBrandIntelligence\ApolloBrandIntelligence.exe" (
-    start "" "%TARGET_DIR%ApolloBrandIntelligence\ApolloBrandIntelligence.exe"
 ) else (
-    start "" "%TARGET_DIR%ValknutBrandIntelligence\ValknutBrandIntelligence.exe"
+    start "" "%TARGET_DIR%ApolloBrandIntelligence\ApolloBrandIntelligence.exe"
 )
 echo.
 echo Update complete! Starting application...

@@ -4232,7 +4232,7 @@ class EbayTool(tk.Tk):
 
         total_purged = initial_len - len(self.queue)
         self._log(f"🧹 Queue Deduplicated: Purged {total_purged} job(s) ({purged_already_run} already executed on same platform, {purged_duplicates} duplicate). {len(self.queue)} job(s) remain.")
-        messagebox.showinfo("Queue Cleaned", f"Queue Deduplication Complete!\n\n• Already Executed Jobs Purged: {purged_already_run}\n• Duplicate Jobs Purged: {purged_duplicates}\n• Remaining Active Jobs: {len(self.queue)}")
+        self._show_themed_info("Queue Cleaned", f"Queue Deduplication Complete!\n\n• Already Executed Jobs Purged: {purged_already_run}\n• Duplicate Jobs Purged: {purged_duplicates}\n• Remaining Active Jobs: {len(self.queue)}", icon="🧹")
 
     def _pop_queue_ui_item(self):
         """Remove the top completed job from the UI queue listbox."""
@@ -5108,12 +5108,12 @@ class EbayTool(tk.Tk):
             msg = f"Scan stopped by user. {total} new listings harvested ({len(self.results)} total in session)."
             self._status(msg)
             self._log(f"⏹ {msg}")
-            messagebox.showinfo("Stopped", f"Scan stopped.\nHarvested {total} new listings ({len(self.results)} total).")
+            self._show_themed_info("Scan Stopped", f"Scan stopped by user.\n\nHarvested {total} new listings ({len(self.results)} total in session).", icon="⏹")
         else:
             msg = f"Done. {total} new listings harvested ({len(self.results)} total in session)."
             self._status(msg)
             self._log(f"✓ Run complete — {total} listings harvested.")
-            messagebox.showinfo("Complete", f"Harvested {total} listings.\nClick 'Export to Excel' or 'Export Job Log' to save.")
+            self._show_themed_info("Sweep Complete", f"Successfully harvested {total} listings across targets!\n\nClick 'Export' or 'Stash to Dossier' to save.", icon="🎉")
 
         self.result_count.set(f"{len(self.results)} listings")
         self._check_enforcement_milestones()
@@ -5261,9 +5261,9 @@ class EbayTool(tk.Tk):
             self.seen_item_ids = {str(it.get("url", "")).split("?")[0] for it in self.results if it.get("url")}
             self._repopulate_results_table()
             self._log(f"🧹 Purged {purged} duplicate listings from results table.")
-            messagebox.showinfo("Deduplicate Complete", f"Removed {purged} duplicate listings.\n{len(self.results)} unique listings remain.")
+            self._show_themed_info("Deduplication Complete", f"Removed {purged} duplicate listings.\n\n{len(self.results)} unique listings remain.", icon="🧹")
         else:
-            messagebox.showinfo("Deduplicate Complete", "No duplicates found. All listings are unique.")
+            self._show_themed_info("Deduplication Complete", "No duplicates found.\n\nAll listings are unique.", icon="✓")
 
     def _stash_to_dossier(self):
         """Move verified/triaged listings from active table into the persistent Dossier Staging Vault."""
@@ -6142,7 +6142,7 @@ class EbayTool(tk.Tk):
                 self._repopulate_results_table()
                 self._log(f"✅ Finished live refresh for {updated_count}/{len(target_items)} listing(s).")
                 self._status(f"Refresh complete: {updated_count} updated.")
-                messagebox.showinfo("Refresh Complete", f"Successfully refreshed details and thumbnails for {updated_count} listing(s)!")
+                self._show_themed_info("Refresh Complete", f"Successfully refreshed details and thumbnails for {updated_count} listing(s)!", icon="✓")
 
             self.after(0, _finish)
 
@@ -6318,6 +6318,57 @@ class EbayTool(tk.Tk):
             pass
         return False
 
+    def _show_themed_info(self, title: str, message: str, icon: str = "ℹ", parent=None):
+        """Display an Apollo theme-adaptive modal dialog instead of native stark-white OS messagebox."""
+        t = self.theme
+        win = tk.Toplevel(parent or self)
+        win.title(title)
+        win.configure(bg=t["bg"])
+        win.resizable(False, False)
+        win.transient(parent or self)
+        win.grab_set()
+        self._apply_dark_titlebar(win)
+        self._load_app_icon(win)
+
+        card = tk.Frame(win, bg=t["panel"], padx=20, pady=16, highlightbackground=t.get("border", "#334155"), highlightthickness=1)
+        card.pack(fill="both", expand=True, padx=8, pady=8)
+
+        # Header row with theme icon and title
+        hdr = tk.Frame(card, bg=t["panel"])
+        hdr.pack(fill="x", pady=(0, 8))
+
+        tk.Label(hdr, text=icon, font=("Segoe UI", 16), bg=t["panel"], fg=t.get("accent", "#38bdf8")).pack(side="left", padx=(0, 8))
+        tk.Label(hdr, text=title, font=FONT_HEAD, bg=t["panel"], fg=t.get("text", "#ffffff")).pack(side="left")
+
+        div = tk.Frame(card, bg=t.get("border", "#334155"), height=1)
+        div.pack(fill="x", pady=(0, 10))
+
+        # Message body
+        tk.Label(card, text=message, font=FONT_NORM, bg=t["panel"], fg=t.get("text", "#ffffff"), justify="left", wraplength=400).pack(anchor="w", pady=(0, 14))
+
+        # OK Button
+        btn_row = tk.Frame(card, bg=t["panel"])
+        btn_row.pack(fill="x")
+        btn = tk.Button(
+            btn_row,
+            text="OK",
+            font=FONT_BOLD,
+            bg=t.get("accent_btn", t.get("accent", "#0284c7")),
+            fg="#ffffff" if not str(t.get("name", "")).startswith("🪙") else "#0A0B0E",
+            activebackground=t.get("accent2", "#38bdf8"),
+            relief="flat",
+            padx=18,
+            pady=3,
+            cursor="hand2",
+            command=win.destroy
+        )
+        btn.pack(side="right")
+        btn.focus_set()
+        win.bind("<Return>", lambda e: win.destroy())
+        win.bind("<Escape>", lambda e: win.destroy())
+
+        self._center_window(win, 460, 210)
+
     def _open_session_vault_modal(self):
         """Open the Universal Marketplace Session & Account Vault Modal."""
         SessionVaultModal(self, self.theme, self.session_vault)
@@ -6444,7 +6495,7 @@ class EbayTool(tk.Tk):
 
         self._repopulate_results_table()
         self._log(f"🖼 Re-evaluated visual matches across session ({matched_count} listings matched with threshold {thresh}).")
-        messagebox.showinfo("Re-Scan Complete", f"Re-evaluated {len(self.results)} listings with Sensitivity Threshold ({thresh}).\n\nFound {matched_count} visual packaging match(es)!")
+        self._show_themed_info("Re-Scan Complete", f"Re-evaluated {len(self.results)} listings with Sensitivity Threshold ({thresh}).\n\nFound {matched_count} visual packaging match(es)!", icon="🖼")
 
     def _export_intel_pack_dialog(self):
         """Interactive dialog to export an Analyst Intelligence Pack (.apollo)."""

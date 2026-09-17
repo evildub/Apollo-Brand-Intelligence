@@ -6396,13 +6396,33 @@ class EbayTool(tk.Tk):
         """Open the Universal Marketplace Session & Account Vault Modal."""
         SessionVaultModal(self, self.theme, self.session_vault)
 
+    def _on_taxonomy_saved_and_applied(self, taxonomy=None):
+        """Retroactively apply updated taxonomy to all active session results and refresh results table."""
+        if not hasattr(self, "results") or not self.results:
+            return
+        updated_count = 0
+        for itm in self.results:
+            title = itm.get("title", "")
+            if title:
+                detected_pt = self._detect_product_type(title)
+                if detected_pt != itm.get("product_type"):
+                    itm["product_type"] = detected_pt
+                    updated_count += 1
+        self._repopulate_results_table()
+        self._log(f"🏷 Product Taxonomy updated: Re-tagged {updated_count} listing(s) across active session ({len(self.results)} total).")
+
     def _open_product_type_manager(self):
         """Open the Product Type & Industry Taxonomy Manager Modal."""
         if self._win_product_type and self._win_product_type.winfo_exists():
             self._win_product_type.lift()
             self._win_product_type.focus_force()
             return
-        self._win_product_type = ProductTypeModal(self, self.theme, self.data_store)
+        self._win_product_type = ProductTypeModal(
+            self,
+            self.theme,
+            self.data_store,
+            on_save_callback=self._on_taxonomy_saved_and_applied
+        )
 
     def _open_field_guide_modal(self):
         """Open the searchable Analyst Field Guide & Threat Intelligence Glossary."""

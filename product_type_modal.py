@@ -695,10 +695,15 @@ class ProductTypeModal(tk.Toplevel):
                 self.on_save_callback(self.taxonomy)
             except Exception:
                 pass
+        elif hasattr(self.master, "_on_taxonomy_saved_and_applied"):
+            try:
+                self.master._on_taxonomy_saved_and_applied(self.taxonomy)
+            except Exception:
+                pass
 
         messagebox.showinfo(
             "Saved",
-            "Product Type & Industry Taxonomy successfully saved and applied to live auto-tagging engine!",
+            "Product Type & Industry Taxonomy successfully saved and applied to live auto-tagging engine and active results table!",
             parent=self
         )
 
@@ -714,4 +719,16 @@ class ProductTypeModal(tk.Toplevel):
         if self.data_store and hasattr(self.data_store, "reset_product_taxonomy"):
             self.taxonomy = copy.deepcopy(self.data_store.reset_product_taxonomy())
         self._populate_industries()
-        messagebox.showinfo("Reset Complete", "Taxonomy reset to factory defaults.", parent=self)
+
+        if callable(self.on_save_callback):
+            try:
+                self.on_save_callback(self.taxonomy)
+            except Exception:
+                pass
+        elif hasattr(self.master, "_on_taxonomy_saved_and_applied"):
+            try:
+                self.master._on_taxonomy_saved_and_applied(self.taxonomy)
+            except Exception:
+                pass
+
+        messagebox.showinfo("Reset Complete", "Taxonomy reset to factory defaults and applied to active results table.", parent=self)

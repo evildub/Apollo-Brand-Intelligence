@@ -10758,6 +10758,7 @@ class ConnectedNetworkModal(tk.Toplevel):
         is_meli = "mercadolibre" in item_url.lower() or "mercadolivre" in item_url.lower() or "mercado" in str(self.target_item.get("marketplace", "")).lower()
         is_printerval = "printerval" in item_url.lower() or "printerval" in str(self.target_item.get("marketplace", "")).lower()
         is_rb = "redbubble" in item_url.lower() or "redbubble" in str(self.target_item.get("marketplace", "")).lower()
+        is_tiktok = "tiktok" in item_url.lower() or "tiktok" in str(self.target_item.get("marketplace", "")).lower()
 
         if is_printerval:
             platform_name = "Printerval"
@@ -10765,6 +10766,8 @@ class ConnectedNetworkModal(tk.Toplevel):
             platform_name = "Redbubble"
         elif is_meli:
             platform_name = "Mercado Libre"
+        elif is_tiktok:
+            platform_name = "TikTok Shop"
         else:
             platform_name = "eBay"
         self.status_lbl.configure(text=f"🔍 Scanning {platform_name} merchandising carousels, competitor recommendations, and storefront syndicates...")
@@ -10788,6 +10791,12 @@ class ConnectedNetworkModal(tk.Toplevel):
                     if not scraper:
                         from mercadolibre_scraper import MercadoLibreScraper
                         scraper = MercadoLibreScraper(headless=False)
+                    results = scraper.find_connected_network(item_id, item_url, target_img)
+                elif is_tiktok:
+                    scraper = getattr(self.parent, "tiktok_scraper", None)
+                    if not scraper:
+                        from tiktok_scraper import TikTokScraper
+                        scraper = TikTokScraper(headless=True)
                     results = scraper.find_connected_network(item_id, item_url, target_img)
                 else:
                     scraper = getattr(self.parent, "scraper", None)

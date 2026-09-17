@@ -12,14 +12,22 @@ Features:
 
 import os
 import re
+import io
 import json
 import time
 import random
 import logging
 import threading
 import urllib.parse
+import urllib.request
 from typing import List, Dict, Optional
 from bs4 import BeautifulSoup
+
+try:
+    from PIL import Image
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
 
 try:
     from curl_cffi import requests as curl_requests
@@ -568,3 +576,294 @@ class TikTokScraper:
                 progress_callback(idx + 1, len(items), it)
 
         return items
+
+    def compute_dhash(self, image: Image.Image) -> int:
+        """Compute 64-bit difference hash (dHash) for fast visual clone matching."""
+        if not HAS_PIL:
+            return 0
+        try:
+            resized = image.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
+            pixels = list(resized.getdata())
+            diff = []
+            for row in range(8):
+                for col in range(8):
+                    diff.append(pixels[row * 9 + col] > pixels[row * 9 + col + 1])
+            return sum([1 << i for i, b in enumerate(diff) if b])
+        except Exception:
+            return 0
+
+    def hamming_distance(self, h1: int, h2: int) -> int:
+        """Hamming distance between two 64-bit hashes."""
+        return bin(h1 ^ h2).count("1")
+
+    def find_connected_network(self, item_id: str, item_url: str = "", target_img_url: str = "") -> list[dict]:
+        """
+        On-Demand Visual Syndicate & Connected Seller Hunter for TikTok Shop.
+        Scans TikTok PDP carousels & recommendations:
+        - "Explore more from [seller]" (Seller's other shop listings)
+        - "You may also like" (Algorithmically related / competitor products)
+        - "Trending / Customers also viewed" (Syndicate & category products)
+        Performs perceptual image matching against target_img_url.
+        """
+        if not item_url and item_id:
+            item_url = f"https://shop.tiktok.com/us/pdp/product/{item_id}"
+        if not item_id and item_url:
+            m = re.search(r'/pdp/(?:[^/]+/)?(\d{15,25})', item_url) or re.search(r'(\d{15,25})', item_url)
+            item_id = m.group(1) if m else ""
+
+        discovered = []
+        seen_ids = set([str(item_id)] if item_id else [])
+
+        target_hash = None
+        if target_img_url and str(target_img_url).startswith("http") and HAS_PIL:
+            try:
+                req = urllib.request.Request(str(target_img_url), headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    t_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
+                    target_hash = self.compute_dhash(t_img)
+            except Exception:
+                pass
+
+        if not HAS_PLAYWRIGHT or not item_url:
+            return discovered
+
+        try:
+            edge_path = self._find_edge_path()
+            with sync_playwright() as p:
+                launch_kwargs = {
+                    "headless": self.headless,
+                    "viewport": {"width": 1440, "height": 900},
+                    "args": ["--disable-blink-features=AutomationControlled", "--no-first-run"]
+                }
+                if edge_path:
+                    launch_kwargs["executable_path"] = edge_path
+                else:
+                    launch_kwargs["channel"] = "msedge"
+
+                context = p.chromium.launch_persistent_context(self.profile_dir, **launch_kwargs)
+                page = context.pages[0] if context.pages else context.new_page()
+                page.goto(item_url, wait_until="domcontentloaded", timeout=30000)
+                time.sleep(2.0)
+
+                # Scroll down in stages to trigger lazy-loaded carousels and recommendation sections
+                for _ in range(6):
+                    try:
+                        page.evaluate("window.scrollBy(0, 1000);")
+                    except Exception:
+                        pass
+                    time.sleep(0.5)
+
+                try:
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+                except Exception:
+                    pass
+                time.sleep(1.0)
+
+                # Auto-recover target image hash if not provided initially
+                if not target_hash and HAS_PIL:
+                    try:
+                        target_img_src = page.evaluate("""() => {
+                            const meta = document.querySelector('meta[property="og:image"]');
+                            if (meta && meta.content) return meta.content;
+                            return '';
+                        }""")
+                        if target_img_src and str(target_img_src).startswith("http"):
+                            req = urllib.request.Request(str(target_img_src), headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                            with urllib.request.urlopen(req, timeout=5) as r:
+                                t_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
+                                target_hash = self.compute_dhash(t_img)
+                    except Exception:
+                        pass
+
+                raw_carousels = page.evaluate("""() => {
+                    const res = [];
+                    const seen = new Set();
+
+                    // 1. Identify carousel / recommendation sections
+                    const sections = Array.from(document.querySelectorAll('section, div[class*="recommend"], div[class*="carousel"], div[class*="more-from"], div[class*="related"], div[class*="similar"], div[class*="container"]'));
+
+                    for (const sec of sections) {
+                        const hEl = sec.querySelector('h1, h2, h3, h4, [class*="title"], [class*="header"]');
+                        const secTitle = hEl ? hEl.innerText.trim().toLowerCase() : '';
+                        let secType = '👥 You May Also Like';
+
+                        if (secTitle.includes('explore more from') || secTitle.includes('more from') || secTitle.includes('shop') || secTitle.includes('store')) {
+                            secType = "🏪 Explore More From Seller";
+                        } else if (secTitle.includes('you may also like') || secTitle.includes('similar') || secTitle.includes('recommended')) {
+                            secType = "👥 You May Also Like";
+                        } else if (secTitle.includes('trending') || secTitle.includes('popular') || secTitle.includes('bought')) {
+                            secType = "⚔ Trending & Competitors";
+                        }
+
+                        const cards = sec.querySelectorAll('a');
+                        for (const a of cards) {
+                            const href = a.href || '';
+                            const m = href.match(/\\/pdp\\/(?:[^/]+\\/)?(\\d{15,25})/) || href.match(/\\/product\\/(\\d{15,25})/) || href.match(/(\\d{17,21})/);
+                            if (m && !seen.has(m[1]) && !href.includes('campaign') && !href.includes('seller-us') && !href.includes('account')) {
+                                seen.add(m[1]);
+                                let title = a.innerText.trim();
+                                if (!title) {
+                                    const h = a.querySelector('h1, h2, h3, [class*="title"], [class*="name"]');
+                                    if (h) title = h.innerText.trim();
+                                }
+                                let imgUrl = '';
+                                let seller = '';
+                                let price = '$0.00';
+                                let p = a;
+                                for (let i = 0; i < 6; i++) {
+                                    if (!p) break;
+                                    if (!imgUrl) {
+                                        const imgs = Array.from(p.querySelectorAll('img'));
+                                        let bestImg = '';
+                                        let bestScore = -1;
+                                        for (const im of imgs) {
+                                            let src = im.currentSrc || im.src || im.getAttribute('src') || im.getAttribute('data-src') || '';
+                                            if (!src && im.srcset) {
+                                                const parts = im.srcset.split(',');
+                                                if (parts.length > 0) src = parts[parts.length - 1].trim().split(' ')[0];
+                                            }
+                                            if (!src || src.startsWith('data:image/svg')) continue;
+                                            const lowerSrc = src.toLowerCase();
+                                            const alt = (im.alt || '').toLowerCase();
+                                            const cls = (im.className || '').toLowerCase();
+                                            if (lowerSrc.includes('badge') || lowerSrc.includes('avatar') || lowerSrc.includes('icon') ||
+                                                lowerSrc.includes('watermark') || lowerSrc.includes('activity_tag') || cls.includes('badge') ||
+                                                cls.includes('avatar') || cls.includes('icon') || alt.includes('badge') || alt.includes('deal')) {
+                                                continue;
+                                            }
+                                            let score = 10;
+                                            if (lowerSrc.includes('ttcdn') || lowerSrc.includes('tos-') || lowerSrc.includes('tiktokcdn')) score += 50;
+                                            if (lowerSrc.includes('resize-webp') || lowerSrc.includes('tplv-')) score += 40;
+                                            if (score > bestScore) {
+                                                bestScore = score;
+                                                bestImg = src;
+                                            }
+                                        }
+                                        if (bestImg) imgUrl = bestImg;
+                                    }
+                                    if (!seller) {
+                                        const sEl = p.querySelector('[class*="shop-name"], [class*="seller-name"], [class*="store-name"], [class*="shopName"], [class*="sellerName"]');
+                                        if (sEl) seller = sEl.innerText.trim();
+                                    }
+                                    if (price === '$0.00') {
+                                        const pMatch = p.innerText.match(/\\$\\s*\\d+(?:\\.\\d{2})?/);
+                                        if (pMatch) price = pMatch[0];
+                                    }
+                                    p = p.parentElement;
+                                }
+                                res.push({
+                                    id: m[1],
+                                    url: href,
+                                    title: title || `TikTok Product ${m[1]}`,
+                                    image_url: imgUrl,
+                                    seller: seller,
+                                    price: price,
+                                    network_type: secType
+                                });
+                            }
+                        }
+                    }
+
+                    // 2. Fallback sweep for any remaining uncaptured cards
+                    const allLinks = Array.from(document.querySelectorAll('a'));
+                    for (const a of allLinks) {
+                        const href = a.href || '';
+                        const m = href.match(/\\/pdp\\/(?:[^/]+\\/)?(\\d{15,25})/) || href.match(/\\/product\\/(\\d{15,25})/) || href.match(/(\\d{17,21})/);
+                        if (m && !seen.has(m[1]) && !href.includes('campaign') && !href.includes('seller-us') && !href.includes('account')) {
+                            seen.add(m[1]);
+                            let title = a.innerText.trim();
+                            let imgUrl = '';
+                            let seller = '';
+                            let price = '$0.00';
+                            let p = a;
+                            for (let i = 0; i < 6; i++) {
+                                if (!p) break;
+                                if (!imgUrl) {
+                                    const imgs = Array.from(p.querySelectorAll('img'));
+                                    for (const im of imgs) {
+                                        let src = im.currentSrc || im.src || im.getAttribute('src') || '';
+                                        if (src && !src.includes('badge') && !src.includes('icon') && !src.includes('avatar')) {
+                                            imgUrl = src;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (!seller) {
+                                    const sEl = p.querySelector('[class*="shop-name"], [class*="seller-name"]');
+                                    if (sEl) seller = sEl.innerText.trim();
+                                }
+                                if (price === '$0.00') {
+                                    const pMatch = p.innerText.match(/\\$\\s*\\d+(?:\\.\\d{2})?/);
+                                    if (pMatch) price = pMatch[0];
+                                }
+                                p = p.parentElement;
+                            }
+                            res.push({
+                                id: m[1],
+                                url: href,
+                                title: title || `TikTok Product ${m[1]}`,
+                                image_url: imgUrl,
+                                seller: seller,
+                                price: price,
+                                network_type: "👥 You May Also Like"
+                            });
+                        }
+                    }
+
+                    return res;
+                }""")
+
+                context.close()
+
+                # Process harvested cards and calculate visual match similarity
+                for card in raw_carousels:
+                    c_id = str(card.get("id", "")).strip()
+                    if c_id in seen_ids:
+                        continue
+                    seen_ids.add(c_id)
+
+                    img_url = card.get("image_url", "")
+                    similarity_lbl = card.get("network_type", "Carousel Asset")
+
+                    # Perceptual Image Matching against target photo
+                    if target_hash and img_url and img_url.startswith("http") and HAS_PIL:
+                        try:
+                            req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                            with urllib.request.urlopen(req, timeout=3.5) as r:
+                                c_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
+                                c_hash = self.compute_dhash(c_img)
+                                dist = self.hamming_distance(target_hash, c_hash)
+                                if dist <= 8:
+                                    similarity_lbl = f"🎯 Exact Visual Clone (d={dist})"
+                                elif dist <= 16:
+                                    similarity_lbl = f"🖼 Visual Match (d={dist})"
+                        except Exception:
+                            pass
+
+                    s_name = card.get("seller") or "TikTok Shop Merchant"
+                    discovered.append({
+                        "brand": "",
+                        "product_type": "",
+                        "title": card.get("title") or f"TikTok Listing #{c_id}",
+                        "item_id": c_id,
+                        "price": card.get("price") or "$0.00",
+                        "seller": s_name,
+                        "location": "United States",
+                        "seller_origin": "United States",
+                        "threat_badge": "🚨 Visual Syndicate" if "Exact" in similarity_lbl else ("🏪 Same Store" if "Seller" in similarity_lbl else ""),
+                        "image_url": img_url,
+                        "url": card.get("url"),
+                        "marketplace": "shop.tiktok.com",
+                        "condition": card.get("network_type", "Connected Listing"),
+                        "similarity": similarity_lbl,
+                        "match_type": card.get("network_type", "Connected Listing")
+                    })
+
+        except Exception as e:
+            logger.debug(f"Error scanning TikTok carousels for {item_url}: {e}")
+
+        return discovered
+
+    def scan_listing_carousels(self, item_id: str, item_url: str = "", target_img: str = "") -> list[dict]:
+        """Alias for find_connected_network for standardized carousel scanner dispatch."""
+        return self.find_connected_network(item_id, item_url, target_img)

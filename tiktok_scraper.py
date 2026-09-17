@@ -417,21 +417,64 @@ class TikTokScraper:
                                 for (let i = 0; i < 6; i++) {
                                     if (!p) break;
                                     if (!imgUrl) {
-                                        const im = p.querySelector('img');
-                                        if (im) {
-                                            imgUrl = im.currentSrc || im.src || im.getAttribute('src') || im.getAttribute('data-src') || '';
-                                            if (!imgUrl && im.srcset) {
+                                        const imgs = Array.from(p.querySelectorAll('img'));
+                                        let bestImg = '';
+                                        let bestScore = -1;
+                                        for (const im of imgs) {
+                                            let src = im.currentSrc || im.src || im.getAttribute('src') || im.getAttribute('data-src') || '';
+                                            if (!src && im.srcset) {
                                                 const parts = im.srcset.split(',');
                                                 if (parts.length > 0) {
-                                                    imgUrl = parts[parts.length - 1].trim().split(' ')[0];
+                                                    src = parts[parts.length - 1].trim().split(' ')[0];
                                                 }
                                             }
+                                            if (!src || src.startsWith('data:image/svg')) continue;
+
+                                            const lowerSrc = src.toLowerCase();
+                                            const alt = (im.alt || '').toLowerCase();
+                                            const cls = (im.className || '').toLowerCase();
+                                            const parentCls = (im.parentElement?.className || '').toLowerCase();
+
+                                            // Exclude promotional badges, deal tags, icons, avatars, and watermarks
+                                            if (lowerSrc.includes('badge') || lowerSrc.includes('avatar') || lowerSrc.includes('icon') ||
+                                                lowerSrc.includes('watermark') || lowerSrc.includes('activity_tag') || lowerSrc.includes('promo_tag') ||
+                                                cls.includes('badge') || cls.includes('avatar') || cls.includes('icon') || cls.includes('tag') ||
+                                                parentCls.includes('badge') || parentCls.includes('avatar') || parentCls.includes('icon') || parentCls.includes('tag') ||
+                                                alt.includes('badge') || alt.includes('avatar') || alt.includes('icon') || alt.includes('stock up') || alt.includes('deal')) {
+                                                continue;
+                                            }
+
+                                            // Exclude tiny icon dimensions if computable
+                                            const rect = im.getBoundingClientRect ? im.getBoundingClientRect() : null;
+                                            const w = rect ? rect.width : (im.naturalWidth || im.width || 0);
+                                            const h = rect ? rect.height : (im.naturalHeight || im.height || 0);
+                                            if (w > 0 && w < 60 && h > 0 && h < 60) {
+                                                continue;
+                                            }
+
+                                            let score = 10;
+                                            if (lowerSrc.includes('ttcdn') || lowerSrc.includes('tos-') || lowerSrc.includes('tiktokcdn') || lowerSrc.includes('byteoversea')) score += 50;
+                                            if (lowerSrc.includes('resize-webp') || lowerSrc.includes('tplv-')) score += 40;
+                                            if (cls.includes('product') || cls.includes('main') || cls.includes('cover') || cls.includes('image')) score += 30;
+                                            if (parentCls.includes('product') || parentCls.includes('cover') || parentCls.includes('image')) score += 20;
+                                            if (w >= 100 || h >= 100) score += 30;
+                                            if (w >= 200 || h >= 200) score += 20;
+
+                                            if (score > bestScore) {
+                                                bestScore = score;
+                                                bestImg = src;
+                                            }
+                                        }
+                                        if (bestImg) {
+                                            imgUrl = bestImg;
                                         }
                                         if (!imgUrl) {
                                             const bgDiv = p.querySelector('[style*="background-image"]');
                                             if (bgDiv) {
                                                 const bgMatch = bgDiv.style.backgroundImage.match(/url\\(["']?([^"']+)["']?\\)/);
-                                                if (bgMatch) imgUrl = bgMatch[1];
+                                                if (bgMatch && !bgMatch[1].toLowerCase().includes('badge') && !bgMatch[1].toLowerCase().includes('icon')) {
+                                                    imgUrl = bgMatch[1];
+                                                }
                                             }
                                         }
                                     }

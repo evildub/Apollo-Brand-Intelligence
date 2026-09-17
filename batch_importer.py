@@ -773,19 +773,72 @@ def _fetch_aliexpress_item(url: str, headless: bool = True) -> dict:
                     seller = re.sub(r'^(?:Sold By\s*|Shop:\s*)', '', seller, flags=re.I).strip()
                     seller = re.sub(r'\s*\([^)]*\)$', '', seller).strip()
 
-                # Image
-                og_img = page.evaluate("""() => {
-                    const og = document.querySelector('meta[property="og:image"]');
-                    if (og && og.content) return og.content;
-                    const im = document.querySelector('.image-view-v2--previewBox img, .magnifier--image, [class*="product-img"] img, [class*="gallery"] img, [class*="main-image"] img, img');
-                    if (im) return im.currentSrc || im.src || im.getAttribute('src') || im.getAttribute('data-src') || '';
-                    return '';
+                # High-Resolution PDP Image Extraction (Script metadata + Multi-candidate scoring)
+                pdp_img = page.evaluate("""() => {
+                    // 1. Script tag extraction for imagePathList / imageUrl
+                    const scripts = Array.from(document.querySelectorAll('script'));
+                    for (const s of scripts) {
+                        const txt = s.innerText || '';
+                        const m = txt.match(/["']imagePathList["']\\s*:\\s*(\\[[^\\]]+\\])/);
+                        if (m) {
+                            try {
+                                const list = JSON.parse(m[1]);
+                                if (list && list.length > 0 && typeof list[0] === 'string' && list[0].startsWith('http')) {
+                                    return list[0];
+                                }
+                            } catch(e) {}
+                        }
+                        const m2 = txt.match(/["']imageUrl["']\\s*:\\s*["']([^"']+)["']/);
+                        if (m2 && m2[1].includes('/kf/')) {
+                            return m2[1];
+                        }
+                    }
+
+                    // 2. Open Graph / Twitter image
+                    const og = document.querySelector('meta[property="og:image"], meta[name="og:image"], meta[name="twitter:image"]');
+                    if (og && og.content && og.content.startsWith('http') && !og.content.includes('logo') && !og.content.includes('icon')) {
+                        return og.content;
+                    }
+
+                    // 3. Multi-candidate scoring of all <img> elements on PDP
+                    let topScore = -1;
+                    let bestImg = '';
+                    const allImgs = Array.from(document.querySelectorAll('img'));
+                    for (const im of allImgs) {
+                        let src = im.currentSrc || im.src || im.getAttribute('src') || im.getAttribute('data-src') || '';
+                        if (!src || src.startsWith('data:')) continue;
+                        if (src.startsWith('//')) src = 'https:' + src;
+
+                        const low = src.toLowerCase();
+                        const alt = (im.alt || '').toLowerCase();
+                        const cls = (im.className || '').toLowerCase();
+                        const w = im.naturalWidth || im.width || 0;
+                        const h = im.naturalHeight || im.height || 0;
+
+                        // Strictly filter icons, badges, category navigation, search buttons, avatars
+                        if ((w > 0 && w < 80 && h > 0 && h < 80) || low.includes('icon') || low.includes('badge') || low.includes('logo') || low.includes('avatar') || low.endsWith('.svg') || alt.includes('category') || alt.includes('search') || cls.includes('icon') || cls.includes('badge')) {
+                            continue;
+                        }
+
+                        let score = 10;
+                        if (w >= 300 || h >= 300) score += 150 + (w * h) / 10000;
+                        else if (w >= 100 || h >= 100) score += 50;
+                        if (low.includes('/kf/')) score += 50;
+                        if (low.includes('alicdn') || low.includes('aliexpress-media')) score += 40;
+                        if (im.closest('.gallery-preview-panel, [class*="gallery"], [class*="slider"], [class*="image-view"], [class*="magnifier"], [class*="previewBox"], [class*="main-image"], [class*="product-img"]')) score += 80;
+
+                        if (score > topScore) {
+                            topScore = score;
+                            bestImg = src;
+                        }
+                    }
+                    return bestImg;
                 }""")
-                if og_img:
-                    if og_img.startswith("//"): og_img = "https:" + og_img
-                    og_img = re.sub(r'(\.(?:jpg|jpeg|png|webp))_[^?#]+.*$', r'\1', og_img, flags=re.I)
-                    og_img = re.sub(r'_\.(?:avif|webp)$', '', og_img, flags=re.I)
-                    image_url = og_img
+                if pdp_img:
+                    if pdp_img.startswith("//"): pdp_img = "https:" + pdp_img
+                    pdp_img = re.sub(r'(\.(?:jpg|jpeg|png|webp))_[^?#]+.*$', r'\1', pdp_img, flags=re.I)
+                    pdp_img = re.sub(r'_\.(?:avif|webp)$', '', pdp_img, flags=re.I)
+                    image_url = pdp_img
 
                 context.close()
         except Exception as e:

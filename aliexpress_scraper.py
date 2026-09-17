@@ -344,6 +344,11 @@ class AliExpressScraper:
                         if (seen.has(itemId)) return;
                         seen.add(itemId);
 
+                        // Skip footer, related keywords, hot words, search suggestion chips, pagination links
+                        if (a.closest('[class*="related"], [class*="recommend-keyword"], [class*="hot-words"], [class*="footer"], [class*="bottom-recommend"], [class*="suggest"], [class*="pagination"], [class*="comfy-pagination"]')) {
+                            return;
+                        }
+
                         // Skip top header brand banner cards where cards lack real product titles
                         if (a.closest('[class*="storeDirect"]') || a.closest('[class*="brandWrapper"]')) {
                             const hasWord = a.innerText && /[a-zA-Z]{3,}/.test(a.innerText);
@@ -391,46 +396,54 @@ class AliExpressScraper:
                         let seller = '';
 
                         if (card) {
-                            // Prioritize product gallery containers and video posters
-                            const mainImg = card.querySelector('.image-view-v2--previewBox img, .magnifier--image, [class*="product-img"] img, [class*="gallery"] img, [class*="main-image"] img, img.s-item__image-img');
-                            const videoPoster = card.querySelector('video[poster]');
-                            if (videoPoster && videoPoster.getAttribute('poster')) {
-                                img = videoPoster.getAttribute('poster');
-                            } else if (mainImg) {
-                                img = mainImg.currentSrc || mainImg.src || mainImg.getAttribute('src') || mainImg.getAttribute('data-src') || '';
+                            // High-Resolution candidate scoring across all card images
+                            let bestImg = '';
+                            let bestScore = -1;
+                            const allImgs = Array.from(card.querySelectorAll('img'));
+                            for (const im of allImgs) {
+                                let src = im.currentSrc || im.src || im.getAttribute('src') || im.getAttribute('data-src') || '';
+                                if (!src || src.startsWith('data:')) continue;
+                                if (src.startsWith('//')) src = 'https:' + src;
+
+                                const lowSrc = src.toLowerCase();
+                                const alt = (im.alt || '').toLowerCase();
+                                const cls = (im.className || '').toLowerCase();
+                                const w = im.naturalWidth || im.width || 0;
+                                const h = im.naturalHeight || im.height || 0;
+
+                                // Filter out badges, avatars, service icons
+                                if ((w > 0 && w < 50 && h > 0 && h < 50) ||
+                                    lowSrc.includes('cross-border') || lowSrc.includes('service-commitment') ||
+                                    lowSrc.includes('service_commitment') || lowSrc.includes('brand-logo') ||
+                                    lowSrc.includes('icon') || lowSrc.includes('badge') || lowSrc.endsWith('.svg') ||
+                                    alt.includes('badge') || alt.includes('choice') || alt.includes('service') ||
+                                    cls.includes('badge') || cls.includes('service')) {
+                                    continue;
+                                }
+
+                                let score = 10;
+                                if (w >= 300 || h >= 300) score += 100;
+                                else if (w >= 100 || h >= 100) score += 50;
+                                if (lowSrc.includes('/kf/')) score += 50;
+                                if (lowSrc.includes('alicdn') || lowSrc.includes('aliexpress-media')) score += 40;
+                                if (lowSrc.includes('480x480') || lowSrc.includes('960x960') || lowSrc.includes('800x800')) score += 40;
+                                if (im.closest('.image-view-v2--previewBox, .magnifier--image, [class*="product-img"], [class*="gallery"], [class*="main-image"]')) score += 60;
+
+                                if (score > bestScore) {
+                                    bestScore = score;
+                                    bestImg = src;
+                                }
+                            }
+                            if (bestImg) img = bestImg;
+
+                            // Video poster fallback
+                            if (!img) {
+                                const videoPoster = card.querySelector('video[poster]');
+                                if (videoPoster && videoPoster.getAttribute('poster')) {
+                                    img = videoPoster.getAttribute('poster');
+                                }
                             }
 
-                            if (!img) {
-                                const allImgs = Array.from(card.querySelectorAll('img'));
-                                for (const im of allImgs) {
-                                    const src = im.currentSrc || im.src || im.getAttribute('src') || im.getAttribute('data-src') || '';
-                                    const alt = (im.alt || '').toLowerCase();
-                                    const cls = (im.className || '').toLowerCase();
-                                    const lowSrc = src.toLowerCase();
-                                    const isBadge = lowSrc.includes('cross-border') || 
-                                                    lowSrc.includes('service-commitment') || 
-                                                    lowSrc.includes('service_commitment') ||
-                                                    lowSrc.includes('brand-logo') || 
-                                                    lowSrc.includes('icon') || 
-                                                    lowSrc.includes('banner') || 
-                                                    lowSrc.includes('choice') || 
-                                                    lowSrc.includes('promotion') || 
-                                                    lowSrc.endsWith('.svg') ||
-                                                    cls.includes('badge') || 
-                                                    cls.includes('service') || 
-                                                    cls.includes('commitment');
-                                    if (src && !isBadge && (src.includes('alicdn') || src.includes('aliexpress') || src.includes('/kf/'))) {
-                                        img = src;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (!img) {
-                                const anyImg = card.querySelector('img');
-                                if (anyImg) {
-                                    img = anyImg.currentSrc || anyImg.src || anyImg.getAttribute('src') || anyImg.getAttribute('data-src') || '';
-                                }
-                            }
                             if (img) {
                                 if (img.startsWith('//')) img = 'https:' + img;
                                 img = img.replace(/(\\.(?:jpg|jpeg|png|webp))_[^?#]+.*$/i, '$1');
@@ -447,6 +460,11 @@ class AliExpressScraper:
                         if (!price) {
                             const mP = (a.innerText || '').match(/(?:US\\s*\\$|\\$|€|£)\\s*[\\d,]+(?:\\.\\d+)?/);
                             if (mP) price = mP[0];
+                        }
+
+                        // Skip non-product card text chips lacking both image and real price
+                        if (!img && (!price || price === 'N/A' || price === '$0.00')) {
+                            return;
                         }
 
                         results.push({
@@ -522,6 +540,10 @@ class AliExpressScraper:
             if item_id in seen_ids:
                 continue
 
+            # Skip footer, related keywords, hot words, search suggestion chips, pagination links
+            if link.find_parent(class_=re.compile(r"related|recommend-keyword|hot-words|footer|bottom-recommend|suggest|pagination|comfy-pagination")):
+                continue
+
             # Extract parent product container
             card = (
                 link.find_parent(class_=re.compile(r"search-item-card|card-out-wrapper|multi--content--|gallery|item|product-snippet|store-product"))
@@ -566,7 +588,7 @@ class AliExpressScraper:
                 if inc_tokens and not any(re.search(r'\b' + re.escape(tk) + r'\b', title_lower) for tk in inc_tokens):
                     continue
 
-            # 3. Image extraction (filter out promo badge icons)
+            # 3. Image extraction (filter out promo badge icons & prioritize high-res product photos)
             img_url = ""
             if card:
                 for img_tag in card.find_all("img"):
@@ -574,16 +596,16 @@ class AliExpressScraper:
                     alt = (img_tag.get("alt") or "").lower()
                     cls = " ".join(img_tag.get("class", [])).lower()
                     low_src = src.lower()
-                    is_badge = any(k in low_src for k in ("cross-border", "service-commitment", "service_commitment", "brand-logo", "icon", "banner", ".svg", "logo", "choice", "promotion")) or \
-                               any(k in alt for k in ("choice", "top sale", "service", "commitment")) or \
-                               any(k in cls for k in ("badge", "service", "commitment"))
+                    is_badge = any(k in low_src for k in ("cross-border", "service-commitment", "service_commitment", "brand-logo", "icon", "banner", ".svg", "logo", "choice", "promotion", "avatar")) or \
+                               any(k in alt for k in ("choice", "top sale", "service", "commitment", "badge")) or \
+                               any(k in cls for k in ("badge", "service", "commitment", "icon"))
                     if src and not is_badge and ("alicdn" in low_src or "aliexpress" in low_src or "/kf/" in low_src):
                         img_url = src
                         break
                 if not img_url:
                     for first_img in card.find_all("img"):
                         cand = first_img.get("src") or first_img.get("data-src") or ""
-                        if cand and not any(k in cand.lower() for k in ("cross-border", "service-commitment", ".svg")):
+                        if cand and not any(k in cand.lower() for k in ("cross-border", "service-commitment", ".svg", "badge", "icon")):
                             img_url = cand
                             break
                 if img_url:
@@ -591,6 +613,10 @@ class AliExpressScraper:
                         img_url = "https:" + img_url
                     img_url = re.sub(r'(\.(?:jpg|jpeg|png|webp))_[^?#]+.*$', r'\1', img_url, flags=re.I)
                     img_url = re.sub(r'_\.(?:avif|webp)$', '', img_url, flags=re.I)
+
+            # Skip non-product card text chips lacking both image and real price
+            if not img_url and (not price or price == "N/A" or price == "$0.00"):
+                continue
 
             # 4. Per-card seller extraction
             card_seller = seller_label
@@ -811,13 +837,66 @@ class AliExpressScraper:
                                     store_id = f"110{short_hash}"
                                     s_name = f"Shop{store_id} Store"
 
-                            # Extract PDP Image if missing
+                            # Extract High-Resolution PDP Image if missing
                             pdp_img = page.evaluate("""() => {
-                                const og = document.querySelector('meta[property="og:image"]');
-                                if (og && og.content) return og.content;
-                                const main = document.querySelector('.image-view-v2--previewBox img, .magnifier--image, [class*="product-img"] img, [class*="gallery"] img, [class*="main-image"] img, img');
-                                if (main) return main.currentSrc || main.src || main.getAttribute('src') || main.getAttribute('data-src') || '';
-                                return '';
+                                // 1. Script tag extraction for imagePathList / imageUrl
+                                const scripts = Array.from(document.querySelectorAll('script'));
+                                for (const s of scripts) {
+                                    const txt = s.innerText || '';
+                                    const m = txt.match(/["']imagePathList["']\\s*:\\s*(\\[[^\\]]+\\])/);
+                                    if (m) {
+                                        try {
+                                            const list = JSON.parse(m[1]);
+                                            if (list && list.length > 0 && typeof list[0] === 'string' && list[0].startsWith('http')) {
+                                                return list[0];
+                                            }
+                                        } catch(e) {}
+                                    }
+                                    const m2 = txt.match(/["']imageUrl["']\\s*:\\s*["']([^"']+)["']/);
+                                    if (m2 && m2[1].includes('/kf/')) {
+                                        return m2[1];
+                                    }
+                                }
+
+                                // 2. Open Graph / Twitter image
+                                const og = document.querySelector('meta[property="og:image"], meta[name="og:image"], meta[name="twitter:image"]');
+                                if (og && og.content && og.content.startsWith('http') && !og.content.includes('logo') && !og.content.includes('icon')) {
+                                    return og.content;
+                                }
+
+                                // 3. Multi-candidate scoring of all <img> elements on PDP
+                                let topScore = -1;
+                                let bestImg = '';
+                                const allImgs = Array.from(document.querySelectorAll('img'));
+                                for (const im of allImgs) {
+                                    let src = im.currentSrc || im.src || im.getAttribute('src') || im.getAttribute('data-src') || '';
+                                    if (!src || src.startsWith('data:')) continue;
+                                    if (src.startsWith('//')) src = 'https:' + src;
+
+                                    const low = src.toLowerCase();
+                                    const alt = (im.alt || '').toLowerCase();
+                                    const cls = (im.className || '').toLowerCase();
+                                    const w = im.naturalWidth || im.width || 0;
+                                    const h = im.naturalHeight || im.height || 0;
+
+                                    // Strictly filter icons, badges, category navigation, search buttons, avatars
+                                    if ((w > 0 && w < 80 && h > 0 && h < 80) || low.includes('icon') || low.includes('badge') || low.includes('logo') || low.includes('avatar') || low.endsWith('.svg') || alt.includes('category') || alt.includes('search') || cls.includes('icon') || cls.includes('badge')) {
+                                        continue;
+                                    }
+
+                                    let score = 10;
+                                    if (w >= 300 || h >= 300) score += 150 + (w * h) / 10000;
+                                    else if (w >= 100 || h >= 100) score += 50;
+                                    if (low.includes('/kf/')) score += 50;
+                                    if (low.includes('alicdn') || low.includes('aliexpress-media')) score += 40;
+                                    if (im.closest('.gallery-preview-panel, [class*="gallery"], [class*="slider"], [class*="image-view"], [class*="magnifier"], [class*="previewBox"], [class*="main-image"], [class*="product-img"]')) score += 80;
+
+                                    if (score > topScore) {
+                                        topScore = score;
+                                        bestImg = src;
+                                    }
+                                }
+                                return bestImg;
                             }""")
                             if pdp_img:
                                 if pdp_img.startswith('//'): pdp_img = 'https:' + pdp_img

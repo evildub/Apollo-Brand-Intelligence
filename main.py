@@ -5942,7 +5942,7 @@ class EbayTool(tk.Tk):
         self._log(f"✕ Removed {len(selected)} selected listing(s). {len(self.results)} total remaining.")
 
     def _clear_results(self):
-        if messagebox.askyesno("Clear", "Clear all harvested results?"):
+        if self._show_themed_confirm("Clear Results", "Clear all harvested listings from the active session?"):
             self.results.clear()
             self.seen_item_ids.clear()
             self.executed_jobs.clear()
@@ -6391,6 +6391,189 @@ class EbayTool(tk.Tk):
         win.bind("<Escape>", lambda e: win.destroy())
 
         self._center_window(win, 460, 210)
+
+    def _show_themed_warning(self, title: str, message: str, icon: str = "⚠", parent=None):
+        """Display an Apollo theme-adaptive warning modal dialog."""
+        self._show_themed_info(title, message, icon=icon, parent=parent)
+
+    def _show_themed_error(self, title: str, message: str, icon: str = "❌", parent=None):
+        """Display an Apollo theme-adaptive error modal dialog."""
+        self._show_themed_info(title, message, icon=icon, parent=parent)
+
+    def _show_themed_confirm(self, title: str, message: str, icon: str = "❓", yes_text: str = "Yes", no_text: str = "No", parent=None) -> bool:
+        """Display an Apollo theme-adaptive confirmation dialog returning True for Yes, False for No."""
+        t = self.theme
+        win = tk.Toplevel(parent or self)
+        win.title(title)
+        win.configure(bg=t["bg"])
+        win.resizable(False, False)
+        win.transient(parent or self)
+        win.grab_set()
+        self._apply_dark_titlebar(win)
+        self._load_app_icon(win)
+
+        result = {"confirmed": False}
+
+        card = tk.Frame(win, bg=t["panel"], padx=20, pady=16, highlightbackground=t.get("border", "#334155"), highlightthickness=1)
+        card.pack(fill="both", expand=True, padx=8, pady=8)
+
+        # Header row with theme icon and title
+        hdr = tk.Frame(card, bg=t["panel"])
+        hdr.pack(fill="x", pady=(0, 8))
+
+        tk.Label(hdr, text=icon, font=("Segoe UI", 16), bg=t["panel"], fg=t.get("accent", "#38bdf8")).pack(side="left", padx=(0, 8))
+        tk.Label(hdr, text=title, font=FONT_HEAD, bg=t["panel"], fg=t.get("text", "#ffffff")).pack(side="left")
+
+        div = tk.Frame(card, bg=t.get("border", "#334155"), height=1)
+        div.pack(fill="x", pady=(0, 10))
+
+        # Message body
+        tk.Label(card, text=message, font=FONT_NORM, bg=t["panel"], fg=t.get("text", "#ffffff"), justify="left", wraplength=400).pack(anchor="w", pady=(0, 14))
+
+        # Buttons (Yes / No)
+        btn_row = tk.Frame(card, bg=t["panel"])
+        btn_row.pack(fill="x")
+
+        def _on_yes():
+            result["confirmed"] = True
+            win.destroy()
+
+        def _on_no():
+            result["confirmed"] = False
+            win.destroy()
+
+        no_btn = tk.Button(
+            btn_row,
+            text=no_text,
+            font=FONT_NORM,
+            bg=t.get("btn_normal_bg", t.get("btn_bg", "#334155")),
+            fg=t.get("btn_normal_fg", t.get("text", "#ffffff")),
+            activebackground=t.get("panel", "#1e1e1e"),
+            relief="flat",
+            padx=16,
+            pady=3,
+            cursor="hand2",
+            command=_on_no
+        )
+        no_btn.pack(side="right", padx=(6, 0))
+
+        yes_btn = tk.Button(
+            btn_row,
+            text=yes_text,
+            font=FONT_BOLD,
+            bg=t.get("accent_btn", t.get("accent", "#0284c7")),
+            fg="#ffffff" if not str(t.get("name", "")).startswith("🪙") else "#0A0B0E",
+            activebackground=t.get("accent2", "#38bdf8"),
+            relief="flat",
+            padx=18,
+            pady=3,
+            cursor="hand2",
+            command=_on_yes
+        )
+        yes_btn.pack(side="right")
+        yes_btn.focus_set()
+
+        win.bind("<Return>", lambda e: _on_yes())
+        win.bind("<Escape>", lambda e: _on_no())
+
+        self._center_window(win, 460, 210)
+        win.wait_window()
+        return result["confirmed"]
+
+    def _show_themed_askyesnocancel(self, title: str, message: str, icon: str = "❓", parent=None) -> Optional[bool]:
+        """Display an Apollo theme-adaptive Yes/No/Cancel dialog returning True (Yes), False (No), or None (Cancel)."""
+        t = self.theme
+        win = tk.Toplevel(parent or self)
+        win.title(title)
+        win.configure(bg=t["bg"])
+        win.resizable(False, False)
+        win.transient(parent or self)
+        win.grab_set()
+        self._apply_dark_titlebar(win)
+        self._load_app_icon(win)
+
+        result = {"choice": None}
+
+        card = tk.Frame(win, bg=t["panel"], padx=20, pady=16, highlightbackground=t.get("border", "#334155"), highlightthickness=1)
+        card.pack(fill="both", expand=True, padx=8, pady=8)
+
+        # Header row with theme icon and title
+        hdr = tk.Frame(card, bg=t["panel"])
+        hdr.pack(fill="x", pady=(0, 8))
+
+        tk.Label(hdr, text=icon, font=("Segoe UI", 16), bg=t["panel"], fg=t.get("accent", "#38bdf8")).pack(side="left", padx=(0, 8))
+        tk.Label(hdr, text=title, font=FONT_HEAD, bg=t["panel"], fg=t.get("text", "#ffffff")).pack(side="left")
+
+        div = tk.Frame(card, bg=t.get("border", "#334155"), height=1)
+        div.pack(fill="x", pady=(0, 10))
+
+        # Message body
+        tk.Label(card, text=message, font=FONT_NORM, bg=t["panel"], fg=t.get("text", "#ffffff"), justify="left", wraplength=440).pack(anchor="w", pady=(0, 14))
+
+        # Buttons
+        btn_row = tk.Frame(card, bg=t["panel"])
+        btn_row.pack(fill="x")
+
+        def _on_yes():
+            result["choice"] = True
+            win.destroy()
+
+        def _on_no():
+            result["choice"] = False
+            win.destroy()
+
+        def _on_cancel():
+            result["choice"] = None
+            win.destroy()
+
+        tk.Button(
+            btn_row,
+            text="Cancel",
+            font=FONT_NORM,
+            bg=t.get("btn_normal_bg", t.get("btn_bg", "#334155")),
+            fg=t.get("btn_normal_fg", t.get("text", "#ffffff")),
+            relief="flat",
+            padx=12,
+            pady=3,
+            cursor="hand2",
+            command=_on_cancel
+        ).pack(side="right", padx=(6, 0))
+
+        tk.Button(
+            btn_row,
+            text="No",
+            font=FONT_NORM,
+            bg=t.get("btn_normal_bg", t.get("btn_bg", "#334155")),
+            fg=t.get("btn_normal_fg", t.get("text", "#ffffff")),
+            relief="flat",
+            padx=14,
+            pady=3,
+            cursor="hand2",
+            command=_on_no
+        ).pack(side="right", padx=(6, 0))
+
+        yes_btn = tk.Button(
+            btn_row,
+            text="Yes",
+            font=FONT_BOLD,
+            bg=t.get("accent_btn", t.get("accent", "#0284c7")),
+            fg="#ffffff" if not str(t.get("name", "")).startswith("🪙") else "#0A0B0E",
+            activebackground=t.get("accent2", "#38bdf8"),
+            relief="flat",
+            padx=18,
+            pady=3,
+            cursor="hand2",
+            command=_on_yes
+        )
+        yes_btn.pack(side="right")
+        yes_btn.focus_set()
+
+        win.bind("<Return>", lambda e: _on_yes())
+        win.bind("<Escape>", lambda e: _on_cancel())
+
+        self._center_window(win, 480, 230)
+        win.wait_window()
+        return result["choice"]
 
     def _open_session_vault_modal(self):
         """Open the Universal Marketplace Session & Account Vault Modal."""

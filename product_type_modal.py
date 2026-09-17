@@ -577,14 +577,143 @@ class ProductTypeModal(tk.Toplevel):
         self.taxonomy[new_name] = data
         self._populate_industries(select_industry=new_name)
 
+    def _show_themed_info(self, title: str, message: str, icon: str = "ℹ"):
+        """Display an Apollo theme-adaptive info dialog."""
+        t = self.theme
+        win = tk.Toplevel(self)
+        win.title(title)
+        win.configure(bg=self._t("bg", "#121212"))
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+
+        if hasattr(self.master, "_apply_dark_titlebar"):
+            self.master._apply_dark_titlebar(win)
+        if hasattr(self.master, "_load_app_icon"):
+            self.master._load_app_icon(win)
+
+        card = tk.Frame(win, bg=self._t("panel", "#1e1e1e"), padx=20, pady=16, highlightbackground=self._t("border", "#334155"), highlightthickness=1)
+        card.pack(fill="both", expand=True, padx=8, pady=8)
+
+        hdr = tk.Frame(card, bg=self._t("panel", "#1e1e1e"))
+        hdr.pack(fill="x", pady=(0, 8))
+
+        tk.Label(hdr, text=icon, font=("Segoe UI", 16), bg=self._t("panel", "#1e1e1e"), fg=self._t("accent", "#38bdf8")).pack(side="left", padx=(0, 8))
+        tk.Label(hdr, text=title, font=FONT_HEADING, bg=self._t("panel", "#1e1e1e"), fg=self._t("text", "#f8fafc")).pack(side="left")
+
+        div = tk.Frame(card, bg=self._t("border", "#334155"), height=1)
+        div.pack(fill="x", pady=(0, 10))
+
+        tk.Label(card, text=message, font=FONT_NORM, bg=self._t("panel", "#1e1e1e"), fg=self._t("text", "#f8fafc"), justify="left", wraplength=400).pack(anchor="w", pady=(0, 14))
+
+        btn_row = tk.Frame(card, bg=self._t("panel", "#1e1e1e"))
+        btn_row.pack(fill="x")
+        btn = tk.Button(
+            btn_row,
+            text="OK",
+            font=FONT_BOLD,
+            bg=self._t("accent_btn", "#0284c7"),
+            fg="#ffffff",
+            relief="flat",
+            padx=18,
+            pady=3,
+            cursor="hand2",
+            command=win.destroy
+        )
+        btn.pack(side="right")
+        btn.focus_set()
+        win.bind("<Return>", lambda e: win.destroy())
+        win.bind("<Escape>", lambda e: win.destroy())
+
+        if hasattr(self.master, "_center_window"):
+            self.master._center_window(win, 460, 210)
+
+    def _show_themed_confirm(self, title: str, message: str, icon: str = "❓", yes_text: str = "Yes", no_text: str = "No") -> bool:
+        """Display an Apollo theme-adaptive confirmation dialog returning True for Yes, False for No."""
+        t = self.theme
+        win = tk.Toplevel(self)
+        win.title(title)
+        win.configure(bg=self._t("bg", "#121212"))
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+
+        if hasattr(self.master, "_apply_dark_titlebar"):
+            self.master._apply_dark_titlebar(win)
+        if hasattr(self.master, "_load_app_icon"):
+            self.master._load_app_icon(win)
+
+        result = {"confirmed": False}
+
+        card = tk.Frame(win, bg=self._t("panel", "#1e1e1e"), padx=20, pady=16, highlightbackground=self._t("border", "#334155"), highlightthickness=1)
+        card.pack(fill="both", expand=True, padx=8, pady=8)
+
+        hdr = tk.Frame(card, bg=self._t("panel", "#1e1e1e"))
+        hdr.pack(fill="x", pady=(0, 8))
+
+        tk.Label(hdr, text=icon, font=("Segoe UI", 16), bg=self._t("panel", "#1e1e1e"), fg=self._t("accent", "#38bdf8")).pack(side="left", padx=(0, 8))
+        tk.Label(hdr, text=title, font=FONT_HEADING, bg=self._t("panel", "#1e1e1e"), fg=self._t("text", "#f8fafc")).pack(side="left")
+
+        div = tk.Frame(card, bg=self._t("border", "#334155"), height=1)
+        div.pack(fill="x", pady=(0, 10))
+
+        tk.Label(card, text=message, font=FONT_NORM, bg=self._t("panel", "#1e1e1e"), fg=self._t("text", "#f8fafc"), justify="left", wraplength=400).pack(anchor="w", pady=(0, 14))
+
+        btn_row = tk.Frame(card, bg=self._t("panel", "#1e1e1e"))
+        btn_row.pack(fill="x")
+
+        def _on_yes():
+            result["confirmed"] = True
+            win.destroy()
+
+        def _on_no():
+            result["confirmed"] = False
+            win.destroy()
+
+        no_btn = tk.Button(
+            btn_row,
+            text=no_text,
+            font=FONT_NORM,
+            bg=self._t("btn_bg", "#334155"),
+            fg=self._t("text", "#f8fafc"),
+            relief="flat",
+            padx=16,
+            pady=3,
+            cursor="hand2",
+            command=_on_no
+        )
+        no_btn.pack(side="right", padx=(6, 0))
+
+        yes_btn = tk.Button(
+            btn_row,
+            text=yes_text,
+            font=FONT_BOLD,
+            bg=self._t("accent_btn", "#0284c7"),
+            fg="#ffffff",
+            relief="flat",
+            padx=18,
+            pady=3,
+            cursor="hand2",
+            command=_on_yes
+        )
+        yes_btn.pack(side="right")
+        yes_btn.focus_set()
+
+        win.bind("<Return>", lambda e: _on_yes())
+        win.bind("<Escape>", lambda e: _on_no())
+
+        if hasattr(self.master, "_center_window"):
+            self.master._center_window(win, 460, 210)
+        win.wait_window()
+        return result["confirmed"]
+
     def _delete_industry_dialog(self):
         if not self._selected_industry:
             return
         ind = self._selected_industry
-        confirm = messagebox.askyesno(
+        confirm = self._show_themed_confirm(
             "Delete Industry",
-            f"Are you sure you want to delete '{ind}' and all its product types?",
-            parent=self
+            f"Are you sure you want to delete '{ind}' and all its product types?"
         )
         if confirm:
             self.taxonomy.pop(ind, None)
@@ -592,7 +721,7 @@ class ProductTypeModal(tk.Toplevel):
 
     def _add_type_dialog(self):
         if not self._selected_industry:
-            messagebox.showwarning("Select Industry", "Please select an Industry Sector first.", parent=self)
+            self._show_themed_info("Select Industry", "Please select an Industry Sector first.", icon="ℹ")
             return
         name = simpledialog.askstring(
             "Add Product Type",
@@ -604,11 +733,10 @@ class ProductTypeModal(tk.Toplevel):
         name = name.strip()
         ind_dict = self.taxonomy.setdefault(self._selected_industry, {})
         if name in ind_dict:
-            messagebox.showwarning("Exists", f"Product Type '{name}' already exists in this industry.", parent=self)
+            self._show_themed_info("Exists", f"Product Type '{name}' already exists in this industry.", icon="⚠")
             return
         ind_dict[name] = []
         self._populate_types_for_industry(self._selected_industry, select_type=name)
-        # Update industry count
         sel = self.ind_tree.selection()
         if sel:
             self.ind_tree.item(sel[0], values=(str(len(ind_dict)),))
@@ -635,16 +763,14 @@ class ProductTypeModal(tk.Toplevel):
         if not self._selected_industry or not self._selected_type:
             return
         pt = self._selected_type
-        confirm = messagebox.askyesno(
+        confirm = self._show_themed_confirm(
             "Delete Product Type",
-            f"Delete product type '{pt}' from '{self._selected_industry}'?",
-            parent=self
+            f"Delete product type '{pt}' from '{self._selected_industry}'?"
         )
         if confirm:
             ind_dict = self.taxonomy[self._selected_industry]
             ind_dict.pop(pt, None)
             self._populate_types_for_industry(self._selected_industry)
-            # Update industry count
             sel = self.ind_tree.selection()
             if sel:
                 self.ind_tree.item(sel[0], values=(str(len(ind_dict)),))
@@ -701,17 +827,16 @@ class ProductTypeModal(tk.Toplevel):
             except Exception:
                 pass
 
-        messagebox.showinfo(
+        self._show_themed_info(
             "Saved",
             "Product Type & Industry Taxonomy successfully saved and applied to live auto-tagging engine and active results table!",
-            parent=self
+            icon="💾"
         )
 
     def _reset_to_defaults_dialog(self):
-        confirm = messagebox.askyesno(
+        confirm = self._show_themed_confirm(
             "Reset Taxonomy to Factory Defaults",
-            "Are you sure you want to reset all Industry & Product Type rules back to Apollo factory defaults?\n\nAny custom tags or keyword additions will be replaced.",
-            parent=self
+            "Are you sure you want to reset all Industry & Product Type rules back to Apollo factory defaults?\n\nAny custom tags or keyword additions will be replaced."
         )
         if not confirm:
             return
@@ -731,4 +856,4 @@ class ProductTypeModal(tk.Toplevel):
             except Exception:
                 pass
 
-        messagebox.showinfo("Reset Complete", "Taxonomy reset to factory defaults and applied to active results table.", parent=self)
+        self._show_themed_info("Reset Complete", "Taxonomy reset to factory defaults and applied to active results table.", icon="🔄")

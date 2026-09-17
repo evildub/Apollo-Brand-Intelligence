@@ -202,7 +202,7 @@ class ProductTypeModal(tk.Toplevel):
 
         # ── Right Column: Product Types & Keyword Rules ──
         right_frame = tk.Frame(paned, bg=self._t("panel", "#1e1e1e"), padx=8, pady=8)
-        paned.add(right_frame, minsize=460, expand=True)
+        paned.add(right_frame, minsize=460, stretch="always")
 
         lbl_types = tk.Label(
             right_frame,
@@ -278,8 +278,8 @@ class ProductTypeModal(tk.Toplevel):
         ).pack(side="right")
 
         # ── Keyword Editor for selected type ──
-        kw_hdr_bar = tk.Frame(right_frame, bg=self._t("panel", "#1e1e1e"), pady=(8, 2))
-        kw_hdr_bar.pack(fill="x")
+        kw_hdr_bar = tk.Frame(right_frame, bg=self._t("panel", "#1e1e1e"))
+        kw_hdr_bar.pack(fill="x", pady=(8, 2))
 
         self.lbl_kw_title = tk.Label(
             kw_hdr_bar,

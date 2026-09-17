@@ -950,6 +950,8 @@ class EbayScraper:
                     price = m_price.group(0).strip()
                 elif raw_price and any(c in raw_price for c in ("$", "£", "€", "¥")) and not any(w in raw_price.lower() for w in ("free", "delivery", "shipping", "%")):
                     price = raw_price
+                from exporter import normalize_price_string
+                price = normalize_price_string(price)
 
             # 4. Thumbnail Image URL & Authoritative Title Extraction
             img_url = ""
@@ -1409,9 +1411,9 @@ class EbayScraper:
                         resolved_img = itm['img'] or s_info.get('img', '')
                         resolved_price = itm['price'] or s_info.get('price', '')
 
-                    # Clean anomalous price strings
-                    if resolved_price and re.search(r'\bus\s*\d+\b', resolved_price, flags=re.IGNORECASE) and not '$' in resolved_price:
-                        resolved_price = s_info.get('price', '') if isinstance(s_info, dict) else ''
+                    # Clean and normalize price strings
+                    from exporter import normalize_price_string
+                    resolved_price = normalize_price_string(resolved_price)
 
                     sim_label = "Related Listing"
                     dist_val = 99

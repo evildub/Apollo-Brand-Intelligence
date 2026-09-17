@@ -609,7 +609,8 @@ def _fetch_ebay_item(url: str, headless: bool = True) -> dict:
         # Price
         p_el = soup.select_one("div.x-price-primary span.ux-textspans, span#prcIsum, span#mm-saleDscPrc, div[data-testid='x-price-primary'] span")
         if p_el:
-            price = p_el.text.strip()
+            from exporter import normalize_price_string
+            price = normalize_price_string(p_el.text.strip()) or "$0.00"
 
         # Location
         loc_el = soup.select_one("div.ux-labels-values--location span.ux-textspans--SECONDARY, div.ux-labels-values--location")
@@ -688,7 +689,9 @@ def _fetch_ebay_item(url: str, headless: bool = True) -> dict:
 
                 if price in ("$0.00", ""):
                     p_val = page.query_selector("div.x-price-primary span.ux-textspans, span#prcIsum, span#mm-saleDscPrc, div[data-testid='x-price-primary'] span")
-                    if p_val: price = p_val.inner_text().strip()
+                    if p_val:
+                        from exporter import normalize_price_string
+                        price = normalize_price_string(p_val.inner_text().strip()) or "$0.00"
 
                 if not image_url:
                     img = page.query_selector("img.ux-image-filmstrip-carousel-item, div.ux-image-carousel-item img, img#icImg, img[data-testid='x-item-image']")

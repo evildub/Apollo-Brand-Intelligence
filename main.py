@@ -40,7 +40,7 @@ from fineartamerica_scraper import FineArtAmericaScraper
 from session_vault import SessionVault
 from session_vault_modal import SessionVaultModal
 from multi_sector_modal import MultiSectorModal
-from exporter import ExcelExporter
+from exporter import ExcelExporter, normalize_price_string
 from data_store import DataStore
 import batch_importer
 from visual_catalog import VisualCatalogManager, compute_phash, hamming_distance
@@ -5577,7 +5577,7 @@ class EbayTool(tk.Tk):
                         item.get("product_type", ""),
                         item.get("title", ""),
                         item.get("item_id", ""),
-                        item.get("price", ""),
+                        normalize_price_string(item.get("price", "")),
                         item.get("seller", ""),
                         orig_display,
                         threat_display,
@@ -5766,7 +5766,7 @@ class EbayTool(tk.Tk):
                 item.get("product_type", ""),
                 item.get("title", ""),
                 item.get("item_id", ""),
-                item.get("price", ""),
+                normalize_price_string(item.get("price", "")),
                 item.get("seller", ""),
                 orig_display,
                 threat_display,
@@ -11105,7 +11105,7 @@ class ConnectedNetworkModal(tk.Toplevel):
                 "product_type": pt_name,
                 "title": t,
                 "item_id": itm_id,
-                "price": itm.get("price", ""),
+                "price": normalize_price_string(itm.get("price", "")),
                 "seller": itm.get("seller", "") or "Unknown",
                 "location": itm.get("location", "") or ("United States" if is_pod_itm else ""),
                 "image_url": itm.get("image_url", ""),
@@ -11842,7 +11842,7 @@ class ReverseVisualModal(tk.Toplevel):
                 "product_type": pt_name,
                 "title": t,
                 "item_id": str(itm.get("item_id", "")),
-                "price": itm.get("price", ""),
+                "price": normalize_price_string(itm.get("price", "")),
                 "seller": itm.get("seller", ""),
                 "location": itm.get("location", ""),
                 "image_url": itm.get("image_url", ""),

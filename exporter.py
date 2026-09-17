@@ -45,6 +45,36 @@ HEADERS = {
 HEADER_FILL  = PatternFill("solid", fgColor="2B2D42")
 HEADER_FONT  = Font(bold=True, color="FFFFFF", name="Segoe UI", size=10)
 
+def normalize_price_string(price_str: str) -> str:
+    """
+    Sanitize and normalize price strings for Genesis Excel ingestion and UI consistency.
+    Strips country prefixes (e.g. US $, USD $) while preserving international symbols (£, €, MXN, BRL, CAD, AUD).
+    """
+    if not price_str:
+        return ""
+    p = str(price_str).strip()
+    if not p:
+        return ""
+
+    # 1. Strip promo / badge noise
+    if any(w in p.lower() for w in ("free", "delivery", "shipping", "off", "%", "save")):
+        return ""
+
+    # 2. Reject watcher / quantity noise (e.g. "US 1", "US 3")
+    if re.match(r'^(?:US|USD)?\s*\d{1,2}$', p, re.IGNORECASE):
+        return ""
+
+    # 3. Normalize "US $54.89" or "USD $54.89" -> "$54.89"
+    p = re.sub(r'^(?:US|USD)\s*\$', '$', p, flags=re.IGNORECASE)
+    p = re.sub(r'^(?:US|USD)\s+(?=\d)', '$', p, flags=re.IGNORECASE)
+
+    # 4. If raw number (e.g. "54.89"), prepend standard "$"
+    if re.match(r'^\d+(?:\.\d{2})?$', p):
+        p = f"${p}"
+
+    return p.strip()
+
+
 def normalize_marketplace_code(mkt: str) -> str:
     """
     Ensure enterprise marketplace codes strictly adhere to client intake formatting and Genesis specifications.
@@ -282,7 +312,7 @@ class ExcelExporter:
             cell("K", "")
             cell("L", "")
             cell("M", item.get("brand") or (brand if brand != "All Results" else "Unassigned")).font = Font(name="Segoe UI", size=9)
-            cell("N", item.get("price", "")).font = Font(name="Segoe UI", size=9)
+            cell("N", normalize_price_string(item.get("price", ""))).font = Font(name="Segoe UI", size=9)
             cell("O", item.get("location", "")).font = Font(name="Segoe UI", size=9)
             cell("P", item.get("product_type", "")).font = Font(name="Segoe UI", size=9)
             cell("Q", item.get("seller_origin", item.get("country", ""))).font = Font(name="Segoe UI", size=9)

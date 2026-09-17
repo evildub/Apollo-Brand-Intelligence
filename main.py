@@ -7890,7 +7890,12 @@ class EbayTool(tk.Tk):
 
     def _fetch_inline_thumbnail(self, iid, image_url):
         """Asynchronously download and display square inline thumbnail in result_tree with retry resiliency."""
-        if not image_url or not str(image_url).startswith("http"):
+        if not image_url:
+            return
+        image_url_str = str(image_url).strip()
+        if image_url_str.startswith("//"):
+            image_url_str = "https:" + image_url_str
+        if not image_url_str.startswith("http"):
             return
 
         size_key = self.thumb_size_var.get() if hasattr(self, "thumb_size_var") else "Medium (100px)"
@@ -7898,15 +7903,15 @@ class EbayTool(tk.Tk):
         if cfg["img_size"] <= 0:
             return
 
-        cache_key = (size_key, image_url)
+        cache_key = (size_key, image_url_str)
         if cache_key in self.inline_img_cache:
             photo = self.inline_img_cache[cache_key]
             if self.result_tree.exists(iid):
                 self.result_tree.item(iid, image=photo)
             return
 
-        if image_url in self.raw_img_cache:
-            photo = self._get_scaled_photo(self.raw_img_cache[image_url], cfg["img_size"])
+        if image_url_str in self.raw_img_cache:
+            photo = self._get_scaled_photo(self.raw_img_cache[image_url_str], cfg["img_size"])
             self.inline_img_cache[cache_key] = photo
             if self.result_tree.exists(iid):
                 self.result_tree.item(iid, image=photo)
@@ -7916,32 +7921,24 @@ class EbayTool(tk.Tk):
         cur_cfg = THUMB_CONFIG.get(cur_size_key, THUMB_CONFIG["Medium (100px)"])
         cur_img_size = cur_cfg.get("img_size", 100)
 
-        def _worker(sz_key=cur_size_key, sz_px=cur_img_size):
-            if not self.result_tree.exists(iid):
-                return
-
+        def _worker(sz_key=cur_size_key, sz_px=cur_img_size, url=image_url_str, target_iid=iid):
             # Cache size safeguard to prevent RAM bloat
             if len(self.raw_img_cache) > 800:
                 for k in list(self.raw_img_cache.keys())[:250]:
                     self.raw_img_cache.pop(k, None)
-            # --------------------------------------------------------------------------
-            # The workers raced to fetch each graphic card,
-            # But twenty score of photos hit them hard!
-            # With thirty-two swift threads the queue shall fly,
-            # And eight full seconds lest the socket die!
-            # --------------------------------------------------------------------------
+
             for attempt in range(2):
                 try:
-                    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-                    resp = self.http_session.get(str(image_url), headers=headers, timeout=10.0)
+                    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+                    resp = self.http_session.get(url, headers=headers, timeout=12.0)
                     if resp.status_code == 200:
                         pil_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
-                        self.raw_img_cache[image_url] = pil_img
-                        
+                        self.raw_img_cache[url] = pil_img
+
                         # Compute 64-bit pHash for sorting by thumbnail similarity!
                         h = compute_phash(pil_img)
                         for itm in self.results:
-                            if itm.get("image_url") == image_url:
+                            if itm.get("image_url") == url or itm.get("image_url") == image_url:
                                 itm["phash"] = h
                                 break
 
@@ -7950,7 +7947,7 @@ class EbayTool(tk.Tk):
                             v_match = self.visual_catalog.match_image(pil_img)
                             if v_match:
                                 for itm in self.results:
-                                    if itm.get("image_url") == image_url:
+                                    if itm.get("image_url") == url or itm.get("image_url") == image_url:
                                         if v_match["type"] == "benign":
                                             itm["threat_badge"] = f"🟢 Benign: {v_match['label']}"
                                             itm["visual_benign"] = True
@@ -7958,14 +7955,16 @@ class EbayTool(tk.Tk):
                                             itm["threat_badge"] = f"🚨 Visual Counterfeit ({v_match['similarity_pct']}%)"
                                             itm["threat_score"] = max(itm.get("threat_score", 0), 95)
                                             itm["visual_counterfeit"] = True
-                                        
-                                        # Update UI treeview if row exists
-                                        def _update_row(t_badge=itm["threat_badge"]):
-                                            if self.result_tree.exists(iid):
-                                                vals = list(self.result_tree.item(iid, "values"))
-                                                if len(vals) > 7:
-                                                    vals[7] = t_badge
-                                                    self.result_tree.item(iid, values=vals)
+
+                                        # Update UI treeview if rows exist
+                                        def _update_row(t_badge=itm["threat_badge"], target_url=url):
+                                            for r_id in self.result_tree.get_children():
+                                                vals = self.result_tree.item(r_id, "values")
+                                                if len(vals) > 9 and (vals[9] == target_url or vals[9] == image_url):
+                                                    vals_list = list(vals)
+                                                    if len(vals_list) > 7:
+                                                        vals_list[7] = t_badge
+                                                        self.result_tree.item(r_id, values=vals_list)
                                         self.after(0, _update_row)
                                         break
                         except Exception:
@@ -7973,11 +7972,20 @@ class EbayTool(tk.Tk):
 
                         if sz_px > 0:
                             photo = self._get_scaled_photo(pil_img, sz_px)
+                            self.inline_img_cache[(sz_key, url)] = photo
                             self.inline_img_cache[(sz_key, image_url)] = photo
-                            
-                            def _apply():
-                                if self.result_tree.exists(iid) and self.thumb_size_var.get() != "Off (Text Only)":
-                                    self.result_tree.item(iid, image=photo)
+
+                            def _apply(target_url=url):
+                                if self.thumb_size_var.get() == "Off (Text Only)":
+                                    return
+                                # Update target iid if it exists
+                                if self.result_tree.exists(target_iid):
+                                    self.result_tree.item(target_iid, image=photo)
+                                # Also update any currently visible row with this image URL
+                                for r_id in self.result_tree.get_children():
+                                    vals = self.result_tree.item(r_id, "values")
+                                    if len(vals) > 9 and (vals[9] == target_url or vals[9] == image_url):
+                                        self.result_tree.item(r_id, image=photo)
                             self.after(0, _apply)
                         break
                     elif resp.status_code in (429, 503, 504) and attempt < 1:

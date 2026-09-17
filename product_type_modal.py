@@ -32,16 +32,24 @@ class ProductTypeModal(tk.Toplevel):
         self.configure(bg=self._t("bg", "#121212"))
         self.transient(master)
 
+        if hasattr(master, "_apply_dark_titlebar"):
+            master._apply_dark_titlebar(self)
+        if hasattr(master, "_load_app_icon"):
+            master._load_app_icon(self)
+
         # In-memory working copy of taxonomy
+        raw_tax = None
         if self.data_store and hasattr(self.data_store, "get_product_taxonomy"):
             raw_tax = self.data_store.get_product_taxonomy()
-        else:
-            raw_tax = {}
+        if not raw_tax:
+            from data_store import DEFAULT_PRODUCT_TAXONOMY
+            raw_tax = DEFAULT_PRODUCT_TAXONOMY
         self.taxonomy = copy.deepcopy(raw_tax)
 
         self._selected_industry = None
         self._selected_type = None
 
+        self._setup_tree_styles()
         self._build_header()
         self._build_body()
         self._build_sandbox()
@@ -58,6 +66,29 @@ class ProductTypeModal(tk.Toplevel):
 
     def _t(self, key, default):
         return self.theme.get(key, default)
+
+    def _setup_tree_styles(self):
+        """Configure theme-adaptive TTK Treeview styles to prevent white-on-white text issues."""
+        style = ttk.Style()
+        style.configure(
+            "Taxonomy.Treeview",
+            background=self._t("entry_bg", "#0f172a"),
+            foreground=self._t("text", "#f8fafc"),
+            fieldbackground=self._t("entry_bg", "#0f172a"),
+            font=FONT_NORM,
+            rowheight=26
+        )
+        style.configure(
+            "Taxonomy.Treeview.Heading",
+            background=self._t("panel", "#1e1e1e"),
+            foreground=self._t("text", "#f8fafc"),
+            font=FONT_BOLD
+        )
+        style.map(
+            "Taxonomy.Treeview",
+            background=[("selected", self._t("select_bg", "#0284c7"))],
+            foreground=[("selected", self._t("select_fg", "#ffffff"))]
+        )
 
     def _build_header(self):
         hdr = tk.Frame(self, bg=self._t("panel", "#1e1e1e"), padx=16, pady=12)
@@ -115,7 +146,8 @@ class ProductTypeModal(tk.Toplevel):
             ind_tree_frame,
             columns=("types_count",),
             show="tree headings",
-            selectmode="browse"
+            selectmode="browse",
+            style="Taxonomy.Treeview"
         )
         self.ind_tree.heading("#0", text="Industry Sector")
         self.ind_tree.heading("types_count", text="Types")
@@ -189,7 +221,8 @@ class ProductTypeModal(tk.Toplevel):
             columns=("kws_count", "kws_preview"),
             show="tree headings",
             selectmode="browse",
-            height=6
+            height=6,
+            style="Taxonomy.Treeview"
         )
         self.type_tree.heading("#0", text="Product Type Tag")
         self.type_tree.heading("kws_count", text="Triggers")

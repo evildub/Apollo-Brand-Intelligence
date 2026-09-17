@@ -985,6 +985,17 @@ class EbayTool(tk.Tk):
         )
         self.vinted_depth_combo.bind("<<ComboboxSelected>>", lambda e: self._log(f"👗 Vinted scan depth set to: {self.vinted_depth_var.get()}"))
         self.vinted_login_btn = self._btn(top_right, "👗 Vinted Connect", self._launch_vinted_session)
+        # TikTok Shop Depth & Login Controls (packed dynamically when TikTok is active)
+        self.tiktok_depth_var = tk.StringVar(value="2 Pages (100)")
+        self.tiktok_depth_combo = ttk.Combobox(
+            top_right,
+            textvariable=self.tiktok_depth_var,
+            values=["1 Page (50)", "2 Pages (100)", "3 Pages (150)", "5 Pages (250)", "10 Pages (500)"],
+            state="readonly",
+            width=14,
+            font=FONT_SM
+        )
+        self.tiktok_depth_combo.bind("<<ComboboxSelected>>", lambda e: self._log(f"🎵 TikTok Shop scan depth set to: {self.tiktok_depth_var.get()}"))
         self.tiktok_login_btn = self._btn(top_right, "🎵 TikTok Connect", self._launch_tiktok_session)
         self.temu_login_btn = self._btn(top_right, "🟠 Temu Connect", self._launch_temu_session)
         self.pod_expand_btn = self._btn(top_right, "👕 Expand POD Variants", self._expand_pod_variants, accent=True)
@@ -2621,10 +2632,12 @@ class EbayTool(tk.Tk):
             else:
                 self.vinted_login_btn.pack_forget()
 
-        if hasattr(self, "tiktok_login_btn"):
+        if hasattr(self, "tiktok_depth_combo") and hasattr(self, "tiktok_login_btn"):
             if "TikTok" in market:
-                self.tiktok_login_btn.pack(side="left", padx=(0, 4), after=self.market_combo)
+                self.tiktok_depth_combo.pack(side="left", padx=(0, 4), after=self.market_combo)
+                self.tiktok_login_btn.pack(side="left", padx=(0, 4), after=self.tiktok_depth_combo)
             else:
+                self.tiktok_depth_combo.pack_forget()
                 self.tiktok_login_btn.pack_forget()
 
         if hasattr(self, "temu_login_btn"):
@@ -3821,6 +3834,7 @@ class EbayTool(tk.Tk):
         rb_d = self.rb_depth_var.get() if hasattr(self, "rb_depth_var") else "2 Pages (100)"
         pv_d = self.pv_depth_var.get() if hasattr(self, "pv_depth_var") else "2 Pages (100)"
         ali_d = self.ali_depth_var.get() if hasattr(self, "ali_depth_var") else "3 Pages (180)"
+        tt_d = self.tiktok_depth_var.get() if hasattr(self, "tiktok_depth_var") else "2 Pages (100)"
         condition = self.condition_var.get() if hasattr(self, "condition_var") else "all"
 
         queued_count = 0
@@ -3852,6 +3866,7 @@ class EbayTool(tk.Tk):
                     "rb_depth": rb_d,
                     "pv_depth": pv_d,
                     "ali_depth": ali_d,
+                    "tiktok_depth": tt_d,
                     "includes": [term],  # Clean, standalone single keyword!
                     "excludes": job_excludes,
                     "condition": condition
@@ -3895,6 +3910,7 @@ class EbayTool(tk.Tk):
         rb_d = self.rb_depth_var.get() if hasattr(self, "rb_depth_var") else "2 Pages (100)"
         pv_d = self.pv_depth_var.get() if hasattr(self, "pv_depth_var") else "2 Pages (100)"
         ali_d = self.ali_depth_var.get() if hasattr(self, "ali_depth_var") else "3 Pages (180)"
+        tt_d = self.tiktok_depth_var.get() if hasattr(self, "tiktok_depth_var") else "2 Pages (100)"
 
         queued_count = 0
         for store in stores:
@@ -3938,6 +3954,7 @@ class EbayTool(tk.Tk):
                     "rb_depth": rb_d,
                     "pv_depth": pv_d,
                     "ali_depth": ali_d,
+                    "tiktok_depth": tt_d,
                     "includes": includes,
                     "excludes": job_excludes,
                     "condition": condition
@@ -3997,7 +4014,8 @@ class EbayTool(tk.Tk):
                 "marketplace": platform_name,
                 "vinted_country": "All Locales",
                 "vinted_depth": "2 Pages (192)",
-                "manomano_country": "All European Locales"
+                "manomano_country": "All European Locales",
+                "tiktok_depth": "2 Pages (100)"
             }
             self.queue.append(job)
             label = f"🌐 [{platform_name}] Global Sweep ▸ '{brand}' ({len(all_excludes)} excl)"
@@ -4092,6 +4110,7 @@ class EbayTool(tk.Tk):
         rb_d = self.rb_depth_var.get() if hasattr(self, "rb_depth_var") else "2 Pages (100)"
         pv_d = self.pv_depth_var.get() if hasattr(self, "pv_depth_var") else "2 Pages (100)"
         ali_d = self.ali_depth_var.get() if hasattr(self, "ali_depth_var") else "3 Pages (180)"
+        tt_d = self.tiktok_depth_var.get() if hasattr(self, "tiktok_depth_var") else "2 Pages (100)"
 
         queued_count = 0
         is_full_store_sweep = self.store_full_sweep_var.get() if hasattr(self, "store_full_sweep_var") else False
@@ -4114,6 +4133,7 @@ class EbayTool(tk.Tk):
                     "rb_depth": rb_d,
                     "pv_depth": pv_d,
                     "ali_depth": ali_d,
+                    "tiktok_depth": tt_d,
                     "includes": ["*"],
                     "excludes": job_excludes,
                     "condition": condition
@@ -4165,6 +4185,7 @@ class EbayTool(tk.Tk):
                         "rb_depth": rb_d,
                         "pv_depth": pv_d,
                         "ali_depth": ali_d,
+                        "tiktok_depth": tt_d,
                         "includes": includes,
                         "excludes": job_excludes,
                         "condition": condition
@@ -4753,13 +4774,21 @@ class EbayTool(tk.Tk):
                         job_record["url"] = f"https://www.scribd.com/search?content_type=documents&query={actual_term.replace(' ', '+')}"
                     elif is_tiktok:
                         self.tiktok_scraper.headless = is_headless
+                        tt_pages = 2
+                        tt_depth_raw = job.get("tiktok_depth") or (self.tiktok_depth_var.get() if hasattr(self, "tiktok_depth_var") else "2 Pages (100)")
+                        m = re.search(r'(\d+)\s+Page', tt_depth_raw, re.IGNORECASE) or re.search(r'\((\d+)\)', tt_depth_raw)
+                        if m:
+                            try: tt_pages = int(m.group(1))
+                            except ValueError: tt_pages = 2
                         items = self.tiktok_scraper.search(
                             store_raw,
                             actual_term,
                             job["excludes"],
                             condition=job.get("condition", "all"),
+                            max_pages=tt_pages,
                             stop_event=self.stop_event,
-                            pause_event=self.pause_event
+                            pause_event=self.pause_event,
+                            log_callback=self._log
                         )
                         job_record["url"] = f"https://shop.tiktok.com/us/search?q={actual_term.replace(' ', '+')}"
                     elif is_teepublic:

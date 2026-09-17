@@ -291,14 +291,16 @@ class TikTokScraper:
             "condition": "New"
         }
 
-    def search(self, store_url: str, include_term: str,
+    def search(self, store_url: str = "", include_term: str = "",
                exclude_terms: list[str] = None,
                condition: str = "all",
+               max_pages: int = 2,
                stop_event: threading.Event = None,
-               pause_event: threading.Event = None) -> list[dict]:
+               pause_event: threading.Event = None,
+               log_callback=None) -> list[dict]:
         """
         Search TikTok Shop or harvest creator showcase.
-        Supports single PDP URL direct fetch or search queries.
+        Supports single PDP URL direct fetch or search queries across configurable depth pages.
         """
         items = []
         exclude_terms = [e.strip().lower() for e in (exclude_terms or []) if e.strip()]
@@ -338,8 +340,9 @@ class TikTokScraper:
                     page.goto(target_search_url, wait_until="domcontentloaded", timeout=30000)
                     time.sleep(3.0)
 
-                    # Adaptive deep scroll & "View more" click pagination loop
-                    max_scroll_cycles = 16
+                    # Dynamic page depth & "View more" button pagination loop
+                    target_max_items = max_pages * 50
+                    max_scroll_cycles = max(14, max_pages * 8)
                     consecutive_no_change = 0
                     last_card_count = 0
 
@@ -368,22 +371,24 @@ class TikTokScraper:
                             consecutive_no_change = 0
                         last_card_count = current_card_count
 
-                        # If we have reached a generous amount (100+) or no new items after 3 attempts, finish
-                        if current_card_count >= 100 or consecutive_no_change >= 3:
-                            if consecutive_no_change >= 3:
+                        # Stop if we hit requested max_items depth or exhausted all results (4 consecutive stagnant cycles)
+                        if current_card_count >= target_max_items or consecutive_no_change >= 4:
+                            if consecutive_no_change >= 4:
+                                break
+                            if current_card_count >= target_max_items:
                                 break
 
-                        # 1. Scroll down
+                        # 1. Scroll down towards bottom of page
                         page.evaluate("window.scrollBy(0, 1600);")
-                        time.sleep(0.6)
+                        time.sleep(0.5)
 
                         # 2. Look for and click any "View more" / "Load more" / "See more" / "Show more" button
                         clicked = page.evaluate("""() => {
-                            const candidates = Array.from(document.querySelectorAll('button, div[role="button"], a[role="button"], [class*="button"], [class*="btn"], [class*="viewMore"], [class*="loadMore"], [class*="load-more"], [class*="view-more"]'));
+                            const candidates = Array.from(document.querySelectorAll('button, div[role="button"], a[role="button"], [class*="button"], [class*="btn"], [class*="viewMore"], [class*="loadMore"], [class*="load-more"], [class*="view-more"], [class*="showMore"], [class*="show-more"]'));
                             for (const b of candidates) {
                                 const txt = (b.innerText || '').trim().toLowerCase();
                                 if (txt === 'view more' || txt === 'see more' || txt === 'load more' || txt === 'show more' ||
-                                    txt.includes('view more') || txt.includes('load more') || txt.includes('see more')) {
+                                    txt.includes('view more') || txt.includes('load more') || txt.includes('see more') || txt.includes('show more')) {
                                     b.scrollIntoView({behavior: 'smooth', block: 'center'});
                                     b.click();
                                     return true;
@@ -393,9 +398,11 @@ class TikTokScraper:
                         }""")
 
                         if clicked:
+                            if log_callback and cycle % 3 == 0:
+                                log_callback(f"  📄 [TikTok Shop] Clicked 'View more' pagination ({current_card_count} listings loaded)...")
                             time.sleep(1.5)
                         else:
-                            time.sleep(0.8)
+                            time.sleep(0.7)
 
                     raw_cards = page.evaluate("""() => {
                         const res = [];

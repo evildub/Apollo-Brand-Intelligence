@@ -29,12 +29,24 @@ The application strictly communicates with the following public e-commerce endpo
 | Marketplace | Primary Endpoints | Asset / Image CDN Endpoints |
 | :--- | :--- | :--- |
 | **eBay** | `https://www.ebay.com/*`, `https://api.ebay.com/*` | `https://i.ebayimg.com/*` |
-| **AliExpress** | `https://www.aliexpress.com/*` | `https://ae01.alicdn.com/*`, `https://*.alicdn.com/*` |
+| **AliExpress** | `https://www.aliexpress.com/*`, `https://www.aliexpress.us/*` | `https://ae01.alicdn.com/*`, `https://ae-pic-*.aliexpress-media.com/*`, `https://*.alicdn.com/*` |
+| **TikTok Shop** | `https://shop.tiktok.com/*` | `https://*.ttcdn-us.com/*`, `https://*.tiktokcdn.com/*` |
+| **Scribd** | `https://www.scribd.com/*` | `https://imgv2-*.scribdassets.com/*`, `https://*.scribd.com/*` |
+| **Mercado Libre** | `https://*.mercadolibre.com/*`, `https://*.mercadolivre.com.br/*` | `https://http2.mlstatic.com/*` |
+| **Vinted** | `https://www.vinted.co.uk/*`, `https://www.vinted.fr/*`, `https://www.vinted.com/*` | `https://images1.vinted.net/*` |
+| **ManoMano** | `https://www.manomano.co.uk/*`, `https://www.manomano.fr/*` | `https://*.manomano.com/*` |
 | **Temu** | `https://www.temu.com/*` | `https://img.kwcdn.com/*` |
 | **Wish** | `https://www.wish.com/*` | `https://canary.contestimg.wish.com/*` |
-| **Printerval** | `https://printerval.com/*` | `https://cdn.printerval.com/*` |
 | **Redbubble** | `https://www.redbubble.com/*` | `https://ih1.redbubble.net/*` |
-| **Mercado Libre** | `https://*.mercadolibre.com/*`, `https://*.mercadolivre.com.br/*` | `https://http2.mlstatic.com/*` |
+| **Printerval** | `https://printerval.com/*` | `https://cdn.printerval.com/*` |
+| **TeePublic** | `https://www.teepublic.com/*` | `https://res.cloudinary.com/teepublic/*` |
+| **Etsy** | `https://www.etsy.com/*` | `https://i.etsystatic.com/*` |
+| **Spreadshirt** | `https://www.spreadshirt.com/*`, `https://www.spreadshirt.co.uk/*` | `https://image.spreadshirtmedia.com/*` |
+| **Zazzle** | `https://www.zazzle.com/*` | `https://rlv.zcache.com/*` |
+| **CafePress** | `https://www.cafepress.com/*` | `https://*.cafepress.com/*` |
+| **Threadless** | `https://www.threadless.com/*` | `https://images.threadless.com/*` |
+| **TeeSpring (Spring)** | `https://*.creator-spring.com/*` | `https://*.spri.ng/*` |
+| **Fine Art America** | `https://fineartamerica.com/*`, `https://pixels.com/*` | `https://images.fineartamerica.com/*` |
 
 ---
 
@@ -42,15 +54,20 @@ The application strictly communicates with the following public e-commerce endpo
 
 ```mermaid
 graph TD
-    User[Analyst Workstation (Local User Space)] -->|Encrypted HTTPS (TLS 1.2/1.3)| Targets[Target Marketplaces & CDNs]
+    User[Analyst Workstation<br>Standard Local User Space] -->|Encrypted HTTPS TLS 1.2/1.3| Targets[Target Marketplaces & CDNs]
     Targets -->|Public Listing Data & Thumbnails| User
-    User -->|Local Disk Only| LocalDB[(Local data.json & Session Caches)]
-    User -->|Analyst Export| Reports[A2C2 / Brand Protection Dossiers (.xlsx)]
+    User -->|Local User Profile Only| LocalDB[(Local data.json & Session Vault)]
+    User -->|Analyst Triggered Export| Reports[Genesis Compliance Dossiers .xlsx]
 ```
 
-### Key Controls:
-- **API Credentials:** If optional eBay Developer API keys (`App ID`, `Cert ID`) are entered, they are stored locally in plaintext/user-space in `data.json` and transmitted strictly to `https://api.ebay.com/identity/v1/oauth2/token`.
-- **Local Disk Isolation:** All session caches and cookies are isolated in `%LOCALAPPDATA%\Apollo_Brand_Intelligence` within the user's personal profile directory.
+### Key Security & Privacy Controls:
+- **Marketplace Session Vault & Authenticated Cookie Isolation:**
+  - Authenticated session cookies for high-walled platforms (e.g. Temu, Vinted, TikTok) are persisted strictly in `%LOCALAPPDATA%\Apollo_Brand_Intelligence\sessions\` and `%LOCALAPPDATA%\Apollo_<Platform>_Session\`.
+  - Stored inside the active OS user's encrypted personal profile space (`Standard User`), never accessible across network shares, and never transmitted to any third-party or cloud server.
+- **Persistent Investigation Results & Seller Intelligence:**
+  - All investigation session results, resolved seller registries, corporate origin cross-references, and dealer whitelists are stored locally in `%LOCALAPPDATA%\Apollo_Brand_Intelligence\data.json` and `%LOCALAPPDATA%\Apollo_Brand_Intelligence\aliexpress_store_cache.json`.
+- **API Credentials:** If optional eBay Developer API keys (`App ID`, `Cert ID`) are entered, they are stored locally in plaintext/user-space in `data.json` and transmitted strictly to official OAuth endpoints (`https://api.ebay.com/identity/v1/oauth2/token`).
+- **Zero Remote Telemetry & Complete Air-Gapped Data Containment:** No telemetry, analytics, error reporting, or background pings are made to any remote servers. All operations run 100% locally.
 - **Enterprise EDR Compatibility:** Operating in a fixed folder structure (`--onedir`) prevents heuristic behavioral flags triggered by one-file extraction into temporary folders.
 
 ---

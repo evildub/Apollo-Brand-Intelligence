@@ -48,6 +48,7 @@ from visual_harvester import VisualHarvester
 from visual_catalog_modal import VisualCatalogModal
 from vero_disclosure_modal import VeroDisclosureModal
 from field_guide_modal import FieldGuideModal
+from product_type_modal import ProductTypeModal
 from tooltip import add_tooltip, HoverTip
 
 # ── Color Palette Definitions ─────────────────────────────────────────────────
@@ -739,6 +740,7 @@ class EbayTool(tk.Tk):
         self._win_importer = None
         self._win_whitelist = None
         self._win_field_guide = None
+        self._win_product_type = None
 
         self._build_ui()
         self._refresh_brand_tree()
@@ -1242,6 +1244,10 @@ class EbayTool(tk.Tk):
         self.settings_menu.add_command(
             label="🔐 Marketplace Session Vault...",
             command=self._open_session_vault_modal
+        )
+        self.settings_menu.add_command(
+            label="🏷 Product Type & Industry Taxonomy...",
+            command=self._open_product_type_manager
         )
         self.settings_menu.add_command(
             label="📚 Open Analyst Field Guide (F1)",
@@ -3580,24 +3586,20 @@ class EbayTool(tk.Tk):
         return "Unassigned", self._detect_product_type(title)
 
     def _detect_product_type(self, title: str) -> str:
-        """Categorize product type based on listing title keywords."""
+        """Categorize product type based on listing title keywords using active industry taxonomy."""
         t_low = title.lower()
-        pt_map = {
-            "Spark Plugs": ["spark plug", "sparkplug", "iridium", "platinum plug"],
-            "Headlights / Lamps": ["headlight", "headlamp", "tail light", "fog light", "lamp assembly"],
-            "Brake Pads / Rotors": ["brake pad", "brake rotor", "caliper", "brake shoe"],
-            "Oil / Fuel Filters": ["oil filter", "fuel filter", "air filter", "cabin filter"],
-            "Water Pumps": ["water pump", "coolant pump"],
-            "Oxygen Sensors": ["oxygen sensor", "o2 sensor", "lambda sensor"],
-            "Ignition Coils": ["ignition coil", "coil pack"],
-            "Emblems / Badges": ["emblem", "badge", "logo", "grille emblem", "trunk emblem"],
-            "Key Fobs / Cases": ["key fob", "remote key", "smart key", "key shell"],
-            "Pharmaceuticals / Vet": ["safeguard", "dewormer", "antiparasitario", "ivermectin", "suspension", "paste", "drench"]
-        }
-        for pt, kws in pt_map.items():
-            for kw in kws:
-                if kw in t_low:
-                    return pt
+        if hasattr(self, "data_store") and hasattr(self.data_store, "get_product_taxonomy"):
+            tax = self.data_store.get_product_taxonomy()
+        else:
+            tax = None
+
+        if tax:
+            for ind_name, types_dict in tax.items():
+                for pt_name, kws in types_dict.items():
+                    for kw in kws:
+                        kw_clean = kw.lower().strip()
+                        if kw_clean and kw_clean in t_low:
+                            return pt_name
         return ""
 
     def _save_custom_preset(self):
@@ -6285,6 +6287,14 @@ class EbayTool(tk.Tk):
     def _open_session_vault_modal(self):
         """Open the Universal Marketplace Session & Account Vault Modal."""
         SessionVaultModal(self, self.theme, self.session_vault)
+
+    def _open_product_type_manager(self):
+        """Open the Product Type & Industry Taxonomy Manager Modal."""
+        if self._win_product_type and self._win_product_type.winfo_exists():
+            self._win_product_type.lift()
+            self._win_product_type.focus_force()
+            return
+        self._win_product_type = ProductTypeModal(self, self.theme, self.data_store)
 
     def _open_field_guide_modal(self):
         """Open the searchable Analyst Field Guide & Threat Intelligence Glossary."""

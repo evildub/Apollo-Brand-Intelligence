@@ -3,6 +3,7 @@ import os
 import sys
 import shutil
 import re
+import time
 from datetime import datetime
 
 def get_base_dir():
@@ -793,4 +794,71 @@ class DataStore:
         """Update and persist editable document intelligence presets."""
         self._data["document_intel"] = presets
         self._save()
+
+    def get_product_taxonomy(self) -> dict:
+        """Return editable product type taxonomy organized by industry."""
+        return self._data.get("product_taxonomy", DEFAULT_PRODUCT_TAXONOMY)
+
+    def set_product_taxonomy(self, taxonomy: dict):
+        """Persist custom product type taxonomy organized by industry."""
+        self._data["product_taxonomy"] = taxonomy
+        self._save()
+
+    def reset_product_taxonomy(self) -> dict:
+        """Reset product type taxonomy back to factory defaults."""
+        self._data["product_taxonomy"] = json.loads(json.dumps(DEFAULT_PRODUCT_TAXONOMY))
+        self._save()
+        return self._data["product_taxonomy"]
+
+
+DEFAULT_PRODUCT_TAXONOMY = {
+    "🚗 Automotive & Powersports": {
+        "Spark Plugs": ["spark plug", "sparkplug", "iridium", "platinum plug"],
+        "Headlights / Lamps": ["headlight", "headlamp", "tail light", "fog light", "lamp assembly", "led headlight", "turn signal"],
+        "Brake Pads / Rotors": ["brake pad", "brake rotor", "caliper", "brake shoe", "brake disc", "brake kit"],
+        "Oil / Fuel Filters": ["oil filter", "fuel filter", "air filter", "cabin filter", "oil strainer"],
+        "Ignition Coils": ["ignition coil", "coil pack", "coil-on-plug", "spark coil"],
+        "Emblems / Badges": ["emblem", "badge", "logo", "grille emblem", "trunk emblem", "hood ornament", "nameplate"],
+        "Key Fobs / Cases": ["key fob", "remote key", "smart key", "key shell", "key case", "transponder key"],
+        "Water / Fuel Pumps": ["water pump", "coolant pump", "fuel pump", "high pressure fuel pump"],
+        "Oxygen & Air Sensors": ["oxygen sensor", "o2 sensor", "lambda sensor", "maf sensor", "mass air flow", "map sensor"],
+        "Turbochargers & Boost": ["turbocharger", "turbo", "wastegate", "blow off valve", "intercooler"],
+        "Suspension & Steering": ["control arm", "ball joint", "tie rod", "sway bar", "strut assembly", "shock absorber"]
+    },
+    "👕 Apparel & Fashion Merch": {
+        "T-Shirts & Tops": ["t-shirt", "tee shirt", "tshirt", "graphic tee", "tank top", "crop top", "v-neck"],
+        "Hoodies & Sweatshirts": ["hoodie", "sweatshirt", "pullover", "crewneck", "fleece", "sweater"],
+        "Hats & Caps": ["hat", "cap", "snapback", "dad hat", "beanie", "trucker hat", "bucket hat", "visor"],
+        "Jackets & Outerwear": ["jacket", "coat", "windbreaker", "bomber jacket", "parka", "vest"],
+        "Pants & Leggings": ["leggings", "joggers", "sweatpants", "pants", "shorts", "trousers"],
+        "Footwear & Shoes": ["shoes", "sneakers", "boots", "slides", "sandals", "loafers", "kicks"],
+        "Bags & Backpacks": ["backpack", "tote bag", "duffle bag", "fanny pack", "messenger bag", "crossbody bag", "wallet", "purse"],
+        "Jewelry & Watches": ["watch", "bracelet", "necklace", "ring", "earrings", "pendant", "chain", "bezel", "watch glass"]
+    },
+    "🛠 Tools & Industrial Hardware": {
+        "Power Tools": ["cordless drill", "impact driver", "angle grinder", "circular saw", "reciprocating saw", "rotary tool"],
+        "Hand Tools": ["wrench", "socket set", "pliers", "screwdriver", "hammer", "ratchet", "hex key", "allen wrench"],
+        "Blades & Drill Bits": ["saw blade", "drill bit", "router bit", "carbide blade", "diamond blade"],
+        "Measuring & Levels": ["tape measure", "laser level", "caliper", "multimeter", "micrometer"],
+        "Hardware & Fasteners": ["screws", "bolts", "nuts", "anchors", "rivets", "washers", "clamps"]
+    },
+    "🏠 Appliances, Home & Living": {
+        "Drinkware & Mugs": ["mug", "coffee mug", "tumbler", "travel mug", "water bottle", "flask", "glassware"],
+        "Wall Art & Posters": ["poster", "canvas print", "wall art", "metal print", "art print", "tapestry", "framed print"],
+        "Bedding & Pillows": ["pillow", "throw pillow", "cushion", "blanket", "throw blanket", "duvet cover"],
+        "Phone Cases & Tech": ["phone case", "iphone case", "samsung case", "airpods case", "laptop sleeve", "mousepad", "desk mat"],
+        "Stickers & Decals": ["sticker", "decal", "vinyl sticker", "bumper sticker", "die cut sticker"],
+        "Kitchen Appliances": ["air fryer", "blender", "coffee maker", "toaster", "food processor", "microwave"]
+    },
+    "💊 Pharmaceuticals & Veterinary": {
+        "Dewormers & Parasiticides": ["safeguard", "dewormer", "antiparasitario", "ivermectin", "suspension", "paste", "drench", "anthelmintic", "fenbendazole"],
+        "Flea, Tick & Pest": ["flea", "tick", "frontline", "bravecto", "seresto", "nexgard", "simparica"],
+        "Supplements & Vitamins": ["supplement", "vitamins", "probiotic", "omega 3", "joint support"]
+    },
+    "📱 Electronics, Audio & Computing": {
+        "Headphones & Audio": ["headphones", "earbuds", "wireless earbuds", "bluetooth speaker", "soundbar", "microphone"],
+        "Chargers & Power": ["charger", "fast charger", "usb-c cable", "power bank", "magsafe", "charging station"],
+        "Computer Components": ["graphics card", "gpu", "cpu", "motherboard", "ram memory", "ssd drive", "power supply"]
+    }
+}
 

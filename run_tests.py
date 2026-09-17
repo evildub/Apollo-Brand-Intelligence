@@ -1750,6 +1750,45 @@ class TestApolloCoreFeatures(unittest.TestCase):
         self.assertTrue(hasattr(scraper, "close"))
         scraper.close()
 
+    def test_57_product_type_taxonomy_manager_and_dynamic_detection(self):
+        """Test Item 57: Verify Product Type & Industry Taxonomy Manager data store persistence and dynamic classification."""
+        from data_store import DEFAULT_PRODUCT_TAXONOMY
+        from product_type_modal import ProductTypeModal
+
+        # Verify taxonomy structure spans all primary industries
+        self.assertIn("🚗 Automotive & Powersports", DEFAULT_PRODUCT_TAXONOMY)
+        self.assertIn("👕 Apparel & Fashion Merch", DEFAULT_PRODUCT_TAXONOMY)
+        self.assertIn("🛠 Tools & Industrial Hardware", DEFAULT_PRODUCT_TAXONOMY)
+        self.assertIn("🏠 Appliances, Home & Living", DEFAULT_PRODUCT_TAXONOMY)
+        self.assertIn("💊 Pharmaceuticals & Veterinary", DEFAULT_PRODUCT_TAXONOMY)
+        self.assertIn("📱 Electronics, Audio & Computing", DEFAULT_PRODUCT_TAXONOMY)
+
+        # Test DataStore getters, setters, and reset
+        tax = self.data_store.get_product_taxonomy()
+        self.assertIsInstance(tax, dict)
+        self.assertTrue(len(tax) >= 6)
+
+        # Test dynamic title detection across industries
+        from main import EbayTool
+        dummy_app = type("DummyApp", (), {"data_store": self.data_store, "_detect_product_type": EbayTool._detect_product_type})()
+
+        # Automotive
+        self.assertEqual(dummy_app._detect_product_type("4Pcs Laser Iridium Spark Plugs for Toyota Camry"), "Spark Plugs")
+        self.assertEqual(dummy_app._detect_product_type("Front Ceramic Brake Pad Kit for Silverado"), "Brake Pads / Rotors")
+        self.assertEqual(dummy_app._detect_product_type("Car Key Fob Case Remote Shell for Honda"), "Key Fobs / Cases")
+
+        # Apparel
+        self.assertEqual(dummy_app._detect_product_type("Vintage Men's Graphic Fleece Pullover Hoodie"), "Hoodies & Sweatshirts")
+        self.assertEqual(dummy_app._detect_product_type("Retro Classic Cotton T-Shirt Tee"), "T-Shirts & Tops")
+        self.assertEqual(dummy_app._detect_product_type("Leather Strap Quartz Wrist Watch"), "Jewelry & Watches")
+
+        # Tools
+        self.assertEqual(dummy_app._detect_product_type("20V Cordless Drill Driver Kit with Battery"), "Power Tools")
+        self.assertEqual(dummy_app._detect_product_type("10-Piece Metric Ratchet Wrench Socket Set"), "Hand Tools")
+
+        # Pharma/Vet
+        self.assertEqual(dummy_app._detect_product_type("SafeGuard Dewormer Paste for Horses and Dogs"), "Dewormers & Parasiticides")
+
 
 if __name__ == "__main__":
     unittest.main()

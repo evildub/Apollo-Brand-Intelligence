@@ -252,6 +252,12 @@ TOOLS_DATA = [
         "shortcut": "Registry Button / Export Menu",
         "purpose": "Maintains persistent records of all logged infringements, takedown notices, and case files with full compliance audit trails.",
         "workflow": "Mark infringing listings ➔ Log to Registry ➔ Export formal Excel enforcement packages ready for platform submission."
+    },
+    {
+        "name": "🏷 Product Type & Industry Taxonomy Manager",
+        "shortcut": "Settings ➔ 🏷 Product Type & Industry Taxonomy...",
+        "purpose": "Configures industry-specific product categories and auto-tagging keyword rules (Automotive, Apparel, Tools, Home/Living, Pharma/Vet, Electronics).",
+        "workflow": "1. Select an Industry Sector on the left.\n2. Add or select a Product Type (e.g. 'Spark Plugs' or 'Hoodies & Sweatshirts').\n3. Edit trigger keywords in the text editor (e.g. 'spark plug, iridium, platinum').\n4. Use the Live Title Sandbox at the bottom to test how listings will be classified in real-time.\n5. Click 'Save & Apply Taxonomy' to persist rules across all scrapers and live ingestion."
     }
 ]
 

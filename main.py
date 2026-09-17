@@ -4933,8 +4933,8 @@ class EbayTool(tk.Tk):
 
                     new_items = []
                     filtered_out_count = 0
-                    filtered_out_count = 0
                     filtered_reasons = {}
+                    filtered_samples = {}
                     for item in items:
                         title = item.get("title", "")
                         # 1. Strict Exclusion Filter (Analyst-defined explicit exclusions)
@@ -4943,6 +4943,11 @@ class EbayTool(tk.Tk):
                             filtered_out_count += 1
                             r_key = f"Excluded '{matched_ex}'"
                             filtered_reasons[r_key] = filtered_reasons.get(r_key, 0) + 1
+                            if r_key not in filtered_samples:
+                                filtered_samples[r_key] = []
+                            if len(filtered_samples[r_key]) < 2:
+                                clean_t = title.strip()[:36] + ("..." if len(title.strip()) > 36 else "")
+                                filtered_samples[r_key].append(f'"{clean_t}"')
                             continue
 
                         # 2. Targeted Search Verification & Search Hygiene
@@ -4973,6 +4978,11 @@ class EbayTool(tk.Tk):
                                 filtered_out_count += 1
                                 r_key = "Search Hygiene (No Keyword Match)"
                                 filtered_reasons[r_key] = filtered_reasons.get(r_key, 0) + 1
+                                if r_key not in filtered_samples:
+                                    filtered_samples[r_key] = []
+                                if len(filtered_samples[r_key]) < 2:
+                                    clean_t = title.strip()[:36] + ("..." if len(title.strip()) > 36 else "")
+                                    filtered_samples[r_key].append(f'"{clean_t}"')
                                 continue
 
                         # 3. Auto-detect brand & product type from title
@@ -5018,7 +5028,12 @@ class EbayTool(tk.Tk):
                     job_record["total_harvested"] += len(new_items)
 
                     if filtered_out_count > 0:
-                        reason_summary = ", ".join([f"{k} ({cnt})" for k, cnt in filtered_reasons.items()])
+                        parts = []
+                        for k, cnt in filtered_reasons.items():
+                            s_list = filtered_samples.get(k, [])
+                            sample_str = f": e.g. {', '.join(s_list)}" if s_list else ""
+                            parts.append(f"{k} ({cnt}{sample_str})")
+                        reason_summary = " | ".join(parts)
                         self._log(f"  🛡 Filtered {filtered_out_count} listing(s) [{reason_summary}].")
 
                     if new_items:

@@ -66,6 +66,9 @@ DEFAULT_DATA = {
         "Nissan", "Mazda", "Mitsubishi", "Volkswagen", "BMW",
         "Mercedes", "Audi", "Hyundai", "Kia", "Subaru",
         "aftermarket", "compatible", "fits"
+    ],
+    "inclusions": [
+        "jersey", "shirt", "hoodie", "jacket", "signed", "autograph", "memorabilia", "vintage", "card", "hat", "cap"
     ]
 }
 
@@ -94,9 +97,10 @@ class DataStore:
         else:
             self._data = copy.deepcopy(DEFAULT_DATA)
 
-        # Ensure settings and exclusions
+        # Ensure settings, exclusions, and generic inclusions
         self._data.setdefault("settings", {})
-        self._data.setdefault("exclusions", DEFAULT_DATA.get("exclusions", []))
+        self._data.setdefault("exclusions", list(DEFAULT_DATA.get("exclusions", [])))
+        self._data.setdefault("inclusions", list(DEFAULT_DATA.get("inclusions", [])))
         
         # Migrate or initialize brand profiles
         if "brand_profiles" not in self._data or not isinstance(self._data["brand_profiles"], dict) or not self._data["brand_profiles"]:
@@ -660,6 +664,32 @@ class DataStore:
             self._data["exclusions"].remove(term)
             self._save()
 
+    # ── generic / modifier inclusions ─────────────────────────────────────────
+    def get_inclusions(self):
+        return self._data.setdefault("inclusions", [
+            "jersey", "shirt", "hoodie", "jacket", "signed", "autograph", "memorabilia", "vintage", "card", "hat", "cap"
+        ])
+
+    get_generic_inclusions = get_inclusions
+
+    def add_inclusion(self, term):
+        term = str(term).strip()
+        if not term:
+            return
+        incs = self.get_inclusions()
+        if term not in incs:
+            incs.append(term)
+            self._data["inclusions"] = incs
+            self._save()
+
+    def remove_inclusion(self, term):
+        term = str(term).strip()
+        incs = self.get_inclusions()
+        if term in incs:
+            incs.remove(term)
+            self._data["inclusions"] = incs
+            self._save()
+
     # ── Multi-Dossier Staging Vault Persistence ──────────────────────────────
     def _get_dossier_snapshot_path(self, name: str) -> str:
         safe_name = re.sub(r'[\\/*?:"<>| ]', "_", name).strip("_") or "vault"
@@ -834,6 +864,7 @@ class DataStore:
             presets[name] = {
                 "brands": list(preset_payload.get("brands", [])),
                 "generic_excludes": list(preset_payload.get("generic_excludes", [])),
+                "generic_includes": list(preset_payload.get("generic_includes", [])),
                 "custom_includes": list(preset_payload.get("custom_includes", [])),
                 "condition": preset_payload.get("condition", "all")
             }

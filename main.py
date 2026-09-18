@@ -1603,7 +1603,7 @@ class EbayTool(tk.Tk):
         toggle_inc = self._create_resize_grip(frame, self.include_text, widget_type="lines", min_val=1, max_val=20, default_val=2, max_toggle=8, name="includes")
         prev_lbl.bind("<Double-Button-1>", lambda e: toggle_inc())
 
-        # ── Exclusion list (Fully Collapsible Container) ─────────────────────
+        # ── Exclusions & Inclusions (Side-by-Side Collapsible Container) ─────
         self.excl_collapsed = False
         def _toggle_excl_visibility():
             if self.excl_collapsed:
@@ -1617,7 +1617,7 @@ class EbayTool(tk.Tk):
         excl_sec_frame.pack(fill="x", padx=8, pady=(6, 2))
         self.themed_widgets["bg_frames"].append(excl_sec_frame)
 
-        excl_sec_lbl = tk.Label(excl_sec_frame, text="🚫 Generic Exclusion Terms", font=FONT_HEAD, bg=t["bg"], fg=t["accent"], cursor="hand2")
+        excl_sec_lbl = tk.Label(excl_sec_frame, text="🚫 Exclusions & 🎯 Inclusion Modifiers", font=FONT_HEAD, bg=t["bg"], fg=t["accent"], cursor="hand2")
         excl_sec_lbl.pack(side="left")
         self.themed_widgets["section_labels"].append(excl_sec_lbl)
 
@@ -1636,49 +1636,98 @@ class EbayTool(tk.Tk):
         self.excl_container.pack(fill="x")
         self.themed_widgets["bg_frames"].append(self.excl_container)
 
-        # Select all / unselect all toolbar
-        excl_tools = tk.Frame(self.excl_container, bg=t["bg"])
-        excl_tools.pack(fill="x", padx=8, pady=(0, 2))
+        # 2-Column Side-by-Side Frame (Left: Exclusions | Right: Inclusions)
+        two_col_frame = tk.Frame(self.excl_container, bg=t["bg"])
+        two_col_frame.pack(fill="x", padx=8, pady=(0, 2))
+        self.themed_widgets["bg_frames"].append(two_col_frame)
+
+        # ── Left Column: 🚫 Generic Exclusions ─────────────────────────────────
+        col_left = tk.Frame(two_col_frame, bg=t["bg"])
+        col_left.pack(side="left", fill="both", expand=True, padx=(0, 4))
+        self.themed_widgets["bg_frames"].append(col_left)
+
+        excl_tools = tk.Frame(col_left, bg=t["bg"])
+        excl_tools.pack(fill="x", pady=(0, 2))
         self.themed_widgets["bg_frames"].append(excl_tools)
+        tk.Label(excl_tools, text="🚫 Exclude:", font=FONT_BOLD, bg=t["bg"], fg=t["danger"]).pack(side="left")
+        self._btn(excl_tools, "☑ All", self._select_all_exclusions).pack(side="right")
+        self._btn(excl_tools, "☐ None", self._unselect_all_exclusions).pack(side="right", padx=(0, 2))
 
-        self._btn(excl_tools, "☑ Select All", self._select_all_exclusions).pack(side="left", padx=(0, 4))
-        self._btn(excl_tools, "☐ Unselect All", self._unselect_all_exclusions).pack(side="left")
-
-        excl_outer = tk.Frame(self.excl_container, bg=t["bg"])
-        excl_outer.pack(fill="x", padx=8)
+        excl_outer = tk.Frame(col_left, bg=t["bg"])
+        excl_outer.pack(fill="x")
         self.themed_widgets["bg_frames"].append(excl_outer)
 
         self.excl_canvas = tk.Canvas(excl_outer, bg=t["entry_bg"], height=65,
                                      highlightthickness=1,
                                      highlightbackground=t["border"])
-        excl_scroll = ttk.Scrollbar(excl_outer, orient="vertical",
-                                    command=self.excl_canvas.yview)
+        excl_scroll = ttk.Scrollbar(excl_outer, orient="vertical", command=self.excl_canvas.yview)
         self.excl_canvas.configure(yscrollcommand=excl_scroll.set)
         excl_scroll.pack(side="right", fill="y")
         self.excl_canvas.pack(side="left", fill="both", expand=True)
 
         self.excl_inner = tk.Frame(self.excl_canvas, bg=t["entry_bg"])
-        self._excl_window = self.excl_canvas.create_window(
-            (0, 0), window=self.excl_inner, anchor="nw")
+        self._excl_window = self.excl_canvas.create_window((0, 0), window=self.excl_inner, anchor="nw")
 
         self.excl_inner.bind("<Configure>", lambda e: self.excl_canvas.configure(scrollregion=self.excl_canvas.bbox("all")))
         self.excl_canvas.bind("<Configure>", lambda e: self.excl_canvas.itemconfig(self._excl_window, width=e.width) if e and e.width else None)
         self.excl_canvas.bind("<MouseWheel>", self._on_excl_mousewheel)
         self.excl_inner.bind("<MouseWheel>", self._on_excl_mousewheel)
-
         self.excl_vars = {}   # term -> BooleanVar
 
-        excl_btn_row = tk.Frame(self.excl_container, bg=t["bg"])
-        excl_btn_row.pack(fill="x", padx=8, pady=4)
+        excl_btn_row = tk.Frame(col_left, bg=t["bg"])
+        excl_btn_row.pack(fill="x", pady=(3, 0))
         self.themed_widgets["bg_frames"].append(excl_btn_row)
 
-        self.new_excl_entry = self._entry(excl_btn_row, placeholder="New generic exclusion")
-        self.new_excl_entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        self.new_excl_entry = self._entry(excl_btn_row, placeholder="Exclusion")
+        self.new_excl_entry.pack(side="left", fill="x", expand=True, padx=(0, 2))
         self.new_excl_entry.bind("<Return>", lambda e: self._add_exclusion())
-        self._btn(excl_btn_row, "＋ Add", self._add_exclusion).pack(side="left")
-        self._btn(excl_btn_row, "✕", self._remove_exclusion, danger=True).pack(side="left", padx=4)
+        self._btn(excl_btn_row, "＋", self._add_exclusion).pack(side="left")
+        self._btn(excl_btn_row, "✕", self._remove_exclusion, danger=True).pack(side="left", padx=(2, 0))
 
-        self._create_resize_grip(self.excl_container, self.excl_canvas, widget_type="canvas_px", min_val=40, max_val=600, default_val=65, max_toggle=260, name="exclusions")
+        # ── Right Column: 🎯 Generic Inclusions (Modifiers) ───────────────────
+        col_right = tk.Frame(two_col_frame, bg=t["bg"])
+        col_right.pack(side="right", fill="both", expand=True, padx=(4, 0))
+        self.themed_widgets["bg_frames"].append(col_right)
+
+        inc_tools = tk.Frame(col_right, bg=t["bg"])
+        inc_tools.pack(fill="x", pady=(0, 2))
+        self.themed_widgets["bg_frames"].append(inc_tools)
+        tk.Label(inc_tools, text="🎯 Include:", font=FONT_BOLD, bg=t["bg"], fg=t["success"]).pack(side="left")
+        self._btn(inc_tools, "☑ All", self._select_all_inclusions).pack(side="right")
+        self._btn(inc_tools, "☐ None", self._unselect_all_inclusions).pack(side="right", padx=(0, 2))
+
+        inc_outer = tk.Frame(col_right, bg=t["bg"])
+        inc_outer.pack(fill="x")
+        self.themed_widgets["bg_frames"].append(inc_outer)
+
+        self.inc_canvas = tk.Canvas(inc_outer, bg=t["entry_bg"], height=65,
+                                    highlightthickness=1,
+                                    highlightbackground=t["border"])
+        inc_scroll = ttk.Scrollbar(inc_outer, orient="vertical", command=self.inc_canvas.yview)
+        self.inc_canvas.configure(yscrollcommand=inc_scroll.set)
+        inc_scroll.pack(side="right", fill="y")
+        self.inc_canvas.pack(side="left", fill="both", expand=True)
+
+        self.inc_inner = tk.Frame(self.inc_canvas, bg=t["entry_bg"])
+        self._inc_window = self.inc_canvas.create_window((0, 0), window=self.inc_inner, anchor="nw")
+
+        self.inc_inner.bind("<Configure>", lambda e: self.inc_canvas.configure(scrollregion=self.inc_canvas.bbox("all")))
+        self.inc_canvas.bind("<Configure>", lambda e: self.inc_canvas.itemconfig(self._inc_window, width=e.width) if e and e.width else None)
+        self.inc_canvas.bind("<MouseWheel>", self._on_inc_mousewheel)
+        self.inc_inner.bind("<MouseWheel>", self._on_inc_mousewheel)
+        self.inc_vars = {}   # term -> BooleanVar
+
+        inc_btn_row = tk.Frame(col_right, bg=t["bg"])
+        inc_btn_row.pack(fill="x", pady=(3, 0))
+        self.themed_widgets["bg_frames"].append(inc_btn_row)
+
+        self.new_inc_entry = self._entry(inc_btn_row, placeholder="Inclusion (e.g. jersey)")
+        self.new_inc_entry.pack(side="left", fill="x", expand=True, padx=(0, 2))
+        self.new_inc_entry.bind("<Return>", lambda e: self._add_inclusion())
+        self._btn(inc_btn_row, "＋", self._add_inclusion, accent=True).pack(side="left")
+        self._btn(inc_btn_row, "✕", self._remove_inclusion, danger=True).pack(side="left", padx=(2, 0))
+
+        self._create_resize_grip(self.excl_container, self.excl_canvas, widget_type="canvas_px", min_val=40, max_val=600, default_val=65, max_toggle=260, name="exclusions_inclusions")
 
         # ── Queue / Run Controls ──────────────────────────────────────────────
         toggle_queue_holder = []
@@ -2203,10 +2252,12 @@ class EbayTool(tk.Tk):
                 try: m.configure(bg=t["panel"], fg=t["text"], selectcolor=t["accent"], activebackground=t["accent"], activeforeground="black" if is_bright else "white")
                 except Exception: pass
 
-        # 12. Exclusion canvas & inner
+        # 12. Exclusion & Inclusion canvas & inner
         try:
             self.excl_canvas.configure(bg=t["entry_bg"], highlightbackground=t["border"])
             self.excl_inner.configure(bg=t["entry_bg"])
+            self.inc_canvas.configure(bg=t["entry_bg"], highlightbackground=t["border"])
+            self.inc_inner.configure(bg=t["entry_bg"])
         except Exception: pass
 
         # 13. Treeview & Progressbar Styles
@@ -2258,9 +2309,10 @@ class EbayTool(tk.Tk):
                         self.store_text.insert("1.0", self.store_placeholder)
                         self.store_text.config(fg=t["subtext"])
 
-        # Refresh Trees & Exclusions list with new colors
+        # Refresh Trees, Exclusions & Inclusions list with new colors
         self._refresh_brand_tree()
         self._refresh_exclusion_list()
+        self._refresh_inclusion_list()
         self._repopulate_results_table()
         self._hide_preview_popup()
         self._apply_dark_titlebar()
@@ -3449,6 +3501,18 @@ class EbayTool(tk.Tk):
                     if inc not in all_terms and inc not in exclude_names:
                         all_terms.append(inc)
 
+        # Apply active generic inclusion modifiers (e.g. 'jersey')
+        active_modifiers = self._get_active_inclusions()
+        if active_modifiers and all_terms:
+            expanded = []
+            for t in all_terms:
+                for mod in active_modifiers:
+                    comb = f"{t} {mod}".strip()
+                    if comb not in expanded:
+                        expanded.append(comb)
+            if expanded:
+                all_terms = expanded
+
         self.include_text.delete("1.0", "end")
         self.include_text.insert("1.0", "\n".join(all_terms))
 
@@ -3843,6 +3907,71 @@ class EbayTool(tk.Tk):
         return [t for t, v in self.excl_vars.items() if v.get()]
 
     # ══════════════════════════════════════════════════════════════════════════
+    #  GENERIC INCLUSION MANAGEMENT (MODIFIERS)
+    # ══════════════════════════════════════════════════════════════════════════
+    def _on_inc_mousewheel(self, e):
+        """Scroll inclusions list on mousewheel from any inner widget."""
+        if hasattr(self, "inc_canvas"):
+            self.inc_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+
+    def _select_all_inclusions(self):
+        if hasattr(self, "inc_vars"):
+            for var in self.inc_vars.values():
+                var.set(True)
+            self._update_include_preview()
+
+    def _unselect_all_inclusions(self):
+        if hasattr(self, "inc_vars"):
+            for var in self.inc_vars.values():
+                var.set(False)
+            self._update_include_preview()
+
+    def _refresh_inclusion_list(self):
+        if not hasattr(self, "inc_inner") or not hasattr(self, "data_store"):
+            return
+        t = self.theme
+        for w in self.inc_inner.winfo_children():
+            w.destroy()
+        self.inc_vars = {}
+        for term in self.data_store.get_inclusions():
+            var = tk.BooleanVar(value=False)
+            self.inc_vars[term] = var
+            cb = tk.Checkbutton(self.inc_inner, text=term, variable=var,
+                                bg=t["entry_bg"], fg=t["text"], selectcolor=t["panel"],
+                                activebackground=t["entry_bg"], font=FONT_SM,
+                                anchor="w", command=self._update_include_preview)
+            cb.bind("<MouseWheel>", self._on_inc_mousewheel)
+            cb.pack(fill="x", anchor="w")
+
+    def _add_inclusion(self):
+        if not hasattr(self, "new_inc_entry"):
+            return
+        term = self.new_inc_entry.get().strip()
+        placeholder = "Inclusion (e.g. jersey)"
+        if term and term != placeholder:
+            self.data_store.add_inclusion(term)
+            self.new_inc_entry.delete(0, "end")
+            self._refresh_inclusion_list()
+            self._update_include_preview()
+
+    def _remove_inclusion(self):
+        if not hasattr(self, "inc_vars"):
+            return
+        checked = [t for t, v in self.inc_vars.items() if v.get()]
+        if not checked:
+            messagebox.showinfo("Remove", "Check inclusion terms to remove first.")
+            return
+        for t in checked:
+            self.data_store.remove_inclusion(t)
+        self._refresh_inclusion_list()
+        self._update_include_preview()
+
+    def _get_active_inclusions(self):
+        if not hasattr(self, "inc_vars"):
+            return []
+        return [t for t, v in self.inc_vars.items() if v.get()]
+
+    # ══════════════════════════════════════════════════════════════════════════
     #  PORTFOLIO PRESETS & 1-CLICK SWEEPER
     # ══════════════════════════════════════════════════════════════════════════
     def _refresh_preset_list(self):
@@ -3856,7 +3985,7 @@ class EbayTool(tk.Tk):
             self.preset_var.set(keys[0])
 
     def _on_preset_selected(self, event=None):
-        """When user selects a preset, auto-target its brands and restore exclusions / custom terms."""
+        """When user selects a preset, auto-target its brands and restore exclusions / inclusions / custom terms."""
         preset_name = self.preset_var.get().strip()
         presets = self.data_store.get_presets()
         if preset_name not in presets:
@@ -3866,11 +3995,13 @@ class EbayTool(tk.Tk):
         if isinstance(payload, dict):
             target_brands = payload.get("brands", [])
             generic_excludes = payload.get("generic_excludes", [])
+            generic_includes = payload.get("generic_includes", [])
             custom_inc = payload.get("custom_includes", [])
             cond = payload.get("condition", "all")
         else:
             target_brands = list(payload)
             generic_excludes = []
+            generic_includes = []
             custom_inc = []
             cond = "all"
 
@@ -3898,6 +4029,11 @@ class EbayTool(tk.Tk):
         if generic_excludes and hasattr(self, "excl_vars"):
             for term, var in self.excl_vars.items():
                 var.set(term in generic_excludes)
+
+        # Restore generic inclusions if saved in preset
+        if generic_includes and hasattr(self, "inc_vars"):
+            for term, var in self.inc_vars.items():
+                var.set(term in generic_includes)
 
         # Restore custom includes if saved
         if custom_inc and hasattr(self, "include_text"):
@@ -4007,6 +4143,7 @@ class EbayTool(tk.Tk):
                 target_brands.append(name)
 
         active_excls = self._get_active_exclusions()
+        active_incs = self._get_active_inclusions()
         custom_inc = [l.strip() for l in self.include_text.get("1.0", "end").splitlines() if l.strip()]
         cond = self.condition_var.get() if hasattr(self, "condition_var") else "all"
 
@@ -4032,7 +4169,7 @@ class EbayTool(tk.Tk):
         tk.Label(win, text="💾 Save or Update Portfolio Preset", bg=t["bg"], fg=t["accent"],
                  font=("Segoe UI", 11, "bold")).pack(pady=(14, 4))
 
-        tk.Label(win, text=f"Snapshot: {len(target_brands)} Brands • {len(active_excls)} Exclusions • {len(custom_inc)} Custom Keywords",
+        tk.Label(win, text=f"Snapshot: {len(target_brands)} Brands • {len(active_excls)} Excl • {len(active_incs)} Incl • {len(custom_inc)} Custom Keywords",
                  bg=t["bg"], fg=t["subtext"], font=FONT_SM).pack(pady=(0, 10))
 
         lbl_frame = tk.Frame(win, bg=t["bg"])
@@ -4080,15 +4217,16 @@ class EbayTool(tk.Tk):
             preset_payload = {
                 "brands": target_brands,
                 "generic_excludes": active_excls,
+                "generic_includes": active_incs,
                 "custom_includes": custom_inc,
                 "condition": cond
             }
             self.data_store.save_preset(chosen_name, preset_payload)
             self._refresh_preset_list()
             self.preset_var.set(chosen_name)
-            self._log(f"💾 Saved Portfolio Preset '{chosen_name}' ({len(target_brands)} brands, {len(active_excls)} exclusions).")
+            self._log(f"💾 Saved Portfolio Preset '{chosen_name}' ({len(target_brands)} brands, {len(active_excls)} exclusions, {len(active_incs)} inclusions).")
             _close()
-            self.after(50, lambda: messagebox.showinfo("Preset Saved", f"Successfully saved Portfolio Preset '{chosen_name}' with {len(target_brands)} brand(s) and {len(active_excls)} generic exclusion(s)!", parent=self))
+            self.after(50, lambda: messagebox.showinfo("Preset Saved", f"Successfully saved Portfolio Preset '{chosen_name}' with {len(target_brands)} brand(s), {len(active_excls)} generic exclusion(s), and {len(active_incs)} inclusion modifier(s)!", parent=self))
 
         self._btn(btn_row, "💾 Save / Update Preset", _do_save, accent=True).pack(side="left", fill="x", expand=True, padx=(0, 6))
         self._btn(btn_row, "Cancel", _close).pack(side="right")
@@ -4141,6 +4279,7 @@ class EbayTool(tk.Tk):
             target_terms = list(custom_includes)
 
         generic_excludes = self._get_active_exclusions()
+        active_modifiers = self._get_active_inclusions()
         ds = getattr(self, "data_store", None)
         all_library_brands = ds.get_brands() if ds else {}
         platform_name = self._get_current_platform_name()
@@ -4160,42 +4299,44 @@ class EbayTool(tk.Tk):
         queued_count = 0
         for store in stores:
             for term in target_terms:
-                if any(q.get("store", "").strip().lower() == store.strip().lower() and 
-                       q.get("brand", "").strip().lower() == term.strip().lower() and 
-                       q.get("marketplace", "eBay").lower() == platform_name.lower() and
-                       q.get("vinted_country", "") == v_country and
-                       q.get("meli_country", "") == meli_c and
-                       q.get("ebay_locale", "") == ebay_loc
-                       for q in self.queue):
-                    continue
+                search_terms = [f"{term} {mod}".strip() for mod in active_modifiers] if active_modifiers else [term]
+                for s_term in search_terms:
+                    if any(q.get("store", "").strip().lower() == store.strip().lower() and 
+                           q.get("brand", "").strip().lower() == s_term.strip().lower() and 
+                           q.get("marketplace", "eBay").lower() == platform_name.lower() and
+                           q.get("vinted_country", "") == v_country and
+                           q.get("meli_country", "") == meli_c and
+                           q.get("ebay_locale", "") == ebay_loc
+                           for q in self.queue):
+                        continue
 
-                # Exclude strictly user-defined generic exclusions
-                job_excludes = list(generic_excludes)
+                    # Exclude strictly user-defined generic exclusions
+                    job_excludes = list(generic_excludes)
 
-                entry = {
-                    "store": store,
-                    "brand": term,
-                    "marketplace": platform_name,
-                    "ebay_locale": ebay_loc,
-                    "vinted_country": v_country,
-                    "vinted_depth": v_depth,
-                    "manomano_locale": mm_country,
-                    "meli_country": meli_c,
-                    "meli_depth": meli_d,
-                    "wish_depth": wish_d,
-                    "rb_depth": rb_d,
-                    "pv_depth": pv_d,
-                    "ali_depth": ali_d,
-                    "tiktok_depth": tt_d,
-                    "includes": [term],  # Clean, standalone single keyword!
-                    "excludes": job_excludes,
-                    "condition": condition
-                }
-                self.queue.append(entry)
-                loc_tag = f" • {v_country.split()[0]}" if platform_name == "Vinted" else (f" • {meli_c.split()[0]}" if platform_name == "Mercado Libre" else (f" • {mm_country.split()[0]}" if platform_name == "ManoMano" else (f" • {ebay_loc.split()[0]}" if platform_name == "eBay" and "United States" not in ebay_loc else "")))
-                label = f"{self._store_label(store, platform=platform_name)}{loc_tag} ▸ {term} [Clean 1-Term Sweep]"
-                self.queue_list.insert("end", label)
-                queued_count += 1
+                    entry = {
+                        "store": store,
+                        "brand": s_term,
+                        "marketplace": platform_name,
+                        "ebay_locale": ebay_loc,
+                        "vinted_country": v_country,
+                        "vinted_depth": v_depth,
+                        "manomano_locale": mm_country,
+                        "meli_country": meli_c,
+                        "meli_depth": meli_d,
+                        "wish_depth": wish_d,
+                        "rb_depth": rb_d,
+                        "pv_depth": pv_d,
+                        "ali_depth": ali_d,
+                        "tiktok_depth": tt_d,
+                        "includes": [s_term],  # Clean, standalone single keyword!
+                        "excludes": job_excludes,
+                        "condition": condition
+                    }
+                    self.queue.append(entry)
+                    loc_tag = f" • {v_country.split()[0]}" if platform_name == "Vinted" else (f" • {meli_c.split()[0]}" if platform_name == "Mercado Libre" else (f" • {mm_country.split()[0]}" if platform_name == "ManoMano" else (f" • {ebay_loc.split()[0]}" if platform_name == "eBay" and "United States" not in ebay_loc else "")))
+                    label = f"{self._store_label(store, platform=platform_name)}{loc_tag} ▸ {s_term} [Clean 1-Term Sweep]"
+                    self.queue_list.insert("end", label)
+                    queued_count += 1
 
         store_names = [self._store_label(s, platform=platform_name) for s in stores]
         self._log(f"🎯 Queued {queued_count} Clean Individual Search(es) for [{', '.join(target_terms)}] across {len(stores)} target(s): {', '.join(store_names)} [{platform_name}]")
@@ -4211,12 +4352,18 @@ class EbayTool(tk.Tk):
 
         stores = self._get_stores_from_input() or self._get_global_token()
 
-        preset_brands = presets[preset_name]
+        preset_data = presets[preset_name]
+        if isinstance(preset_data, dict):
+            preset_brands = preset_data.get("brands", [])
+        else:
+            preset_brands = list(preset_data)
+
         if not preset_brands:
             messagebox.showinfo("Empty Preset", f"Preset '{preset_name}' has no brands configured.")
             return
 
         generic_excludes = self._get_active_exclusions()
+        active_modifiers = self._get_active_inclusions()
         condition = self.condition_var.get()
         all_library_brands = self.data_store.get_brands()
         platform_name = self._get_current_platform_name()
@@ -4256,6 +4403,17 @@ class EbayTool(tk.Tk):
                     for sm in sub_models:
                         if sm not in includes:
                             includes.append(sm)
+
+                # Pair with active generic inclusion modifiers if checked
+                if active_modifiers:
+                    paired_includes = []
+                    for inc in includes:
+                        for mod in active_modifiers:
+                            comb = f"{inc} {mod}".strip()
+                            if comb not in paired_includes:
+                                paired_includes.append(comb)
+                    if paired_includes:
+                        includes = paired_includes
 
                 # Exclude strictly user-defined generic exclusions
                 job_excludes = list(generic_excludes)

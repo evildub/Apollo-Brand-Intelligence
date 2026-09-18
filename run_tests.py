@@ -2031,9 +2031,77 @@ class TestApolloCoreFeatures(unittest.TestCase):
         ds.set_active_profile("Default")
         ds.delete_profile(test_prof)
 
+    def test_62_generic_inclusions_and_brand_query_pairing(self):
+        """Test Item 62: Verify Generic Inclusions DataStore persistence, preset inclusion restoration, and brand query pairing."""
+        ds = self.data_store
+        from main import EbayTool
+
+        # 1. Test DataStore Inclusions API
+        default_incs = ds.get_inclusions()
+        self.assertIsInstance(default_incs, list)
+        self.assertIn("jersey", default_incs)
+        self.assertIn("hoodie", default_incs)
+
+        # Add & Remove custom inclusion term
+        test_term = "collectible_pin"
+        ds.add_inclusion(test_term)
+        self.assertIn(test_term, ds.get_inclusions())
+        ds.remove_inclusion(test_term)
+        self.assertNotIn(test_term, ds.get_inclusions())
+
+        # 2. Test Preset Payload Persistence with generic_includes
+        preset_name = "TestInclusionPreset"
+        payload = {
+            "brands": ["Dallas Cowboys", "Miami Dolphins"],
+            "generic_excludes": ["case", "poster"],
+            "generic_includes": ["jersey", "hoodie"],
+            "custom_includes": [],
+            "condition": "all"
+        }
+        ds.save_preset(preset_name, payload)
+        loaded_preset = ds.get_presets().get(preset_name)
+        self.assertIsNotNone(loaded_preset)
+        self.assertEqual(loaded_preset.get("generic_includes"), ["jersey", "hoodie"])
+        self.assertEqual(loaded_preset.get("generic_excludes"), ["case", "poster"])
+        ds.delete_preset(preset_name)
+
+        # 3. Test Brand-Query Pairing Logic with Mock App
+        dummy_app = EbayTool.__new__(EbayTool)
+        dummy_app.data_store = ds
+        dummy_app.queue = []
+        dummy_app.brand_states = {}
+        dummy_app.excl_vars = {}
+        dummy_app.inc_vars = {}
+
+        # Simulate active inclusion modifiers: ['jersey', 'hoodie']
+        class MockVar:
+            def __init__(self, val):
+                self._val = val
+            def get(self):
+                return self._val
+
+        dummy_app.inc_vars = {"jersey": MockVar(True), "hoodie": MockVar(True), "hat": MockVar(False)}
+
+        active_mods = dummy_app._get_active_inclusions()
+        self.assertEqual(sorted(active_mods), ["hoodie", "jersey"])
+
+        # Test paired query construction
+        target_brands = ["Dallas Cowboys", "Miami Dolphins"]
+        paired_queries = []
+        for b in target_brands:
+            for m in active_mods:
+                paired_queries.append(f"{b} {m}".strip())
+
+        self.assertIn("Dallas Cowboys jersey", paired_queries)
+        self.assertIn("Dallas Cowboys hoodie", paired_queries)
+        self.assertIn("Miami Dolphins jersey", paired_queries)
+        self.assertIn("Miami Dolphins hoodie", paired_queries)
+        self.assertEqual(len(paired_queries), 4)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

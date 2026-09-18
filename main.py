@@ -3914,32 +3914,64 @@ class EbayTool(tk.Tk):
     def _auto_detect_brand_from_title(self, title: str) -> tuple:
         """
         Scan a listing title against all known Parent Brands, Sub-Brands, Models, and Product Types.
+        Identifies the earliest-occurring registered brand entity in the title and resolves
+        the final Output Brand according to the brand registry's taxonomy mapping rules.
         Returns: (detected_brand, detected_product_type)
         """
         if not title:
             return "Unassigned", ""
 
         t_low = title.lower()
-        brands_data = self.data_store.get_brands()
+        brands_data = self.data_store.get_brands() if hasattr(self, "data_store") else {}
 
+        matches = []
         for parent_name, data in brands_data.items():
+            if not isinstance(data, dict):
+                continue
             p_clean = parent_name.lower().strip()
-            if len(p_clean) >= 2 and re.search(r'\b' + re.escape(p_clean) + r'\b', t_low):
-                return parent_name, self._detect_product_type(title)
+            
+            # 1. Check Parent Brand match in title
+            if len(p_clean) >= 2:
+                m_p = re.search(r'(?:\b|_)' + re.escape(p_clean) + r'(?:\b|_)', t_low)
+                if m_p:
+                    res_name = self.data_store.get_brand_result_name(parent_name, None)
+                    matches.append((m_p.start(), len(p_clean), parent_name, None, res_name))
 
-            for sub_name, models in data.get("subs", {}).items():
-                s_clean = sub_name.lower().strip()
-                if len(s_clean) >= 2 and re.search(r'\b' + re.escape(s_clean) + r'\b', t_low):
-                    return parent_name, self._detect_product_type(title)
-                for m in models:
-                    m_clean = m.lower().strip()
-                    if len(m_clean) >= 3 and re.search(r'\b' + re.escape(m_clean) + r'\b', t_low):
-                        return parent_name, self._detect_product_type(title)
+            # 2. Check Sub-Brands and Sub-Models
+            subs = data.get("subs", {})
+            if isinstance(subs, dict):
+                for sub_name, models in subs.items():
+                    s_clean = sub_name.lower().strip()
+                    if len(s_clean) >= 2:
+                        m_s = re.search(r'(?:\b|_)' + re.escape(s_clean) + r'(?:\b|_)', t_low)
+                        if m_s:
+                            res_name = self.data_store.get_brand_result_name(parent_name, sub_name)
+                            matches.append((m_s.start(), len(s_clean), parent_name, sub_name, res_name))
+                    if isinstance(models, list):
+                        for m in models:
+                            m_clean = str(m).lower().strip()
+                            if len(m_clean) >= 3:
+                                m_m = re.search(r'(?:\b|_)' + re.escape(m_clean) + r'(?:\b|_)', t_low)
+                                if m_m:
+                                    res_name = self.data_store.get_brand_result_name(parent_name, sub_name)
+                                    matches.append((m_m.start(), len(m_clean), parent_name, sub_name, res_name))
 
-            for m in data.get("models", []):
-                m_clean = m.lower().strip()
-                if len(m_clean) >= 3 and re.search(r'\b' + re.escape(m_clean) + r'\b', t_low):
-                    return parent_name, self._detect_product_type(title)
+            # 3. Check direct Parent Models
+            parent_models = data.get("models", [])
+            if isinstance(parent_models, list):
+                for m in parent_models:
+                    m_clean = str(m).lower().strip()
+                    if len(m_clean) >= 3:
+                        m_m = re.search(r'(?:\b|_)' + re.escape(m_clean) + r'(?:\b|_)', t_low)
+                        if m_m:
+                            res_name = self.data_store.get_brand_result_name(parent_name, None)
+                            matches.append((m_m.start(), len(m_clean), parent_name, None, res_name))
+
+        if matches:
+            # Sort by earliest position in title (start index), then by longest matching token length
+            matches.sort(key=lambda x: (x[0], -x[1]))
+            best_match = matches[0]
+            return best_match[4], self._detect_product_type(title)
 
         return "Unassigned", self._detect_product_type(title)
 
@@ -5315,7 +5347,7 @@ class EbayTool(tk.Tk):
                             if auto_b != "Unassigned":
                                 item["brand"] = auto_b
                             else:
-                                item["brand"] = job["brand"]
+                                item["brand"] = self.data_store.get_brand_result_name(job["brand"], matched_sub=include_term) if hasattr(self, "data_store") else job["brand"]
                             if not item.get("product_type"):
                                 item["product_type"] = auto_pt or self._detect_product_type(title)
 

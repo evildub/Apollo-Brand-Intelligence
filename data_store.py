@@ -125,11 +125,17 @@ class DataStore:
                 continue
             for brand, val in b_dict.items():
                 if not isinstance(val, dict):
-                    b_dict[brand] = {"subs": {}, "models": [], "inclusions": []}
+                    b_dict[brand] = {
+                        "subs": {}, "models": [], "inclusions": [],
+                        "result_brand_mode": "parent", "result_brand_override": "", "sub_overrides": {}
+                    }
                 else:
                     val.setdefault("subs", {})
                     val.setdefault("models", [])
                     val.setdefault("inclusions", [])
+                    val.setdefault("result_brand_mode", "parent")
+                    val.setdefault("result_brand_override", "")
+                    val.setdefault("sub_overrides", {})
 
         # Migrate or initialize Multi-Dossier staging vaults
         if "dossiers" not in self._data or not isinstance(self._data["dossiers"], dict):
@@ -317,13 +323,31 @@ class DataStore:
                 if not parts:
                     continue
                 parent = parts[0]
+                sub_brand_mode = False
+                if "[" in parent and "]" in parent:
+                    tag_m = re.search(r'\[(.*?)\]', parent)
+                    if tag_m:
+                        tag_content = tag_m.group(1).lower()
+                        if any(w in tag_content for w in ("sub", "team", "result", "individual", "breakout")):
+                            sub_brand_mode = True
+                        parent = re.sub(r'\[.*?\]', '', parent).strip()
+
                 if parent not in target_dict:
-                    target_dict[parent] = {"subs": {}, "models": [], "inclusions": []}
+                    target_dict[parent] = {
+                        "subs": {}, "models": [], "inclusions": [],
+                        "result_brand_mode": "sub_brand" if sub_brand_mode else "parent",
+                        "result_brand_override": "", "sub_overrides": {}
+                    }
                     imported_count += 1
                 else:
                     target_dict[parent].setdefault("subs", {})
                     target_dict[parent].setdefault("models", [])
                     target_dict[parent].setdefault("inclusions", [])
+                    target_dict[parent].setdefault("result_brand_mode", "sub_brand" if sub_brand_mode else "parent")
+                    target_dict[parent].setdefault("result_brand_override", "")
+                    target_dict[parent].setdefault("sub_overrides", {})
+                    if sub_brand_mode:
+                        target_dict[parent]["result_brand_mode"] = "sub_brand"
                 
                 if len(parts) == 2:
                     # Parent -> Sub or Parent -> Model
@@ -449,8 +473,58 @@ class DataStore:
             self._data["brands"][brand_name]["inclusions"] = clean_inc
             self._save()
 
-    def update_brand_entry(self, old_name: str, new_name: str, models: list[str] = None, inclusions: list[str] = None):
-        """Update brand name, models list, and mandatory inclusion keywords in a single atomic action."""
+    def get_brand_result_config(self, brand_name: str) -> dict:
+        """Return the result brand output configuration for a parent brand."""
+        b_data = self._data.get("brands", {}).get(brand_name, {})
+        if not isinstance(b_data, dict):
+            return {"mode": "parent", "override": "", "sub_overrides": {}}
+        return {
+            "mode": b_data.get("result_brand_mode", "parent"),
+            "override": b_data.get("result_brand_override", ""),
+            "sub_overrides": dict(b_data.get("sub_overrides", {}))
+        }
+
+    def set_brand_result_mode(self, brand_name: str, mode: str = "parent", override: str = "", sub_overrides: dict = None) -> bool:
+        """Persist the result brand output configuration for a parent brand."""
+        if brand_name not in self._data.get("brands", {}):
+            return False
+        b_data = self._data["brands"][brand_name]
+        if not isinstance(b_data, dict):
+            b_data = {"subs": {}, "models": [], "inclusions": []}
+            self._data["brands"][brand_name] = b_data
+        b_data["result_brand_mode"] = mode if mode in ("parent", "sub_brand", "custom") else "parent"
+        b_data["result_brand_override"] = str(override).strip() if override else ""
+        if sub_overrides is not None:
+            b_data["sub_overrides"] = {str(k).strip(): str(v).strip() for k, v in sub_overrides.items() if str(k).strip()}
+        self._save()
+        return True
+
+    def get_brand_result_name(self, parent_name: str, matched_sub: str = None) -> str:
+        """Resolve the final Output Brand name according to configured taxonomy rules."""
+        if not parent_name:
+            return matched_sub or "Unassigned"
+        brands = self.get_brands()
+        b_data = brands.get(parent_name, {})
+        if not isinstance(b_data, dict):
+            return parent_name
+
+        # 1. Check if sub-brand has an explicit individual output override
+        if matched_sub:
+            sub_overrides = b_data.get("sub_overrides", {})
+            if isinstance(sub_overrides, dict) and matched_sub in sub_overrides and sub_overrides[matched_sub]:
+                return sub_overrides[matched_sub]
+
+        # 2. Check parent brand output mode
+        mode = b_data.get("result_brand_mode", "parent")
+        if mode == "sub_brand" and matched_sub:
+            return matched_sub
+        elif mode == "custom" and b_data.get("result_brand_override"):
+            return b_data.get("result_brand_override")
+        return b_data.get("result_brand_override") or parent_name
+
+    def update_brand_entry(self, old_name: str, new_name: str, models: list[str] = None, inclusions: list[str] = None,
+                           result_brand_mode: str = None, result_brand_override: str = None, sub_overrides: dict = None):
+        """Update brand name, models list, mandatory inclusion keywords, and result brand mapping in a single atomic action."""
         if old_name not in self._data.get("brands", {}):
             return
         b_data = self._data["brands"].pop(old_name)
@@ -458,6 +532,12 @@ class DataStore:
             b_data["models"] = [str(m).strip() for m in models if str(m).strip()]
         if inclusions is not None:
             b_data["inclusions"] = [str(inc).strip() for inc in inclusions if str(inc).strip()]
+        if result_brand_mode is not None:
+            b_data["result_brand_mode"] = result_brand_mode
+        if result_brand_override is not None:
+            b_data["result_brand_override"] = str(result_brand_override).strip()
+        if sub_overrides is not None:
+            b_data["sub_overrides"] = {str(k).strip(): str(v).strip() for k, v in sub_overrides.items() if str(k).strip()}
         target_name = new_name.strip() or old_name
         self._data["brands"][target_name] = b_data
         self._save()

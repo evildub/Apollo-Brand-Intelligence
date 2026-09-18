@@ -320,19 +320,21 @@ class BrandRegistryModal(tk.Toplevel):
         tree_frame = tk.Frame(left_pane, bg=self._t("entry_bg", "#0f172a"))
         tree_frame.pack(fill="both", expand=True)
 
-        cols = ("type", "count", "inclusions")
+        cols = ("type", "count", "output", "inclusions")
         self.brand_tree = ttk.Treeview(
             tree_frame, columns=cols, selectmode="extended", style="BrandModal.Treeview"
         )
         self.brand_tree.heading("#0", text="Brand / Sub-Brand / Line", anchor="w")
         self.brand_tree.heading("type", text="Type", anchor="center")
         self.brand_tree.heading("count", text="Items", anchor="center")
+        self.brand_tree.heading("output", text="Result Output", anchor="w")
         self.brand_tree.heading("inclusions", text="Mandatory Inclusions", anchor="w")
 
-        self.brand_tree.column("#0", width=230, minwidth=160, stretch=True)
-        self.brand_tree.column("type", width=70, minwidth=50, anchor="center", stretch=False)
-        self.brand_tree.column("count", width=60, minwidth=40, anchor="center", stretch=False)
-        self.brand_tree.column("inclusions", width=140, minwidth=80, stretch=True)
+        self.brand_tree.column("#0", width=200, minwidth=140, stretch=True)
+        self.brand_tree.column("type", width=65, minwidth=45, anchor="center", stretch=False)
+        self.brand_tree.column("count", width=55, minwidth=35, anchor="center", stretch=False)
+        self.brand_tree.column("output", width=130, minwidth=80, stretch=True)
+        self.brand_tree.column("inclusions", width=120, minwidth=70, stretch=True)
 
         tree_vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.brand_tree.yview)
         tree_hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.brand_tree.xview)
@@ -385,7 +387,56 @@ class BrandRegistryModal(tk.Toplevel):
             bg=self._t("entry_bg", "#0f172a"), fg=self._t("text", "#ffffff"),
             insertbackground=self._t("text", "#ffffff"), relief="flat"
         )
-        self.edit_name_entry.pack(fill="x", pady=(2, 8))
+        self.edit_name_entry.pack(fill="x", pady=(2, 6))
+
+        # ── Result Brand Output Configuration ─────────────────────────────────
+        self.res_brand_frame = tk.Frame(right_pane, bg=self._t("panel", "#1e1e1e"))
+        self.res_brand_frame.pack(fill="x", pady=(0, 6))
+
+        res_hdr = tk.Frame(self.res_brand_frame, bg=self._t("panel", "#1e1e1e"))
+        res_hdr.pack(fill="x")
+        tk.Label(
+            res_hdr, text="🎯 Result Brand Output (Genesis & Results Table):", font=FONT_BOLD,
+            bg=self._t("panel", "#1e1e1e"), fg=self._t("accent", "#38bdf8")
+        ).pack(side="left")
+
+        self.res_mode_frame = tk.Frame(self.res_brand_frame, bg=self._t("panel", "#1e1e1e"))
+        self.res_mode_frame.pack(fill="x", pady=(2, 2))
+
+        self.res_mode_var = tk.StringVar(value="parent")
+        
+        self.rb_parent = tk.Radiobutton(
+            self.res_mode_frame, text="🏛️ Parent ('Toyota')",
+            variable=self.res_mode_var, value="parent", font=FONT_SM,
+            bg=self._t("panel", "#1e1e1e"), fg=self._t("text", "#ffffff"),
+            selectcolor=self._t("entry_bg", "#0f172a"), activebackground=self._t("panel", "#1e1e1e")
+        )
+        self.rb_parent.pack(side="left", padx=(0, 6))
+
+        self.rb_sub = tk.Radiobutton(
+            self.res_mode_frame, text="🏷️ Sub-Brand / Team ('Dallas Cowboys')",
+            variable=self.res_mode_var, value="sub_brand", font=FONT_SM,
+            bg=self._t("panel", "#1e1e1e"), fg=self._t("text", "#ffffff"),
+            selectcolor=self._t("entry_bg", "#0f172a"), activebackground=self._t("panel", "#1e1e1e")
+        )
+        self.rb_sub.pack(side="left", padx=(0, 6))
+
+        self.res_override_frame = tk.Frame(self.res_brand_frame, bg=self._t("panel", "#1e1e1e"))
+        self.res_override_frame.pack(fill="x", pady=(2, 0))
+
+        self.lbl_override = tk.Label(
+            self.res_override_frame, text="Custom Output Override (Optional):", font=FONT_SM,
+            bg=self._t("panel", "#1e1e1e"), fg=self._t("subtext", "#94a3b8")
+        )
+        self.lbl_override.pack(side="left", padx=(0, 6))
+
+        self.edit_override_var = tk.StringVar()
+        self.edit_override_entry = tk.Entry(
+            self.res_override_frame, textvariable=self.edit_override_var, font=FONT_NORM,
+            bg=self._t("entry_bg", "#0f172a"), fg=self._t("text", "#ffffff"),
+            insertbackground=self._t("text", "#ffffff"), relief="flat"
+        )
+        self.edit_override_entry.pack(side="left", fill="x", expand=True)
 
         # Mandatory Inclusions Box
         inc_hdr = tk.Frame(right_pane, bg=self._t("panel", "#1e1e1e"))
@@ -400,11 +451,11 @@ class BrandRegistryModal(tk.Toplevel):
         ).pack(side="right")
 
         self.edit_inc_text = tk.Text(
-            right_pane, height=3, font=FONT_NORM,
+            right_pane, height=2, font=FONT_NORM,
             bg=self._t("entry_bg", "#0f172a"), fg=self._t("text", "#ffffff"),
             insertbackground=self._t("text", "#ffffff"), relief="flat", wrap="word"
         )
-        self.edit_inc_text.pack(fill="x", pady=(2, 8))
+        self.edit_inc_text.pack(fill="x", pady=(2, 6))
 
         # Sub-Brands & Models Multi-Line Box
         mod_hdr = tk.Frame(right_pane, bg=self._t("panel", "#1e1e1e"))
@@ -419,15 +470,15 @@ class BrandRegistryModal(tk.Toplevel):
         ).pack(side="right")
 
         self.edit_models_text = tk.Text(
-            right_pane, height=6, font=FONT_NORM,
+            right_pane, height=5, font=FONT_NORM,
             bg=self._t("entry_bg", "#0f172a"), fg=self._t("text", "#ffffff"),
             insertbackground=self._t("text", "#ffffff"), relief="flat", wrap="word"
         )
-        self.edit_models_text.pack(fill="both", expand=True, pady=(2, 8))
+        self.edit_models_text.pack(fill="both", expand=True, pady=(2, 6))
 
         # Save Button Row
         save_row = tk.Frame(right_pane, bg=self._t("panel", "#1e1e1e"))
-        save_row.pack(fill="x", pady=(4, 8))
+        save_row.pack(fill="x", pady=(2, 6))
 
         self.save_detail_btn = self._btn(save_row, "⚡ Save Brand Details", self._save_brand_details, accent=True)
         self.save_detail_btn.pack(side="left")
@@ -436,7 +487,7 @@ class BrandRegistryModal(tk.Toplevel):
         prev_hdr = tk.Frame(right_pane, bg=self._t("panel", "#1e1e1e"))
         prev_hdr.pack(fill="x")
         tk.Label(
-            prev_hdr, text="Scraper Target Terms Preview:", font=FONT_SM,
+            prev_hdr, text="Scraper Target Terms & Output Preview:", font=FONT_SM,
             bg=self._t("panel", "#1e1e1e"), fg=self._t("subtext", "#94a3b8")
         ).pack(side="left")
 
@@ -514,6 +565,9 @@ class BrandRegistryModal(tk.Toplevel):
             subs = b_data.get("subs", {})
             models = b_data.get("models", [])
             inclusions = b_data.get("inclusions", [])
+            mode = b_data.get("result_brand_mode", "parent")
+            override = b_data.get("result_brand_override", "")
+            sub_overrides = b_data.get("sub_overrides", {})
 
             # Filter logic
             b_match = (not q) or (q in b_name.lower())
@@ -528,30 +582,46 @@ class BrandRegistryModal(tk.Toplevel):
             total_items = len(models) + sum(len(m_list) for m_list in subs.values()) + len(subs)
             inc_str = ", ".join(inclusions) if inclusions else "—"
 
+            # Output representation for Parent
+            if mode == "parent":
+                p_out = f"Parent ({override or b_name})"
+            elif mode == "sub_brand":
+                p_out = "🏷️ Sub-Brand / Team"
+            else:
+                p_out = f"✏️ {override or b_name}"
+
             parent_id = self.brand_tree.insert(
                 "", "end", text=f"🏢 {b_name}",
-                values=("Parent", f"{total_items} items", inc_str),
+                values=("Parent", f"{total_items} items", p_out, inc_str),
                 open=bool(q)  # Auto expand if searching
             )
 
             # Insert Sub-brands
             for sub_name, sub_models in subs.items():
+                s_override = sub_overrides.get(sub_name, "")
+                if s_override:
+                    s_out = f"✏️ {s_override}"
+                elif mode == "sub_brand":
+                    s_out = f"🏷️ {sub_name}"
+                else:
+                    s_out = f"Inherit ({override or b_name})"
+
                 s_id = self.brand_tree.insert(
                     parent_id, "end", text=f"🏷 {sub_name}",
-                    values=("Sub-Brand", f"{len(sub_models)} models", "—"),
+                    values=("Sub-Brand", f"{len(sub_models)} models", s_out, "—"),
                     open=bool(q)
                 )
                 for mod in sub_models:
                     self.brand_tree.insert(
                         s_id, "end", text=f"📦 {mod}",
-                        values=("Model", "—", "—")
+                        values=("Model", "—", "—", "—")
                     )
 
             # Insert Parent-level direct models
             for mod in models:
                 self.brand_tree.insert(
                     parent_id, "end", text=f"📦 {mod}",
-                    values=("Model", "—", "—")
+                    values=("Model", "—", "—", "—")
                 )
 
         prof = self.data_store.get_active_profile_name()
@@ -611,6 +681,14 @@ class BrandRegistryModal(tk.Toplevel):
         self.editor_title.config(text=f"Parent Brand: {brand_name}")
         self.edit_name_var.set(brand_name)
 
+        # Result Brand Output
+        mode = b_data.get("result_brand_mode", "parent")
+        override = b_data.get("result_brand_override", "")
+        self.res_mode_frame.pack(fill="x", pady=(2, 2))
+        self.lbl_override.config(text="Custom Output Override (Optional):")
+        self.res_mode_var.set(mode)
+        self.edit_override_var.set(override)
+
         # Inclusions
         inc_list = b_data.get("inclusions", [])
         self.edit_inc_text.delete("1.0", "end")
@@ -634,10 +712,17 @@ class BrandRegistryModal(tk.Toplevel):
         b_data = brands.get(parent_name, {})
         subs = b_data.get("subs", {})
         sub_models = subs.get(sub_name, [])
+        sub_overrides = b_data.get("sub_overrides", {})
+        sub_override = sub_overrides.get(sub_name, "")
 
         self.editor_icon.config(text="🏷")
         self.editor_title.config(text=f"Sub-Brand: {sub_name} (under {parent_name})")
         self.edit_name_var.set(sub_name)
+
+        # Result Brand Output for Sub-Brand
+        self.res_mode_frame.pack_forget()
+        self.lbl_override.config(text=f"Output Override for '{sub_name}' (e.g. '{sub_name}'):")
+        self.edit_override_var.set(sub_override)
 
         inc_list = b_data.get("inclusions", [])
         self.edit_inc_text.delete("1.0", "end")
@@ -651,7 +736,10 @@ class BrandRegistryModal(tk.Toplevel):
     def _update_preview(self, brand_name: str):
         terms = self.data_store.get_terms_for_brand(brand_name)
         inclusions = self.data_store.get_brand_inclusions(brand_name)
-        prev_str = f"Search Terms ({len(terms)}): {', '.join(terms)}\nMandatory Inclusions: {', '.join(inclusions) if inclusions else 'None'}"
+        cfg = self.data_store.get_brand_result_config(brand_name)
+        mode = cfg.get("mode", "parent")
+        res_label = f"Parent ('{brand_name}')" if mode == "parent" else ("🏷️ Matched Sub-Brand / Team" if mode == "sub_brand" else f"✏️ Custom ('{cfg.get('override', '')}')")
+        prev_str = f"Search Terms ({len(terms)}): {', '.join(terms)}\nMandatory Inclusions: {', '.join(inclusions) if inclusions else 'None'}\nResult Output Brand: {res_label}"
         self.preview_text.config(state="normal")
         self.preview_text.delete("1.0", "end")
         self.preview_text.insert("1.0", prev_str)
@@ -665,6 +753,8 @@ class BrandRegistryModal(tk.Toplevel):
         self.editor_icon.config(text="🏢")
         self.editor_title.config(text="Select a brand to inspect or edit details")
         self.edit_name_var.set("")
+        self.res_mode_var.set("parent")
+        self.edit_override_var.set("")
         self.edit_inc_text.delete("1.0", "end")
         self.edit_models_text.delete("1.0", "end")
         self.preview_text.config(state="normal")
@@ -756,6 +846,17 @@ class BrandRegistryModal(tk.Toplevel):
                 if self._selected_sub != new_name:
                     subs.pop(self._selected_sub, None)
                 subs[new_name] = sub_models
+
+                # Sub-brand output override
+                sub_override_val = self.edit_override_var.get().strip()
+                sub_overrides = brands[self._selected_brand].setdefault("sub_overrides", {})
+                if self._selected_sub != new_name:
+                    sub_overrides.pop(self._selected_sub, None)
+                if sub_override_val:
+                    sub_overrides[new_name] = sub_override_val
+                else:
+                    sub_overrides.pop(new_name, None)
+
                 self.data_store._save()
                 self._selected_sub = new_name
         else:
@@ -785,6 +886,8 @@ class BrandRegistryModal(tk.Toplevel):
                 if parsed_subs:
                     b_data["subs"] = parsed_subs
                 b_data["inclusions"] = inclusions
+                b_data["result_brand_mode"] = self.res_mode_var.get()
+                b_data["result_brand_override"] = self.edit_override_var.get().strip()
                 brands[new_name] = b_data
                 self.data_store._save()
                 self._selected_brand = new_name

@@ -1937,6 +1937,86 @@ class TestApolloCoreFeatures(unittest.TestCase):
         self.assertNotIn("NFL Complete", ds.get_dossier_names())
         ds.delete_dossier("Ford Airbags")
 
+    def test_61_result_brand_mapping_and_hierarchical_detection(self):
+        """Test Item 61: Verify Result Brand Mapping, sub-brand team output mode, custom overrides, and positional title detection."""
+        ds = self.data_store
+        from main import EbayTool
+
+        # Initialize mock app with test data store
+        dummy_app = EbayTool.__new__(EbayTool)
+        dummy_app.data_store = ds
+
+        # 1. Setup Test Profile with OEM brand (Toyota) and League brand (NFL)
+        test_prof = "ResultBrandTest"
+        if test_prof in ds.get_profile_names():
+            ds.delete_profile(test_prof)
+
+        ds.create_profile(test_prof, initial_brands={
+            "Toyota": {
+                "subs": {
+                    "Lexus": ["RX350", "GX460"],
+                    "Scion": ["tC", "FR-S"]
+                },
+                "models": ["Camry", "Corolla", "Tacoma"],
+                "inclusions": ["genuine", "oem"],
+                "result_brand_mode": "parent",
+                "result_brand_override": "",
+                "sub_overrides": {"Lexus": "Lexus"}  # Explicit override: Lexus outputs 'Lexus'
+            },
+            "NFL": {
+                "subs": {
+                    "Dallas Cowboys": ["Dak Prescott", "CeeDee Lamb", "Micah Parsons"],
+                    "Miami Dolphins": ["Tua Tagovailoa", "Tyreek Hill"]
+                },
+                "models": [],
+                "inclusions": ["jersey", "helmet"],
+                "result_brand_mode": "sub_brand",  # All matched sub-brands output their team name
+                "result_brand_override": "",
+                "sub_overrides": {}
+            }
+        })
+        ds.set_active_profile(test_prof)
+
+        # 2. Verify Result Brand Name Resolution on DataStore API
+        # A. Parent Brand mode (Toyota)
+        self.assertEqual(ds.get_brand_result_name("Toyota", None), "Toyota")
+        self.assertEqual(ds.get_brand_result_name("Toyota", "Scion"), "Toyota")  # Scion has no override, inherits parent Toyota
+        self.assertEqual(ds.get_brand_result_name("Toyota", "Lexus"), "Lexus")   # Lexus has explicit override -> Lexus
+
+        # B. Sub-Brand Team mode (NFL)
+        self.assertEqual(ds.get_brand_result_name("NFL", "Dallas Cowboys"), "Dallas Cowboys")
+        self.assertEqual(ds.get_brand_result_name("NFL", "Miami Dolphins"), "Miami Dolphins")
+        self.assertEqual(ds.get_brand_result_name("NFL", None), "NFL")  # Generic fallback if no specific team
+
+        # 3. Test Title Auto-Detection Engine (_auto_detect_brand_from_title)
+        # Test Case 1: Toyota model -> outputs 'Toyota'
+        b1, pt1 = dummy_app._auto_detect_brand_from_title("OEM Toyota Camry Brake Pads Set")
+        self.assertEqual(b1, "Toyota")
+
+        # Test Case 2: Model without parent in title -> outputs 'Toyota'
+        b2, pt2 = dummy_app._auto_detect_brand_from_title("2021 Corolla Headlight Assembly LH")
+        self.assertEqual(b2, "Toyota")
+
+        # Test Case 3: Lexus sub-brand (with override) -> outputs 'Lexus'
+        b3, pt3 = dummy_app._auto_detect_brand_from_title("2023 Lexus RX350 All-Weather Floor Mats")
+        self.assertEqual(b3, "Lexus")
+
+        # Test Case 4: NFL Team sub-brand -> outputs 'Dallas Cowboys'
+        b4, pt4 = dummy_app._auto_detect_brand_from_title("Official Dallas Cowboys Dak Prescott Home Jersey #4")
+        self.assertEqual(b4, "Dallas Cowboys")
+
+        # Test Case 5: Player name only under NFL team -> outputs 'Dallas Cowboys'
+        b5, pt5 = dummy_app._auto_detect_brand_from_title("Signed CeeDee Lamb Football Card NFL Shield")
+        self.assertEqual(b5, "Dallas Cowboys")
+
+        # Test Case 6: Positional Priority in Multi-Entity Titles (earliest occurring brand wins)
+        b6, pt6 = dummy_app._auto_detect_brand_from_title("Miami Dolphins vs Dallas Cowboys 2024 Season Opener NFL Program")
+        self.assertEqual(b6, "Miami Dolphins", "Earliest occurring entity 'Miami Dolphins' must take positional priority.")
+
+        # Clean up
+        ds.set_active_profile("Default")
+        ds.delete_profile(test_prof)
+
 
 if __name__ == "__main__":
     unittest.main()

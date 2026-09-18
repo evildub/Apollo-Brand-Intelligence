@@ -697,11 +697,14 @@ class EbayTool(tk.Tk):
         # Image thumbnail caches & Hover popup window
         import requests
         self.http_session       = requests.Session()
-        self.thumb_executor     = ThreadPoolExecutor(max_workers=32, thread_name_prefix="ApolloThumb")
+        self.thumb_executor     = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ApolloThumb")
         self.raw_img_cache      = {}          # url -> PIL.Image (source image)
         self.inline_img_cache   = {}          # (size_key, url) -> PhotoImage (resized for treeview)
         self.img_cache          = {}          # url -> PhotoImage (large hover popup)
         self._placeholders      = {}          # size_px -> PhotoImage
+        self._url_to_iids       = {}          # url -> set of iids in result_tree for O(1) update
+        self._pending_thumb_urls= set()       # urls currently queued or in-flight
+        self._autosave_job      = None        # after timer handle for session autosave
         self.staged_dossier     = self.data_store.get_staged_dossier()  # Multi-Wave Dossier Staging Vault (disk-persisted)
         self.preview_win        = None
         self.last_hovered_iid   = None
@@ -797,6 +800,7 @@ class EbayTool(tk.Tk):
 
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
         self.after(50, self._apply_dark_titlebar)
+        self.after(450, self._check_session_recovery)
 
     def _on_closing(self):
         try:
@@ -804,6 +808,11 @@ class EbayTool(tk.Tk):
             if hasattr(self, "result_tree"):
                 col_w = {c: self.result_tree.column(c, "width") for c in self.result_tree["columns"]}
                 self.data_store.set_setting("column_widths", col_w)
+            if hasattr(self, "results") and self.results:
+                kw = self.keyword_entry.get().strip() if hasattr(self, "keyword_entry") else ""
+                br = self.brand_combo.get().strip() if hasattr(self, "brand_combo") else ""
+                mkt = self.marketplace_combo.get().strip() if hasattr(self, "marketplace_combo") else ""
+                self.data_store.save_active_session(self.results, query=kw, brand=br, market=mkt)
         except Exception:
             pass
         self.destroy()
@@ -1509,6 +1518,7 @@ class EbayTool(tk.Tk):
         self.brand_tree.bind("<Alt-Down>", lambda e: self._move_selected_brand(1))
         self.brand_tree.bind("<Control-Up>", lambda e: self._move_selected_brand(-1))
         self.brand_tree.bind("<Control-Down>", lambda e: self._move_selected_brand(1))
+        self.brand_tree.bind("<F2>", lambda e: self._open_brand_editor_modal())
 
         # Brand Library management buttons (Spacious, unclipped 2-tier layout)
         btn_row = tk.Frame(frame, bg=t["bg"])
@@ -1516,7 +1526,8 @@ class EbayTool(tk.Tk):
         self.themed_widgets["bg_frames"].append(btn_row)
 
         self._btn(btn_row, "＋ Parent", self._add_parent_brand).pack(side="left", padx=(0, 4))
-        self._btn(btn_row, "＋ Sub-Brand", self._add_sub_brand).pack(side="left", padx=(0, 4))
+        self._btn(btn_row, "＋ Sub", self._add_sub_brand).pack(side="left", padx=(0, 4))
+        self._btn(btn_row, "✏️ Edit / Inclusions", self._open_brand_editor_modal, accent=True).pack(side="left", padx=(0, 4))
         self._btn(btn_row, "▲ Up", lambda: self._move_selected_brand(-1)).pack(side="left", padx=(0, 4))
         self._btn(btn_row, "▼ Down", lambda: self._move_selected_brand(1)).pack(side="left", padx=(0, 4))
         self._btn(btn_row, "🗑 Remove", self._remove_brand, danger=True).pack(side="right")
@@ -3309,8 +3320,15 @@ class EbayTool(tk.Tk):
         for key in target_keys:
             parts = key.split("/")
             name = parts[-1]
+            parent_b = parts[0]
             if name not in all_terms and name not in exclude_names:
                 all_terms.append(name)
+            # Incorporate brand-specific mandatory inclusion terms
+            if hasattr(self, "data_store"):
+                b_incs = self.data_store.get_brand_inclusions(parent_b)
+                for inc in b_incs:
+                    if inc not in all_terms and inc not in exclude_names:
+                        all_terms.append(inc)
 
         self.include_text.delete("1.0", "end")
         self.include_text.insert("1.0", "\n".join(all_terms))
@@ -3403,6 +3421,120 @@ class EbayTool(tk.Tk):
         entry.bind("<Return>", submit)
         tk.Button(win, text="Add", command=submit,
                   bg=t["accent"], fg="black" if t.get("name", "").startswith("⚡") else "white", relief="flat", font=FONT).pack(pady=8)
+
+    def _open_brand_editor_modal(self, event=None):
+        """Open a modern, comprehensive Brand & Inclusions Editor dialog."""
+        sel = self.brand_tree.focus()
+        if not sel:
+            selected = self.brand_tree.selection()
+            if selected:
+                sel = selected[0]
+        if not sel:
+            messagebox.showinfo("Select Brand", "Please select a brand or model from the tree to edit its taxonomy and mandatory inclusion keywords.")
+            return
+
+        parts = sel.split("/")
+        parent_name = parts[0]
+        val_type = self.brand_tree.item(sel, "values")[0] if self.brand_tree.item(sel, "values") else "Parent"
+        sub_name = parts[1] if len(parts) > 1 and val_type == "Sub" else ""
+        
+        brands = self.data_store.get_brands()
+        if parent_name not in brands:
+            return
+
+        b_data = brands[parent_name]
+        is_sub = bool(sub_name)
+
+        target_title = f"Brand Editor: {sub_name if is_sub else parent_name}"
+        current_name = sub_name if is_sub else parent_name
+        current_models = b_data.get("subs", {}).get(sub_name, []) if is_sub else b_data.get("models", [])
+        current_inclusions = b_data.get("inclusions", [])
+
+        t = self.theme
+        win = tk.Toplevel(self)
+        win.title(target_title)
+        win.configure(bg=t["bg"])
+        win.geometry("540x530")
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+        self._apply_dark_titlebar(win)
+        self._center_window(win, 540, 530)
+
+        card = tk.Frame(win, bg=t["panel"], padx=18, pady=16)
+        card.pack(fill="both", expand=True, padx=12, pady=12)
+
+        tk.Label(card, text=f"🏷️ Edit {current_name}", font=FONT_HEAD, bg=t["panel"], fg=t["accent"]).pack(anchor="w")
+        tk.Label(card, text="Configure brand taxonomy, product line models, and mandatory inclusion keywords.",
+                 font=FONT_SM, bg=t["panel"], fg=t["subtext"]).pack(anchor="w", pady=(2, 12))
+
+        # Brand Name Entry
+        tk.Label(card, text="Brand / Trademark Name:", font=FONT_BOLD, bg=t["panel"], fg=t["text"]).pack(anchor="w", pady=(0, 2))
+        name_ent = tk.Entry(card, bg=t["entry_bg"], fg=t["text"], insertbackground=t["text"], font=FONT_SM, relief="flat")
+        name_ent.pack(fill="x", pady=(0, 10))
+        name_ent.insert(0, current_name)
+
+        # Models / Sub-Products Entry
+        tk.Label(card, text="Known Models / Product Lines (one per line or comma-separated):",
+                 font=FONT_BOLD, bg=t["panel"], fg=t["text"]).pack(anchor="w", pady=(0, 2))
+        mod_txt = tk.Text(card, height=4, bg=t["entry_bg"], fg=t["text"], insertbackground=t["text"], font=FONT_SM, relief="flat", wrap="word")
+        mod_txt.pack(fill="x", pady=(0, 10))
+        mod_txt.insert("1.0", "\n".join(current_models))
+
+        # Mandatory Inclusion Terms (Brand-Specific Keywords)
+        inc_head_f = tk.Frame(card, bg=t["panel"])
+        inc_head_f.pack(fill="x", pady=(0, 2))
+        tk.Label(inc_head_f, text="🎯 Mandatory Brand Inclusion Terms:", font=FONT_BOLD, bg=t["panel"], fg=t["success"]).pack(side="left")
+        tk.Label(inc_head_f, text="(Guarantees zero fluff for this brand)", font=FONT_XS, bg=t["panel"], fg=t["subtext"]).pack(side="left", padx=6)
+
+        tk.Label(card, text="Specific keywords that must be present when targeting this brand (e.g. 'dewormer, paste, suspension' or 'tech fleece, dri-fit'):",
+                 font=FONT_XS, bg=t["panel"], fg=t["subtext"], wraplength=480, justify="left").pack(anchor="w", pady=(0, 2))
+        inc_txt = tk.Text(card, height=3, bg=t["entry_bg"], fg=t["text"], insertbackground=t["text"], font=FONT_SM, relief="flat", wrap="word")
+        inc_txt.pack(fill="x", pady=(0, 14))
+        inc_txt.insert("1.0", "\n".join(current_inclusions))
+
+        def _save_brand():
+            new_name = name_ent.get().strip()
+            if not new_name:
+                messagebox.showwarning("Invalid Name", "Brand name cannot be blank.", parent=win)
+                return
+
+            # Parse models
+            raw_mods = mod_txt.get("1.0", "end").strip()
+            models_list = []
+            for line in raw_mods.splitlines():
+                for item in line.split(","):
+                    c_item = item.strip()
+                    if c_item and c_item not in models_list:
+                        models_list.append(c_item)
+
+            # Parse inclusions
+            raw_incs = inc_txt.get("1.0", "end").strip()
+            inclusions_list = []
+            for line in raw_incs.splitlines():
+                for item in line.split(","):
+                    c_item = item.strip()
+                    if c_item and c_item not in inclusions_list:
+                        inclusions_list.append(c_item)
+
+            if is_sub:
+                if new_name != current_name:
+                    b_data["subs"].pop(current_name, None)
+                b_data["subs"][new_name] = models_list
+                self.data_store._data["brands"][parent_name] = b_data
+                self.data_store._save()
+            else:
+                self.data_store.update_brand_entry(parent_name, new_name, models=models_list, inclusions=inclusions_list)
+
+            self._refresh_brand_tree()
+            self._update_include_preview()
+            self._log(f"💾 Brand '{new_name}' updated ({len(models_list)} models, {len(inclusions_list)} inclusion terms).")
+            win.destroy()
+
+        btn_row = tk.Frame(card, bg=t["panel"])
+        btn_row.pack(fill="x", pady=(4, 0))
+        self._btn(btn_row, "💾 Save Changes", _save_brand, accent=True).pack(side="left", padx=(0, 6))
+        self._btn(btn_row, "Cancel", win.destroy).pack(side="right")
 
     def _on_brand_drag_start(self, event):
         item = self.brand_tree.identify_row(event.y)
@@ -5778,6 +5910,7 @@ class EbayTool(tk.Tk):
         """Clear and refill result_tree from self.results honoring current filter."""
         self._refresh_filter_dropdown_values()
         self.result_tree.delete(*self.result_tree.get_children())
+        self._url_to_iids = {}
         query = self.filter_var.get().strip() if hasattr(self, "filter_var") else ""
         target_col = self.filter_col_var.get() if hasattr(self, "filter_col_var") else "Title"
         mkt_filter = self.filter_mkt_var.get().strip() if hasattr(self, "filter_mkt_var") else "All Marketplaces"
@@ -5876,13 +6009,23 @@ class EbayTool(tk.Tk):
                 item.get("url", ""),
             ))
 
+            if img_url:
+                if img_url not in self._url_to_iids:
+                    self._url_to_iids[img_url] = set()
+                self._url_to_iids[img_url].add(iid)
+
             if is_thumbs and img_url:
-                self._fetch_inline_thumbnail(iid, img_url)
+                cache_key = (size_key, img_url)
+                if cache_key in self.inline_img_cache:
+                    self.result_tree.item(iid, image=self.inline_img_cache[cache_key])
+                else:
+                    self._fetch_inline_thumbnail(iid, img_url)
 
         if hasattr(self, "fluff_btn"):
             self.fluff_btn.config(text=f"💨 Show Suppressed Fluff ({suppressed_fluff_count})")
 
         self._update_result_count()
+        self._trigger_session_autosave()
 
     def _sort_by_column(self, col):
         """Sort self.results by column with numeric/price intelligence and update headers."""
@@ -5991,8 +6134,11 @@ class EbayTool(tk.Tk):
             self.seen_item_ids.clear()
             self.executed_jobs.clear()
             self.result_tree.delete(*self.result_tree.get_children())
+            self._url_to_iids.clear()
             self.result_count.set("0 listings")
             self._hide_preview_popup()
+            if hasattr(self, "data_store"):
+                self.data_store.clear_active_session()
             self._log("Results cleared.")
 
     def _get_item_by_tree_id(self, iid: str) -> Optional[dict]:
@@ -8126,13 +8272,18 @@ class EbayTool(tk.Tk):
             self._placeholders[size_px] = ImageTk.PhotoImage(ph)
         return self._placeholders[size_px]
 
-    def _get_scaled_photo(self, pil_img, size_px):
-        """Scale and center a PIL Image into a square PhotoImage."""
+    def _get_scaled_canvas(self, pil_img, size_px):
+        """Prepare a squared, centered PIL Image canvas (thread-safe, does not touch Tkinter)."""
         img_copy = pil_img.copy()
         img_copy.thumbnail((size_px, size_px), Image.Resampling.LANCZOS)
         canvas = Image.new("RGBA", (size_px, size_px), (0, 0, 0, 0))
         offset = ((size_px - img_copy.width) // 2, (size_px - img_copy.height) // 2)
         canvas.paste(img_copy, offset)
+        return canvas
+
+    def _get_scaled_photo(self, pil_img, size_px):
+        """Scale and center a PIL Image into a square PhotoImage (MAIN THREAD ONLY)."""
+        canvas = self._get_scaled_canvas(pil_img, size_px)
         return ImageTk.PhotoImage(canvas)
 
     def _fetch_inline_thumbnail(self, iid, image_url):
@@ -8158,11 +8309,18 @@ class EbayTool(tk.Tk):
             return
 
         if image_url_str in self.raw_img_cache:
-            photo = self._get_scaled_photo(self.raw_img_cache[image_url_str], cfg["img_size"])
-            self.inline_img_cache[cache_key] = photo
-            if self.result_tree.exists(iid):
-                self.result_tree.item(iid, image=photo)
+            try:
+                photo = self._get_scaled_photo(self.raw_img_cache[image_url_str], cfg["img_size"])
+                self.inline_img_cache[cache_key] = photo
+                if self.result_tree.exists(iid):
+                    self.result_tree.item(iid, image=photo)
+                return
+            except Exception:
+                pass
+
+        if image_url_str in self._pending_thumb_urls:
             return
+        self._pending_thumb_urls.add(image_url_str)
 
         cur_size_key = self.thumb_size_var.get()
         cur_cfg = THUMB_CONFIG.get(cur_size_key, THUMB_CONFIG["Medium (100px)"])
@@ -8170,14 +8328,14 @@ class EbayTool(tk.Tk):
 
         def _worker(sz_key=cur_size_key, sz_px=cur_img_size, url=image_url_str, target_iid=iid):
             # Cache size safeguard to prevent RAM bloat
-            if len(self.raw_img_cache) > 800:
-                for k in list(self.raw_img_cache.keys())[:250]:
+            if len(self.raw_img_cache) > 600:
+                for k in list(self.raw_img_cache.keys())[:200]:
                     self.raw_img_cache.pop(k, None)
 
             for attempt in range(2):
                 try:
                     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-                    resp = self.http_session.get(url, headers=headers, timeout=12.0)
+                    resp = self.http_session.get(url, headers=headers, timeout=10.0)
                     if resp.status_code == 200:
                         pil_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
                         self.raw_img_cache[url] = pil_img
@@ -8190,50 +8348,68 @@ class EbayTool(tk.Tk):
                                 break
 
                         # Auto-match against Visual Catalog (Benign vs Counterfeit)
+                        v_match = None
                         try:
                             v_match = self.visual_catalog.match_image(pil_img)
-                            if v_match:
-                                for itm in self.results:
-                                    if itm.get("image_url") == url or itm.get("image_url") == image_url:
-                                        if v_match["type"] == "benign":
-                                            itm["threat_badge"] = f"🟢 Benign: {v_match['label']}"
-                                            itm["visual_benign"] = True
-                                        elif v_match["type"] == "counterfeit":
-                                            itm["threat_badge"] = f"🚨 Visual Counterfeit ({v_match['similarity_pct']}%)"
-                                            itm["threat_score"] = max(itm.get("threat_score", 0), 95)
-                                            itm["visual_counterfeit"] = True
-
-                                        # Update UI treeview if rows exist
-                                        def _update_row(t_badge=itm["threat_badge"], target_url=url):
-                                            for r_id in self.result_tree.get_children():
-                                                vals = self.result_tree.item(r_id, "values")
-                                                if len(vals) > 9 and (vals[9] == target_url or vals[9] == image_url):
-                                                    vals_list = list(vals)
-                                                    if len(vals_list) > 7:
-                                                        vals_list[7] = t_badge
-                                                        self.result_tree.item(r_id, values=vals_list)
-                                        self.after(0, _update_row)
-                                        break
                         except Exception:
                             pass
 
-                        if sz_px > 0:
-                            photo = self._get_scaled_photo(pil_img, sz_px)
-                            self.inline_img_cache[(sz_key, url)] = photo
-                            self.inline_img_cache[(sz_key, image_url)] = photo
+                        # Prepare scaled canvas (pure PIL, safe in worker thread)
+                        canvas = self._get_scaled_canvas(pil_img, sz_px) if sz_px > 0 else None
 
-                            def _apply(target_url=url):
-                                if self.thumb_size_var.get() == "Off (Text Only)":
-                                    return
-                                # Update target iid if it exists
-                                if self.result_tree.exists(target_iid):
-                                    self.result_tree.item(target_iid, image=photo)
-                                # Also update any currently visible row with this image URL
-                                for r_id in self.result_tree.get_children():
-                                    vals = self.result_tree.item(r_id, "values")
-                                    if len(vals) > 9 and (vals[9] == target_url or vals[9] == image_url):
-                                        self.result_tree.item(r_id, image=photo)
-                            self.after(0, _apply)
+                        def _on_main_thread(c=canvas, target_url=url, match=v_match, size_k=sz_key):
+                            self._pending_thumb_urls.discard(target_url)
+                            if not self.winfo_exists():
+                                return
+
+                            # Update threat badge if matched
+                            if match:
+                                badge_text = ""
+                                if match["type"] == "benign":
+                                    badge_text = f"🟢 Benign: {match['label']}"
+                                elif match["type"] == "counterfeit":
+                                    badge_text = f"🚨 Visual Counterfeit ({match['similarity_pct']}%)"
+
+                                if badge_text:
+                                    for itm in self.results:
+                                        if itm.get("image_url") == target_url or itm.get("image_url") == image_url:
+                                            itm["threat_badge"] = badge_text
+                                            if match["type"] == "benign":
+                                                itm["visual_benign"] = True
+                                            else:
+                                                itm["visual_counterfeit"] = True
+                                                itm["threat_score"] = max(itm.get("threat_score", 0), 95)
+                                            break
+
+                                    for row_id in self._url_to_iids.get(target_url, ()):
+                                        if self.result_tree.exists(row_id):
+                                            vals_list = list(self.result_tree.item(row_id, "values"))
+                                            if len(vals_list) > 7:
+                                                vals_list[7] = badge_text
+                                                self.result_tree.item(row_id, values=vals_list)
+
+                            # Apply photo if thumbnail mode is active
+                            if c and self.thumb_size_var.get() != "Off (Text Only)" and self.thumb_size_var.get() == size_k:
+                                try:
+                                    photo = ImageTk.PhotoImage(c)
+                                    # LRU bound on photo cache
+                                    if len(self.inline_img_cache) > 600:
+                                        for k in list(self.inline_img_cache.keys())[:150]:
+                                            self.inline_img_cache.pop(k, None)
+                                    self.inline_img_cache[(size_k, target_url)] = photo
+                                    self.inline_img_cache[(size_k, image_url)] = photo
+
+                                    # Fast O(1) row updates via index
+                                    target_iids = self._url_to_iids.get(target_url, set())
+                                    if target_iid:
+                                        target_iids.add(target_iid)
+                                    for r_id in target_iids:
+                                        if self.result_tree.exists(r_id):
+                                            self.result_tree.item(r_id, image=photo)
+                                except Exception:
+                                    pass
+
+                        self.after(0, _on_main_thread)
                         break
                     elif resp.status_code in (429, 503, 504) and attempt < 1:
                         time.sleep(0.4)
@@ -8241,7 +8417,7 @@ class EbayTool(tk.Tk):
                     if attempt < 1:
                         time.sleep(0.35)
                     else:
-                        pass
+                        self.after(0, lambda u=url: self._pending_thumb_urls.discard(u))
 
         if hasattr(self, "thumb_executor"):
             self.thumb_executor.submit(_worker)
@@ -8303,10 +8479,10 @@ class EbayTool(tk.Tk):
         if len(vals) < 8:
             return
 
-        title     = str(vals[2])
-        price     = str(vals[4])
-        location  = str(vals[6])
-        image_url = str(vals[7]).strip()
+        title     = str(vals[2]) if len(vals) > 2 else ""
+        price     = str(vals[4]) if len(vals) > 4 else ""
+        location  = str(vals[8]) if len(vals) > 8 else (str(vals[6]) if len(vals) > 6 else "")
+        image_url = str(vals[9]) if len(vals) > 9 else (str(vals[7]) if len(vals) > 7 else "")
 
         if not image_url or not image_url.startswith("http"):
             self._hide_preview_popup()
@@ -8380,18 +8556,96 @@ class EbayTool(tk.Tk):
                 data = resp.read()
             pil_img = Image.open(io.BytesIO(data)).convert("RGBA")
             self.raw_img_cache[url] = pil_img
-            photo = self._get_scaled_photo(pil_img, 180)
-            self.img_cache[url] = photo
+            canvas = self._get_scaled_canvas(pil_img, 180)
 
             def _apply():
-                if target_win == self.preview_win and img_lbl.winfo_exists():
-                    img_lbl.configure(image=photo, text="", width=0, height=0)
+                try:
+                    if target_win == self.preview_win and img_lbl.winfo_exists():
+                        photo = ImageTk.PhotoImage(canvas)
+                        self.img_cache[url] = photo
+                        img_lbl.configure(image=photo, text="", width=0, height=0)
+                        img_lbl.image = photo
+                except Exception:
+                    pass
             self.after(0, _apply)
         except Exception:
             def _fail():
-                if target_win == self.preview_win and img_lbl.winfo_exists():
-                    img_lbl.configure(text="(Image preview\nunavailable)", height=5)
+                try:
+                    if target_win == self.preview_win and img_lbl.winfo_exists():
+                        img_lbl.configure(text="(Image preview\nunavailable)", height=5)
+                except Exception:
+                    pass
             self.after(0, _fail)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  SESSION AUTOSAVE & CRASH RECOVERY
+    # ══════════════════════════════════════════════════════════════════════════
+    def _trigger_session_autosave(self, immediate=False):
+        """Debounced or immediate background autosave of active session results."""
+        if immediate:
+            self._flush_session_autosave()
+            return
+        if self._autosave_job is not None:
+            try:
+                self.after_cancel(self._autosave_job)
+            except Exception:
+                pass
+        self._autosave_job = self.after(2000, self._flush_session_autosave)
+
+    def _flush_session_autosave(self):
+        self._autosave_job = None
+        if not hasattr(self, "results") or not self.results:
+            if hasattr(self, "data_store"):
+                self.data_store.clear_active_session()
+            return
+        res_copy = list(self.results)
+        kw = self.keyword_entry.get().strip() if hasattr(self, "keyword_entry") else ""
+        br = self.brand_combo.get().strip() if hasattr(self, "brand_combo") else ""
+        mkt = self.marketplace_combo.get().strip() if hasattr(self, "marketplace_combo") else ""
+        def _bg_save():
+            try:
+                self.data_store.save_active_session(res_copy, query=kw, brand=br, market=mkt)
+            except Exception:
+                pass
+        threading.Thread(target=_bg_save, daemon=True).start()
+
+    def _check_session_recovery(self):
+        """Check if an un-cleared or crashed previous session exists and offer recovery."""
+        if not hasattr(self, "data_store"):
+            return
+        session = self.data_store.get_active_session()
+        if not session or not session.get("results"):
+            return
+        count = session.get("count", len(session["results"]))
+        saved_at = session.get("saved_at", "")
+        formatted_time = ""
+        if saved_at:
+            try:
+                dt = datetime.fromisoformat(saved_at)
+                formatted_time = dt.strftime("%b %d at %I:%M %p")
+            except Exception:
+                formatted_time = saved_at
+        
+        info_str = f"Found {count:,} listings from previous session"
+        if formatted_time:
+            info_str += f" ({formatted_time})"
+        if session.get("brand") or session.get("query"):
+            info_str += f"\nQuery: {session.get('brand', '')} - {session.get('query', '')}"
+
+        if self._show_themed_confirm("Restore Previous Session",
+                                     f"Apollo detected an unsaved session:\n\n{info_str}\n\nWould you like to restore these listings into the workspace?"):
+            self.results = session["results"]
+            self.seen_item_ids = {str(it.get("url", "")).split("?")[0] for it in self.results if it.get("url")}
+            for it in self.results:
+                vid = str(it.get("item_id", "")).strip()
+                if vid:
+                    mkt = str(it.get("marketplace", "")).strip()
+                    self.seen_item_ids.add(f"{mkt}_{vid}" if mkt else vid)
+            self._repopulate_results_table()
+            self._log(f"🛡️ Successfully restored {len(self.results):,} listings from previous session.")
+            self._status(f"🛡️ Session recovered ({len(self.results):,} listings restored)")
+        else:
+            self.data_store.clear_active_session()
 
     # ══════════════════════════════════════════════════════════════════════════
     #  EASTER EGGS & FUN DETAILS

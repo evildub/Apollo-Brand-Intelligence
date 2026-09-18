@@ -177,62 +177,77 @@ class IntelPackManager:
 
             # 2. Brands
             if "brands.json" in names and data_store:
-                pack_brands = json.loads(zf.read("brands.json").decode("utf-8"))
-                if merge_mode == "replace":
-                    data_store.data["brands"] = pack_brands
-                    results["brands_added"] = len(pack_brands)
-                else:
-                    curr_brands = data_store.get_brands()
-                    for b_name, b_data in pack_brands.items():
-                        if b_name not in curr_brands:
-                            curr_brands[b_name] = b_data
-                            results["brands_added"] += 1
-                        else:
-                            # Merge models & sub-brands
-                            existing = curr_brands[b_name]
-                            for m in b_data.get("models", []):
-                                if m not in existing.get("models", []):
-                                    existing.setdefault("models", []).append(m)
-                            for sub, sub_m in b_data.get("subs", {}).items():
-                                if sub not in existing.setdefault("subs", {}):
-                                    existing["subs"][sub] = sub_m
-                                else:
-                                    for sm in sub_m:
-                                        if sm not in existing["subs"][sub]:
-                                            existing["subs"][sub].append(sm)
-                    data_store.data["brands"] = curr_brands
+                try:
+                    pack_brands = json.loads(zf.read("brands.json").decode("utf-8"))
+                    if merge_mode == "replace":
+                        data_store._data["brands"] = pack_brands
+                        results["brands_added"] = len(pack_brands)
+                    else:
+                        curr_brands = data_store.get_brands()
+                        for b_name, b_data in pack_brands.items():
+                            if b_name not in curr_brands:
+                                curr_brands[b_name] = b_data
+                                results["brands_added"] += 1
+                            else:
+                                # Merge models & sub-brands & inclusion terms
+                                existing = curr_brands[b_name]
+                                for m in b_data.get("models", []):
+                                    if m not in existing.get("models", []):
+                                        existing.setdefault("models", []).append(m)
+                                for inc in b_data.get("inclusions", []):
+                                    if inc not in existing.get("inclusions", []):
+                                        existing.setdefault("inclusions", []).append(inc)
+                                for sub, sub_m in b_data.get("subs", {}).items():
+                                    if sub not in existing.setdefault("subs", {}):
+                                        existing["subs"][sub] = sub_m
+                                    else:
+                                        for sm in sub_m:
+                                            if sm not in existing["subs"][sub]:
+                                                existing["subs"][sub].append(sm)
+                        data_store._data["brands"] = curr_brands
+                except Exception as e:
+                    logger.error(f"Failed to import brands from pack: {e}")
 
             # 3. Presets
             if "presets.json" in names and data_store:
-                pack_presets = json.loads(zf.read("presets.json").decode("utf-8"))
-                curr_presets = data_store.get_presets()
-                if merge_mode == "replace":
-                    curr_presets.update(pack_presets)
-                    results["presets_added"] = len(pack_presets)
-                else:
-                    for p_name, p_data in pack_presets.items():
-                        curr_presets[p_name] = p_data
-                        results["presets_added"] += 1
-                data_store.data["presets"] = curr_presets
+                try:
+                    pack_presets = json.loads(zf.read("presets.json").decode("utf-8"))
+                    curr_presets = data_store.get_presets()
+                    if merge_mode == "replace":
+                        curr_presets.update(pack_presets)
+                        results["presets_added"] = len(pack_presets)
+                    else:
+                        for p_name, p_data in pack_presets.items():
+                            curr_presets[p_name] = p_data
+                            results["presets_added"] += 1
+                    data_store._data["presets"] = curr_presets
+                except Exception as e:
+                    logger.error(f"Failed to import presets from pack: {e}")
 
             # 4. Exclusions
             if "exclusions.json" in names and data_store:
-                pack_ex = json.loads(zf.read("exclusions.json").decode("utf-8"))
-                curr_ex = set(data_store.get_generic_exclusions())
-                before_len = len(curr_ex)
-                curr_ex.update(pack_ex)
-                data_store.data["generic_exclusions"] = sorted(list(curr_ex))
-                results["exclusions_added"] = len(curr_ex) - before_len
+                try:
+                    pack_ex = json.loads(zf.read("exclusions.json").decode("utf-8"))
+                    curr_ex = set(data_store.get_exclusions())
+                    before_len = len(curr_ex)
+                    curr_ex.update(pack_ex)
+                    data_store._data["exclusions"] = sorted(list(curr_ex))
+                    results["exclusions_added"] = len(curr_ex) - before_len
+                except Exception as e:
+                    logger.error(f"Failed to import exclusions from pack: {e}")
 
             # 5. Whitelist
             if "whitelist.json" in names and data_store:
-                pack_wl = json.loads(zf.read("whitelist.json").decode("utf-8"))
-                curr_wl = data_store.get_whitelist()
-                for h, d in pack_wl.items():
-                    if h not in curr_wl or merge_mode == "replace":
-                        curr_wl[h] = d
-                        results["whitelist_added"] += 1
-                data_store.data["whitelist"] = curr_wl
+                try:
+                    pack_wl = json.loads(zf.read("whitelist.json").decode("utf-8"))
+                    curr_wl = data_store.get_whitelist()
+                    for h, d in pack_wl.items():
+                        if h not in curr_wl or merge_mode == "replace":
+                            curr_wl[h] = d
+                            results["whitelist_added"] += 1
+                    data_store._data["whitelist"] = curr_wl
+                except Exception as e:
+                    logger.error(f"Failed to import whitelist from pack: {e}")
 
             # Save data_store changes
             if data_store:

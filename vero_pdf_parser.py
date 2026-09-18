@@ -53,6 +53,7 @@ ADDR_KEYWORDS = {
 def parse_vero_line(line: str) -> Optional[Dict[str, str]]:
     """
     Parse a single VeRO / eBay seller disclosure line into structured components.
+    Handles US, European, and Chinese Pinyin multi-segment addresses without column shifts.
     Example: 'trdracing / xu jie xu yu xiu qu yong fu lu 35 2, guang zhou, 510000, CN'
     """
     if not line or not line.strip():
@@ -61,7 +62,7 @@ def parse_vero_line(line: str) -> Optional[Dict[str, str]]:
     raw = line.strip()
 
     # 1. Split Seller Handle from Disclosure Body
-    parts = re.split(r'\s+/\s+|\s*\|\s*|\s*:\s*(?=[a-zA-Z0-9])', raw, maxsplit=1)
+    parts = re.split(r'\s+/\s+|\s*\|\s*|\t+|\s*:\s*(?=[a-zA-Z0-9])', raw, maxsplit=1)
     if len(parts) == 2:
         handle = parts[0].strip()
         disclosure = parts[1].strip()
@@ -77,7 +78,7 @@ def parse_vero_line(line: str) -> Optional[Dict[str, str]]:
     # Clean handle
     handle = re.sub(r'^(?:seller|user|handle|id)[:\s]*', '', handle, flags=re.IGNORECASE).strip()
 
-    # 2. Split comma segments (disclosures typically end with ', City, Zip, Country')
+    # 2. Split comma segments
     comma_segments = [s.strip() for s in disclosure.split(',') if s.strip()]
 
     country = ""
@@ -86,28 +87,50 @@ def parse_vero_line(line: str) -> Optional[Dict[str, str]]:
     contact_name = ""
     street_address = ""
 
-    if len(comma_segments) >= 3:
-        last_seg = comma_segments[-1]
-        # Check if last segment is country code (e.g. CN, US, GB, DE) or full name
-        if len(last_seg) <= 4 or re.match(r'^[A-Za-z\s]+$', last_seg):
-            country = last_seg
-            second_last = comma_segments[-2]
-            if re.match(r'^\d{4,8}$|^[A-Z0-9\s-]{3,10}$', second_last, re.IGNORECASE):
-                postal_code = second_last
-                city = comma_segments[-3]
-                remaining_segments = comma_segments[:-3]
-            else:
-                city = second_last
-                remaining_segments = comma_segments[:-2]
-        else:
-            remaining_segments = comma_segments
-    elif len(comma_segments) == 2:
-        remaining_segments = [comma_segments[0]]
-        city = comma_segments[1]
-    else:
-        remaining_segments = comma_segments
+    # Common country identifiers
+    country_patterns = r'^(?:CN|US|USA|GB|UK|DE|FR|CA|AU|IT|ES|JP|HK|TW|KR|China|United States|United Kingdom|Germany|France|Canada|Australia|Hong Kong|Italy|Spain|Japan|Taiwan|South Korea)$'
 
-    addr_text = ", ".join(remaining_segments).strip()
+    # Work backwards from the rightmost segments
+    rem = list(comma_segments)
+
+    # Detect country in last segment
+    if rem:
+        last = rem[-1]
+        if len(last) <= 3 or re.match(country_patterns, last, re.IGNORECASE) or (len(last) <= 20 and not any(c.isdigit() for c in last)):
+            country = rem.pop()
+
+    # Detect Postal Code / State / City from remaining trailing segments
+    if rem:
+        seg = rem[-1]
+        # Check if segment has "State Zip" (e.g., "TX 78701", "CA 90210-1234", "ON M5V 2T6")
+        state_zip_m = re.search(r'\b([A-Z]{2})\s+([A-Z0-9\s-]{3,10})$', seg, re.IGNORECASE)
+        # Or purely a zip code (e.g. "510000", "78701", "90210-1234", "SW1A 1AA")
+        pure_zip_m = re.match(r'^(?:\d{4,8}(?:-\d{4})?|[A-Z0-9]{2,4}\s?[A-Z0-9]{2,4})$', seg, re.IGNORECASE)
+
+        if state_zip_m:
+            postal_code = state_zip_m.group(2).strip()
+            leftover = seg[:state_zip_m.start()].strip()
+            rem.pop()
+            if leftover:
+                rem.append(leftover)
+        elif pure_zip_m:
+            postal_code = rem.pop()
+
+    # Next trailing segment is usually City / District
+    if rem and len(rem) >= 2:
+        city = rem.pop()
+    elif rem and len(rem) == 1 and not city:
+        # Check if single remaining token has City at the end
+        pass
+
+    # If postal code was embedded in city (e.g. "guang zhou 510000" or "Austin TX 78701")
+    if city and not postal_code:
+        zip_in_city = re.search(r'\b(\d{4,8}(?:-\d{4})?|[A-Z]\d[A-Z]\s?\d[A-Z]\d)\b', city)
+        if zip_in_city:
+            postal_code = zip_in_city.group(1)
+            city = city[:zip_in_city.start()].strip()
+
+    addr_text = ", ".join(rem).strip()
 
     # 3. Name vs Street Address Extraction
     words = addr_text.split()
@@ -124,16 +147,12 @@ def parse_vero_line(line: str) -> Optional[Dict[str, str]]:
             contact_name = " ".join(words[:2])
             street_address = " ".join(words[2:])
         else:
-            if len(words) >= 4:
-                w3_low = words[3].lower()
-                if (re.search(r'\d', w3_low) or
-                    any(w3_low.endswith(sfx) for sfx in ADDR_SUFFIXES) or
-                    w3_low in ADDR_KEYWORDS):
-                    contact_name = " ".join(words[:3])
-                    street_address = " ".join(words[3:])
-                else:
-                    contact_name = " ".join(words[:2])
-                    street_address = " ".join(words[2:])
+            w3_low = words[3].lower() if len(words) > 3 else ""
+            if (w3_low and (re.search(r'\d', w3_low) or
+                any(w3_low.endswith(sfx) for sfx in ADDR_SUFFIXES) or
+                w3_low in ADDR_KEYWORDS)):
+                contact_name = " ".join(words[:3])
+                street_address = " ".join(words[3:])
             else:
                 contact_name = " ".join(words[:2])
                 street_address = " ".join(words[2:])

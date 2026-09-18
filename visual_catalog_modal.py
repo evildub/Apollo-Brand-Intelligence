@@ -124,6 +124,8 @@ class VisualCatalogModal(tk.Toplevel):
                   relief="flat", padx=8, pady=4, cursor="hand2", command=self._add_from_file).pack(side="left", padx=3)
         tk.Button(top_btns, text="🌐 Add URL", font=FONT_BOLD, bg=btn_bg, fg=btn_fg,
                   relief="flat", padx=8, pady=4, cursor="hand2", command=self._add_from_url).pack(side="left", padx=3)
+        tk.Button(top_btns, text="🗑️ Purge All Images", font=FONT_BOLD, bg=self._t("danger", "#dc2626"), fg="#FFFFFF",
+                  relief="flat", padx=8, pady=4, cursor="hand2", command=self._on_purge_all).pack(side="left", padx=6)
 
         # Control Bar: Filters & Sensitivity Slider & Sorting
         ctrl_bar = tk.Frame(self, bg=panel_bg, padx=14, pady=8, bd=1, relief="solid")
@@ -756,3 +758,31 @@ class VisualCatalogModal(tk.Toplevel):
                   relief="flat", padx=12, pady=4, command=_do_add).pack(side="right")
         tk.Button(btn_box, text="Cancel", font=FONT_NORM, bg=self._t("panel", "#1e1e1e"),
                   fg=self._t("subtext", "#888888"), relief="flat", padx=8, pady=4, command=dlg.destroy).pack(side="right", padx=6)
+
+    def _on_purge_all(self):
+        """Purge all image entries from the visual catalog with confirmation."""
+        cur_filter = self.filter_var.get()
+        filter_desc = "ALL visual catalog signatures (Benign & Counterfeit)" if cur_filter == "all" else f"all {cur_filter} image signatures"
+        entries = self.vcm.list_entries(cur_filter)
+        if not entries:
+            messagebox.showinfo("Catalog Empty", "There are no image entries in this view to purge.", parent=self)
+            return
+
+        if not messagebox.askyesno(
+            "Purge All Images",
+            f"Are you sure you want to permanently delete {len(entries)} image signature(s) ({filter_desc}) and wipe all cached thumbnails from disk?\n\nThis action cannot be undone.",
+            icon="warning",
+            parent=self
+        ):
+            return
+
+        purged_count = self.vcm.purge_all_entries(cur_filter)
+        self.selected_ids.clear()
+        self._card_thumb_cache.clear()
+        self._load_gallery()
+        if self.on_update:
+            try:
+                self.on_update()
+            except Exception:
+                pass
+        messagebox.showinfo("Purge Complete", f"Successfully purged {purged_count} image signature(s) from the Visual Catalog.", parent=self)

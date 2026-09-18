@@ -268,6 +268,31 @@ class VisualCatalogManager:
             return True
         return False
 
+    def purge_all_entries(self, entry_type: Optional[str] = None) -> int:
+        """Purge all entries (or filtered by type) and permanently clean thumbnail files from disk."""
+        if entry_type and entry_type.lower() != "all":
+            to_remove = [e for e in self.entries if e.get("type") == entry_type]
+            self.entries = [e for e in self.entries if e.get("type") != entry_type]
+        else:
+            to_remove = list(self.entries)
+            self.entries = []
+
+        count = len(to_remove)
+        for e in to_remove:
+            tp = e.get("thumb_path", "")
+            if tp and os.path.exists(tp):
+                try: os.remove(tp)
+                except Exception: pass
+            for v in e.get("variants", []):
+                vtp = v.get("thumb_path", "")
+                if vtp and os.path.exists(vtp):
+                    try: os.remove(vtp)
+                    except Exception: pass
+
+        self._save_catalog()
+        logger.info(f"Purged {count} entries from visual catalog (type filter: {entry_type})")
+        return count
+
     def match_image(self, target: Image.Image, max_distance: Optional[int] = None) -> Optional[Dict]:
         """
         Match a target PIL Image against the visual catalog.

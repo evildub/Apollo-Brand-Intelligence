@@ -152,8 +152,33 @@ class DataStore:
 
     def add_parent_brand(self, name):
         if name not in self._data["brands"]:
-            self._data["brands"][name] = {"subs": {}, "models": []}
+            self._data["brands"][name] = {"subs": {}, "models": [], "inclusions": []}
             self._save()
+
+    def get_brand_inclusions(self, brand_name: str) -> list[str]:
+        """Return mandatory brand-specific inclusion terms."""
+        brand_data = self._data.get("brands", {}).get(brand_name, {})
+        return list(brand_data.get("inclusions", []))
+
+    def set_brand_inclusions(self, brand_name: str, inclusions: list[str]):
+        """Persist mandatory brand-specific inclusion terms."""
+        if brand_name in self._data.get("brands", {}):
+            clean_inc = [str(x).strip() for x in inclusions if str(x).strip()]
+            self._data["brands"][brand_name]["inclusions"] = clean_inc
+            self._save()
+
+    def update_brand_entry(self, old_name: str, new_name: str, models: list[str] = None, inclusions: list[str] = None):
+        """Update brand name, models list, and mandatory inclusion keywords in a single atomic action."""
+        if old_name not in self._data.get("brands", {}):
+            return
+        b_data = self._data["brands"].pop(old_name)
+        if models is not None:
+            b_data["models"] = [str(m).strip() for m in models if str(m).strip()]
+        if inclusions is not None:
+            b_data["inclusions"] = [str(inc).strip() for inc in inclusions if str(inc).strip()]
+        target_name = new_name.strip() or old_name
+        self._data["brands"][target_name] = b_data
+        self._save()
 
     def add_sub_brand(self, parent, name):
         if parent in self._data["brands"]:
@@ -806,6 +831,65 @@ class DataStore:
         self._data["product_taxonomy"] = json.loads(json.dumps(DEFAULT_PRODUCT_TAXONOMY))
         self._save()
         return self._data["product_taxonomy"]
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  CRASH RESILIENCY & LIVE SESSION AUTOSAVE
+    # ══════════════════════════════════════════════════════════════════════════
+    def get_session_file_path(self) -> str:
+        """Return the absolute path to the live autosave session file."""
+        return os.path.join(get_base_dir(), "active_session.json")
+
+    def save_active_session(self, results: list, query: str = "", brand: str = "", market: str = "", extra_meta: dict = None) -> bool:
+        """Atomically persist current working session to disk to prevent data loss on crash."""
+        if not results:
+            self.clear_active_session()
+            return True
+        session_file = self.get_session_file_path()
+        tmp_file = session_file + f".tmp.{os.getpid()}"
+        payload = {
+            "saved_at": datetime.now().isoformat(),
+            "query": query,
+            "brand": brand,
+            "market": market,
+            "count": len(results),
+            "meta": extra_meta or {},
+            "results": results
+        }
+        try:
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False)
+            os.replace(tmp_file, session_file)
+            return True
+        except Exception:
+            try:
+                if os.path.exists(tmp_file):
+                    os.remove(tmp_file)
+            except Exception:
+                pass
+            return False
+
+    def get_active_session(self) -> dict:
+        """Retrieve previously crashed or active un-cleared session if available."""
+        session_file = self.get_session_file_path()
+        if not os.path.exists(session_file):
+            return None
+        try:
+            with open(session_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and data.get("results") and isinstance(data["results"], list) and len(data["results"]) > 0:
+                return data
+        except Exception:
+            pass
+        return None
+
+    def clear_active_session(self):
+        """Clear active session file when user explicitly resets or cleans the results table."""
+        session_file = self.get_session_file_path()
+        try:
+            if os.path.exists(session_file):
+                os.remove(session_file)
+        except Exception:
+            pass
 
 
 DEFAULT_PRODUCT_TAXONOMY = {

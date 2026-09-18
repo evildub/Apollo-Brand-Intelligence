@@ -328,6 +328,26 @@ THEMES = {
         "btn_accent_fg": "#ffffff",
         "select_bg": "#ff2a2a",
         "select_fg": "#ffffff",
+    },
+    "dallas_cowboys": {
+        "name": "⭐ Dallas Cowboys",
+        "hidden": True,
+        "bg": "#000B18",
+        "panel": "#041E42",
+        "entry_bg": "#010D20",
+        "accent": "#0072CE",
+        "accent2": "#A5ACAF",
+        "success": "#10B981",
+        "warning": "#FFB81C",
+        "danger": "#EF4444",
+        "text": "#FFFFFF",
+        "subtext": "#869397",
+        "border": "#1E3D6B",
+        "btn_normal_bg": "#0B224A",
+        "btn_normal_fg": "#FFFFFF",
+        "btn_accent_fg": "#000B18",
+        "select_bg": "#0072CE",
+        "select_fg": "#FFFFFF",
     }
 }
 
@@ -551,6 +571,16 @@ THEME_QUOTES = {
         "🖤 Razor-sharp volcanic glass edges cutting through obfuscated seller listings.",
         "🖤 Stealth obsidian reconnaissance: Zero noise, absolute target conviction.",
     ],
+    "dallas_cowboys": [
+        "⭐ 'How 'bout them Cowboys! 5-Time Super Bowl Champions.'",
+        "🏈 'Dak to CeeDee Lamb: 65-yard touchdown strike! Counterfeit jerseys sacked behind the line of scrimmage.'",
+        "⭐ 'The Star at Frisco: Official NFL Brand Intelligence & Trademark Defense Division online.'",
+        "🛡 'Doomsday Defense in the Red Zone: 0 passing yards, 0 counterfeit listings allowed.'",
+        "🏈 'From Tom Landry & Roger Staubach to the modern era: Defending America's Team heritage worldwide.'",
+        "🏆 'AT&T Stadium Jumbotron: 100% Trademark Conviction Rate displayed in 4K!'",
+        "⭐ 'You're either with America's Team... or you're getting flagged for intentional trademark grounding.'",
+        "🏈 'Micah Parsons off the edge: Strip-sack on unauthorized NFL dropshippers!'",
+    ],
 }
 
 THEME_SUBHEADERS = {
@@ -559,6 +589,7 @@ THEME_SUBHEADERS = {
     "continental": "🪙 THE CONTINENTAL — HIGH TABLE EXCOMMUNICADO & SYNDICATE ELIMINATION SUITE",
     "honey_badger": "🦡 HONEY BADGER INTEL — FEARLESS TAKEDOWNS & UNRELENTING RECON",
     "brundo_recon": "🐕 AGENT BRUNDO K9 RECON — 14/10 GOOD BOY • 100% TAKEDOWN RATE",
+    "dallas_cowboys": "⭐ DALLAS COWBOYS — AMERICA'S TEAM • DOOMSDAY BRAND DEFENSE & NFL COMPLIANCE",
     "toyota_gr": "🏁 TOYOTA GAZOO RACING & LEXUS — BRAND PROTECTION SUITE",
     "gm_heritage": "💎 GENERAL MOTORS & ACDELCO — IP COMPLIANCE HARVESTER",
     "subaru_wrc": "⭐ SUBARU MOTORSPORTS — SYMMETRICAL COMPLIANCE SHIELD",
@@ -1225,7 +1256,7 @@ class EbayTool(tk.Tk):
         )
         current_key = self.current_theme_key
         for k, th in THEMES.items():
-            is_unlocked = (k == "continental" and self.data_store.is_wick_unlocked()) or (k == "brundo_recon" and self.data_store.is_brundo_unlocked())
+            is_unlocked = (k == "continental" and self.data_store.is_wick_unlocked()) or (k == "brundo_recon" and self.data_store.is_brundo_unlocked()) or (k == "falling_in_reverse" and self.data_store.is_fir_unlocked()) or (k == "dallas_cowboys" and self.data_store.is_cowboys_unlocked())
             if not th.get("hidden", False) or k == current_key or is_unlocked:
                 self.theme_menu.add_radiobutton(
                     label=th["name"],
@@ -2035,7 +2066,7 @@ class EbayTool(tk.Tk):
             self.theme_menu.delete(0, "end")
             current_key = self.current_theme_key
             for k, th in THEMES.items():
-                is_unlocked = (k == "continental" and self.data_store.is_wick_unlocked()) or (k == "brundo_recon" and self.data_store.is_brundo_unlocked()) or (k == "falling_in_reverse" and self.data_store.is_fir_unlocked())
+                is_unlocked = (k == "continental" and self.data_store.is_wick_unlocked()) or (k == "brundo_recon" and self.data_store.is_brundo_unlocked()) or (k == "falling_in_reverse" and self.data_store.is_fir_unlocked()) or (k == "dallas_cowboys" and self.data_store.is_cowboys_unlocked())
                 if not th.get("hidden", False) or k == current_key or is_unlocked:
                     self.theme_menu.add_radiobutton(
                         label=th["name"],
@@ -8651,7 +8682,8 @@ class EbayTool(tk.Tk):
     #  EASTER EGGS & FUN DETAILS
     # ══════════════════════════════════════════════════════════════════════════
     def _check_konami(self, event):
-        """Global Konami code detection (↑ ↑ ↓ ↓ ← → ← → B A)."""
+        """Global key listener for Konami code and secret keyword triggers."""
+        # 1. Konami Sequence
         key = event.keysym
         self.konami_buffer.append(key)
         if len(self.konami_buffer) > len(self.konami_sequence):
@@ -8660,6 +8692,38 @@ class EbayTool(tk.Tk):
         if self.konami_buffer == self.konami_sequence:
             self._trigger_konami_easter_egg()
             self.konami_buffer.clear()
+            return
+
+        # 2. Secret words (ignore if typing in Text or Entry widget)
+        try:
+            widget_class = event.widget.winfo_class() if hasattr(event, "widget") and event.widget else ""
+            if widget_class in ("Entry", "Text", "TEntry", "TCombobox"):
+                return
+        except Exception:
+            pass
+
+        if event.char and event.char.isalnum():
+            self.word_buffer += event.char.lower()
+            if len(self.word_buffer) > 30:
+                self.word_buffer = self.word_buffer[-30:]
+            if any(w in self.word_buffer for w in ("cowboys", "dallas", "americasteam", "dak")):
+                self._trigger_cowboys_easter_egg()
+                self.word_buffer = ""
+            elif any(w in self.word_buffer for w in ("wick", "continental", "johnwick")):
+                self._trigger_wick_easter_egg()
+                self.word_buffer = ""
+            elif any(w in self.word_buffer for w in ("brundo", "goodboy", "lab", "k9")):
+                self._trigger_brundo_easter_egg()
+                self.word_buffer = ""
+            elif any(w in self.word_buffer for w in ("fir", "fallinginreverse", "ronnie", "radke")):
+                self._trigger_fir_easter_egg()
+                self.word_buffer = ""
+            elif any(w in self.word_buffer for w in ("dom", "quartermile", "nos", "toretto")):
+                self._trigger_easter_egg()
+                self.word_buffer = ""
+            elif any(w in self.word_buffer for w in ("eleanor", "gobabygo", "shelby")):
+                self._trigger_eleanor_easter_egg()
+                self.word_buffer = ""
 
     def _trigger_wick_easter_egg(self):
         """John Wick / The Continental High Table Excommunicado easter egg."""
@@ -8830,6 +8894,81 @@ class EbayTool(tk.Tk):
                         bg="#FF2A2A", fg="#FFFFFF", font=("Segoe UI", 10, "bold"),
                         relief="flat", padx=16, pady=5, activebackground="#FF6B1A", cursor="hand2")
         btn.pack(anchor="center")
+
+    def _trigger_cowboys_easter_egg(self):
+        """Dallas Cowboys / America's Team NFL Brand Intelligence Easter Egg."""
+        try:
+            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+        except Exception:
+            pass
+
+        self.data_store.unlock_cowboys()
+        self._refresh_theme_menu()
+        secret_name = THEMES["dallas_cowboys"]["name"]
+        self.theme_var.set(secret_name)
+        self._on_theme_changed()
+
+        self._log("=" * 75)
+        self._log("⭐ ─────────────────────────────────────────────────────────────────────────")
+        self._log("⭐ [DALLAS COWBOYS — AMERICA'S TEAM IP INTELLIGENCE UNIT ENGAGED]")
+        self._log("🏈 'How 'bout them Cowboys! Sacking counterfeit listings behind the line of scrimmage.'")
+        self._log("⭐ '5x Super Bowl Champions • 8x NFC Champions • 100% Brand Conviction Rate'")
+        self._log("🏈 [DOOMSDAY BRAND DEFENSE & RED ZONE COMPLIANCE PROTOCOL INITIALIZED]")
+        self._log("⭐ ─────────────────────────────────────────────────────────────────────────")
+        self._log("=" * 75)
+        self._status("⭐ DALLAS COWBOYS ONLINE: America's Team Mode Active • Doomsday Defense!")
+
+        # Custom Themed Navy & Silver Cowboys Modal
+        win = tk.Toplevel(self)
+        win.title("⭐ Dallas Cowboys — America's Team")
+        win.configure(bg="#000B18")
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+        self._apply_dark_titlebar(win)
+
+        # Center modal
+        self._center_window(win, 580, 440)
+
+        card = tk.Frame(win, bg="#041E42", padx=22, pady=18, highlightbackground="#0072CE", highlightthickness=2)
+        card.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Header Title
+        tk.Label(card, text="⭐ DALLAS COWBOYS ⭐", font=("Segoe UI", 16, "bold"), bg="#041E42", fg="#FFFFFF").pack(anchor="center")
+        tk.Label(card, text="AMERICA'S TEAM  •  OFFICIAL NFL BRAND INTELLIGENCE UNIT", font=("Segoe UI", 8, "bold"), bg="#041E42", fg="#A5ACAF").pack(anchor="center", pady=(2, 8))
+
+        div = tk.Frame(card, bg="#0072CE", height=2)
+        div.pack(fill="x", pady=(0, 10))
+
+        # Franchise Badges & Stats Grid (2x2)
+        grid_f = tk.Frame(card, bg="#010D20", padx=10, pady=8, highlightbackground="#1E3D6B", highlightthickness=1)
+        grid_f.pack(fill="x", pady=(0, 10))
+
+        stats = [
+            ("🏆 5 SUPER BOWL RINGS", "SB V, VI, XII, XXVII, XXVIII", "#FFB81C"),
+            ("🌟 8 NFC CHAMPIONSHIPS", "America's Historic Franchise", "#0072CE"),
+            ("🏈 #1 NFL FRANCHISE", "World's Most Valuable ($10B+)", "#FFFFFF"),
+            ("🛡️ DOOMSDAY DEFENSE", "100% Trademark Conviction", "#10B981"),
+        ]
+        for i, (title, sub, color) in enumerate(stats):
+            r, c = divmod(i, 2)
+            box = tk.Frame(grid_f, bg="#041E42", padx=10, pady=6, highlightbackground="#1E3D6B", highlightthickness=1)
+            box.grid(row=r, column=c, padx=4, pady=4, sticky="nsew")
+            grid_f.grid_columnconfigure(c, weight=1)
+            tk.Label(box, text=title, font=("Segoe UI", 9, "bold"), bg="#041E42", fg=color).pack(anchor="w")
+            tk.Label(box, text=sub, font=("Segoe UI", 8), bg="#041E42", fg="#A5ACAF").pack(anchor="w")
+
+        # Quote Box
+        quote_box = tk.Frame(card, bg="#000B18", padx=12, pady=8, highlightbackground="#1E3D6B", highlightthickness=1)
+        quote_box.pack(fill="x", pady=(0, 12))
+        tk.Label(quote_box, text='"How \'bout them Cowboys!"', font=("Georgia", 11, "italic bold"), bg="#000B18", fg="#0072CE").pack(anchor="center")
+        tk.Label(quote_box, text="— Jimmy Johnson • 5-Time World Champions", font=("Segoe UI", 8), bg="#000B18", fg="#A5ACAF").pack(anchor="center", pady=(2, 0))
+
+        btn = tk.Button(card, text="⭐ Let's Go Cowboys! Lock Down The Red Zone", command=win.destroy,
+                        bg="#0072CE", fg="#FFFFFF", font=("Segoe UI", 10, "bold"),
+                        relief="flat", padx=16, pady=6, activebackground="#00539C", cursor="hand2")
+        btn.pack(anchor="center")
+
 
     def _trigger_heimvis_easter_egg(self):
         """All-Seeing Eye & Heimvis / Jarvis AI Co-Pilot Easter Egg."""
@@ -10226,6 +10365,9 @@ class EbayTool(tk.Tk):
                     about_word_buf[0] = ""
                 elif any(w in about_word_buf[0] for w in ("fir", "fallinginreverse", "ronnie", "radke")):
                     self._trigger_fir_easter_egg()
+                    about_word_buf[0] = ""
+                elif any(w in about_word_buf[0] for w in ("cowboys", "dallas", "americasteam", "dak", "star")):
+                    self._trigger_cowboys_easter_egg()
                     about_word_buf[0] = ""
         win.bind("<Key>", _on_about_key)
 

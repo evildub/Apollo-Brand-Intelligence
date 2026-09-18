@@ -143,6 +143,12 @@ class DataStore:
     def unlock_fir(self):
         self.set_setting("unlocked_fir", True)
 
+    def is_cowboys_unlocked(self) -> bool:
+        return bool(self.get_setting("unlocked_cowboys", False))
+
+    def unlock_cowboys(self):
+        self.set_setting("unlocked_cowboys", True)
+
     # ── brands ────────────────────────────────────────────────────────────────
     def get_brands(self):
         return self._data.get("brands", {})

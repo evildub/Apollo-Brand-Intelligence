@@ -15,6 +15,8 @@ def get_base_dir():
     return user_dir
 
 DATA_FILE = os.path.join(get_base_dir(), "data.json")
+DOSSIERS_DIR = os.path.join(get_base_dir(), "dossiers")
+os.makedirs(DOSSIERS_DIR, exist_ok=True)
 
 DEFAULT_DATA = {
     "settings": {},
@@ -128,6 +130,16 @@ class DataStore:
                     val.setdefault("subs", {})
                     val.setdefault("models", [])
                     val.setdefault("inclusions", [])
+
+        # Migrate or initialize Multi-Dossier staging vaults
+        if "dossiers" not in self._data or not isinstance(self._data["dossiers"], dict):
+            self._data["dossiers"] = {}
+            if "staged_dossier" in self._data and isinstance(self._data["staged_dossier"], list) and self._data["staged_dossier"]:
+                self._data["dossiers"]["Main Dossier"] = list(self._data["staged_dossier"])
+            else:
+                self._data["dossiers"]["Main Dossier"] = []
+        if not self._data["dossiers"]:
+            self._data["dossiers"]["Main Dossier"] = []
 
     def _save(self):
         # Sync active profile with self._data["brands"]
@@ -568,20 +580,152 @@ class DataStore:
             self._data["exclusions"].remove(term)
             self._save()
 
-    # ── Dossier Staging Vault Persistence ──────────────────────────────────────
+    # ── Multi-Dossier Staging Vault Persistence ──────────────────────────────
+    def _get_dossier_snapshot_path(self, name: str) -> str:
+        safe_name = re.sub(r'[\\/*?:"<>| ]', "_", name).strip("_") or "vault"
+        return os.path.join(DOSSIERS_DIR, f"{safe_name}.json")
+
+    def get_dossiers(self) -> dict:
+        """Return dictionary of all named dossiers: {name: [items]}."""
+        return self._data.setdefault("dossiers", {"Main Dossier": []})
+
+    def get_dossier_names(self) -> list[str]:
+        """Return list of all named dossiers."""
+        names = list(self.get_dossiers().keys())
+        if not names:
+            self._data.setdefault("dossiers", {})["Main Dossier"] = []
+            names = ["Main Dossier"]
+        return names
+
+    def get_dossier(self, name: str) -> list:
+        """Retrieve items for a specific named dossier."""
+        return list(self.get_dossiers().get(name, []))
+
+    def save_dossier(self, name: str, items: list):
+        """Persist items to a named dossier with dual-tier crash recovery snapshotting."""
+        name = name.strip() or "Main Dossier"
+        dossiers = self.get_dossiers()
+        dossiers[name] = list(items) if items else []
+        if name == "Main Dossier" or len(dossiers) == 1:
+            self._data["staged_dossier"] = dossiers[name]
+        self._save()
+
+        # Dual-tier safety snapshot for crash protection
+        try:
+            snap_path = self._get_dossier_snapshot_path(name)
+            tmp_snap = f"{snap_path}.tmp"
+            with open(tmp_snap, "w", encoding="utf-8") as f:
+                json.dump({"vault_name": name, "items": dossiers[name]}, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_snap, snap_path)
+        except Exception:
+            pass
+
+    def create_dossier(self, name: str, initial_items: list = None) -> bool:
+        """Create a new named dossier vault."""
+        name = name.strip()
+        if not name:
+            return False
+        dossiers = self.get_dossiers()
+        if name in dossiers:
+            return False
+        dossiers[name] = list(initial_items) if initial_items else []
+        self._save()
+        try:
+            snap_path = self._get_dossier_snapshot_path(name)
+            with open(snap_path, "w", encoding="utf-8") as f:
+                json.dump({"vault_name": name, "items": dossiers[name]}, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+        return True
+
+    def rename_dossier(self, old_name: str, new_name: str) -> bool:
+        """Rename an existing dossier vault."""
+        new_name = new_name.strip()
+        if not new_name or old_name == new_name:
+            return False
+        dossiers = self.get_dossiers()
+        if old_name not in dossiers or new_name in dossiers:
+            return False
+        dossiers[new_name] = dossiers.pop(old_name)
+        self._save()
+        try:
+            old_snap = self._get_dossier_snapshot_path(old_name)
+            if os.path.exists(old_snap):
+                os.remove(old_snap)
+            new_snap = self._get_dossier_snapshot_path(new_name)
+            with open(new_snap, "w", encoding="utf-8") as f:
+                json.dump({"vault_name": new_name, "items": dossiers[new_name]}, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+        return True
+
+    def delete_dossier(self, name: str) -> bool:
+        """Delete a dossier vault (prevents deleting last vault)."""
+        dossiers = self.get_dossiers()
+        if name not in dossiers or len(dossiers) <= 1:
+            return False
+        del dossiers[name]
+        self._save()
+        try:
+            snap_path = self._get_dossier_snapshot_path(name)
+            if os.path.exists(snap_path):
+                os.remove(snap_path)
+        except Exception:
+            pass
+        return True
+
+    def clear_dossier(self, name: str):
+        """Clear all listings from a specific dossier vault."""
+        dossiers = self.get_dossiers()
+        if name in dossiers:
+            dossiers[name] = []
+            if name == "Main Dossier":
+                self._data["staged_dossier"] = []
+            self._save()
+            try:
+                snap_path = self._get_dossier_snapshot_path(name)
+                with open(snap_path, "w", encoding="utf-8") as f:
+                    json.dump({"vault_name": name, "items": []}, f, indent=2, ensure_ascii=False)
+            except Exception:
+                pass
+
+    def get_total_staged_count(self) -> int:
+        """Return total count of listings across all staged dossiers."""
+        return sum(len(items) for items in self.get_dossiers().values() if isinstance(items, list))
+
+    def get_all_dossiers_combined(self) -> list:
+        """Combine all listings across all dossiers into a single deduplicated list."""
+        combined = []
+        seen_keys = set()
+        for d_name, items in self.get_dossiers().items():
+            if not isinstance(items, list):
+                continue
+            for it in items:
+                u = str(it.get("url", "")).split("?")[0].lower()
+                iid = str(it.get("item_id", "")).strip()
+                k = f"u::{u}" if u else f"id::{it.get('marketplace', '')}::{iid}"
+                if k not in seen_keys:
+                    seen_keys.add(k)
+                    combined.append(it)
+        return combined
+
+    # Backward compatibility helpers
     def get_staged_dossier(self) -> list:
-        """Retrieve staged dossier listings from persistent storage."""
-        return list(self._data.get("staged_dossier", []))
+        """Retrieve default staged dossier listings."""
+        dossiers = self.get_dossiers()
+        if "Main Dossier" in dossiers:
+            return list(dossiers["Main Dossier"])
+        if dossiers:
+            return list(dossiers[list(dossiers.keys())[0]])
+        return []
 
     def save_staged_dossier(self, items: list):
-        """Persist staged dossier listings to disk."""
-        self._data["staged_dossier"] = list(items) if items else []
-        self._save()
+        """Save to default Main Dossier."""
+        self.save_dossier("Main Dossier", items)
 
     def clear_staged_dossier(self):
-        """Clear persisted staged dossier."""
-        self._data["staged_dossier"] = []
-        self._save()
+        """Clear default Main Dossier."""
+        self.clear_dossier("Main Dossier")
 
     # ── presets / portfolio bundles ───────────────────────────────────────────
     def get_presets(self):

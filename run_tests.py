@@ -1883,6 +1883,52 @@ class TestApolloCoreFeatures(unittest.TestCase):
         ds.delete_profile("ExportTest")
         ds.delete_profile("ImportedTestProfile")
 
+    def test_60_multi_dossier_staging_vaults_and_crash_protection(self):
+        """Test Item 60: Verify Multi-Dossier staging vaults, standalone crash snapshotting, and combined export."""
+        ds = self.data_store
+        from dossier_manager_modal import DossierManagerModal
+
+        # 1. Verify default dossier
+        dossier_names = ds.get_dossier_names()
+        self.assertIn("Main Dossier", dossier_names)
+
+        # 2. Create multiple named investigation vaults
+        ds.create_dossier("Ford Airbags", initial_items=[
+            {"title": "OEM Ford Explorer Airbag Module", "item_id": "111222", "marketplace": "eBay", "price": "$150.00"},
+            {"title": "Ford F-150 Steering Wheel Airbag", "item_id": "333444", "marketplace": "eBay", "price": "$220.00"}
+        ])
+        ds.create_dossier("NFL Wave 1", initial_items=[
+            {"title": "Dallas Cowboys Dak Prescott Jersey", "item_id": "555666", "marketplace": "Vinted", "price": "£45.00"}
+        ])
+
+        self.assertIn("Ford Airbags", ds.get_dossier_names())
+        self.assertIn("NFL Wave 1", ds.get_dossier_names())
+
+        # 3. Verify item retrieval and counts
+        ford_items = ds.get_dossier("Ford Airbags")
+        nfl_items = ds.get_dossier("NFL Wave 1")
+        self.assertEqual(len(ford_items), 2)
+        self.assertEqual(len(nfl_items), 1)
+        self.assertTrue(ds.get_total_staged_count() >= 3)
+
+        # 4. Verify crash recovery snapshot files exist on disk
+        snap_ford = ds._get_dossier_snapshot_path("Ford Airbags")
+        self.assertTrue(os.path.exists(snap_ford), "Dossier must save standalone crash recovery file.")
+
+        # 5. Verify combined master list
+        combined = ds.get_all_dossiers_combined()
+        self.assertTrue(any(it.get("item_id") == "111222" for it in combined))
+        self.assertTrue(any(it.get("item_id") == "555666" for it in combined))
+
+        # 6. Test rename and delete lifecycle
+        ds.rename_dossier("NFL Wave 1", "NFL Complete")
+        self.assertIn("NFL Complete", ds.get_dossier_names())
+        self.assertNotIn("NFL Wave 1", ds.get_dossier_names())
+
+        ds.delete_dossier("NFL Complete")
+        self.assertNotIn("NFL Complete", ds.get_dossier_names())
+        ds.delete_dossier("Ford Airbags")
+
 
 if __name__ == "__main__":
     unittest.main()

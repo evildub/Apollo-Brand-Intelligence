@@ -50,6 +50,7 @@ from vero_disclosure_modal import VeroDisclosureModal
 from field_guide_modal import FieldGuideModal
 from product_type_modal import ProductTypeModal
 from brand_registry_modal import BrandRegistryModal
+from dossier_manager_modal import DossierManagerModal
 from tooltip import add_tooltip, HoverTip
 
 # ── Color Palette Definitions ─────────────────────────────────────────────────
@@ -811,6 +812,7 @@ class EbayTool(tk.Tk):
         self._win_field_guide = None
         self._win_product_type = None
         self._win_brand_registry = None
+        self._win_dossier_manager = None
 
         self._build_ui()
         self._refresh_brand_tree()
@@ -1892,7 +1894,6 @@ class EbayTool(tk.Tk):
         self.benign_filter_combo.bind("<<ComboboxSelected>>", lambda e: self._repopulate_results_table())
 
         self._btn(filter_bar, "✕ Clear", self._clear_filter).pack(side="left", padx=(0, 4))
-        self._btn(filter_bar, "✓ Select All Visible", self._select_all_visible).pack(side="left", padx=(0, 4))
         self._btn(filter_bar, "🧹 Dedupe", self._deduplicate_results).pack(side="left", padx=(0, 0))
 
         # ── 1.6 Bulk Classification & Tagging Toolbar ─────────────────────────
@@ -1953,10 +1954,10 @@ class EbayTool(tk.Tk):
         self._btn(tag_bar, "⚡ Apply to Selected", self._apply_bulk_tag, accent=True).pack(side="left", padx=(0, 6))
         self._btn(tag_bar, "🔄 Re-Scan Visual", self._rescan_visual_matches).pack(side="left", padx=(0, 6))
 
-        # Dossier Staging Vault (Multi-Wave Investigation Cart)
+        # Multi-Dossier Staging Vaults (Multi-Wave Investigation Carts)
         self.btn_stash_dossier = self._btn(tag_bar, "📥 Stash to Dossier", self._stash_to_dossier)
         self.btn_stash_dossier.pack(side="left", padx=(0, 4))
-        self.btn_view_dossier = self._btn(tag_bar, f"📁 Staged ({len(self.staged_dossier)})", self._view_or_restore_dossier)
+        self.btn_view_dossier = self._btn(tag_bar, self._get_dossier_btn_label(), self._view_or_restore_dossier)
         self.btn_view_dossier.pack(side="left", padx=(0, 4))
 
         # ── 1. Activity Log panel (docked firmly to the bottom) ──────────────
@@ -5594,8 +5595,83 @@ class EbayTool(tk.Tk):
         else:
             self._show_themed_info("Deduplication Complete", "No duplicates found.\n\nAll listings are unique.", icon="✓")
 
+    def _get_dossier_btn_label(self) -> str:
+        """Return dynamic label for Dossiers toolbar button."""
+        if not hasattr(self, "data_store") or not self.data_store:
+            return "📁 Dossiers (0)"
+        total = self.data_store.get_total_staged_count()
+        vaults = len(self.data_store.get_dossier_names())
+        return f"📁 Dossiers ({vaults} Vaults / {total})"
+
+    def _update_dossier_btn(self):
+        """Update Dossier button label text with current counts."""
+        if hasattr(self, "btn_view_dossier") and self.data_store:
+            self.btn_view_dossier.config(text=self._get_dossier_btn_label())
+
+    def _prompt_stash_target(self, count: int) -> str | None:
+        """Prompt analyst to select or name a Dossier Vault to stash listings into."""
+        vault_names = self.data_store.get_dossier_names()
+        default_vault = getattr(self, "_last_used_vault", "Main Dossier")
+        if default_vault not in vault_names and vault_names:
+            default_vault = vault_names[0]
+
+        t = self.theme
+        win = tk.Toplevel(self)
+        win.title("📥 Stash to Investigation Vault")
+        win.configure(bg=t["bg"])
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+        self._apply_dark_titlebar(win)
+        self._load_app_icon(win)
+
+        result = {"vault": None}
+
+        card = tk.Frame(win, bg=t["panel"], padx=20, pady=16, highlightbackground=t.get("border", "#334155"), highlightthickness=1)
+        card.pack(fill="both", expand=True, padx=8, pady=8)
+
+        # Header
+        hdr = tk.Frame(card, bg=t["panel"])
+        hdr.pack(fill="x", pady=(0, 8))
+        tk.Label(hdr, text="📥", font=("Segoe UI", 14), bg=t["panel"], fg=t["accent"]).pack(side="left", padx=(0, 6))
+        tk.Label(hdr, text=f"Stash {count} Verified Listing(s)", font=FONT_HEAD, bg=t["panel"], fg=t["text"]).pack(side="left")
+
+        tk.Label(
+            card,
+            text="Choose an existing Investigation Vault or type a new name to park these listings and clear the active table for your next sweep wave:",
+            font=FONT_SM, bg=t["panel"], fg=t["subtext"], justify="left", wraplength=420
+        ).pack(anchor="w", pady=(0, 10))
+
+        v_var = tk.StringVar(value=default_vault)
+        combo = ttk.Combobox(card, textvariable=v_var, values=vault_names, font=FONT_NORM, width=32)
+        combo.pack(fill="x", pady=(0, 14))
+        combo.focus_set()
+
+        def _confirm():
+            name = v_var.get().strip()
+            if not name:
+                name = "Main Dossier"
+            result["vault"] = name
+            win.destroy()
+
+        btn_row = tk.Frame(card, bg=t["panel"])
+        btn_row.pack(fill="x")
+
+        self._btn(btn_row, "Cancel", win.destroy).pack(side="right", padx=(4, 0))
+        self._btn(btn_row, "📥 Stash & Clear Table", _confirm, accent=True).pack(side="right")
+
+        win.bind("<Return>", lambda e: _confirm())
+        win.bind("<Escape>", lambda e: win.destroy())
+
+        self._center_window(win, 480, 230)
+        win.wait_window()
+
+        if result["vault"]:
+            self._last_used_vault = result["vault"]
+        return result["vault"]
+
     def _stash_to_dossier(self):
-        """Move verified/triaged listings from active table into the persistent Dossier Staging Vault."""
+        """Move verified/triaged listings from active table into a persistent Dossier Vault."""
         selected_iids = self.result_tree.selection()
         if selected_iids:
             target_urls = {str(self.result_tree.set(iid, "url")).strip().lower() for iid in selected_iids if self.result_tree.set(iid, "url")}
@@ -5624,6 +5700,15 @@ class EbayTool(tk.Tk):
         if not to_stash:
             return
 
+        target_vault = self._prompt_stash_target(len(to_stash))
+        if not target_vault:
+            # If user cancelled, restore listings back to results table
+            self.results.extend(to_stash)
+            self._repopulate_results_table()
+            return
+
+        current_vault_items = self.data_store.get_dossier(target_vault)
+
         def _get_stash_key(item_dict):
             raw_u = str(item_dict.get("url", "")).strip().lower().split("?")[0]
             if raw_u:
@@ -5632,54 +5717,62 @@ class EbayTool(tk.Tk):
             iid = str(item_dict.get("item_id", "")).strip().lower()
             return f"id::{mkt}::{iid}"
 
-        existing_staged_keys = {_get_stash_key(it) for it in self.staged_dossier}
+        existing_staged_keys = {_get_stash_key(it) for it in current_vault_items}
         added_count = 0
         for it in to_stash:
             k = _get_stash_key(it)
             if k not in existing_staged_keys:
-                self.staged_dossier.append(it)
+                current_vault_items.append(it)
                 existing_staged_keys.add(k)
                 added_count += 1
 
-        self.data_store.save_staged_dossier(self.staged_dossier)
+        self.data_store.save_dossier(target_vault, current_vault_items)
         self.seen_item_ids = {str(it.get("url", "")).split("?")[0] for it in self.results if it.get("url")}
         self._repopulate_results_table()
+        self._update_dossier_btn()
 
-        if hasattr(self, "btn_view_dossier"):
-            self.btn_view_dossier.config(text=f"📁 Staged ({len(self.staged_dossier)})")
-
-        self._log(f"📥 [STAGING VAULT] Moved {added_count} verified target(s) into Dossier Staging Vault (Total Staged: {len(self.staged_dossier)}). Active table cleared for Wave 2.")
-        self._status(f"📥 Stashed {added_count} listings into Dossier Vault! Active table cleared.")
-        messagebox.showinfo("Dossier Staging Vault", f"Successfully moved {added_count} listing(s) into your Dossier Staging Vault!\n\n• Staged Dossier Total: {len(self.staged_dossier)} verified listings\n• Live Results Table: Cleared and ready for your next sweep wave.\n\nWhen ready, click '📁 Staged ({len(self.staged_dossier)})' to restore, or '💾 Export' to export all waves!")
+        self._log(f"📥 [STAGING VAULT] Moved {added_count} target(s) into Dossier Vault '{target_vault}' (Vault Total: {len(current_vault_items)}). Active table cleared.")
+        self._status(f"📥 Stashed {added_count} listings into '{target_vault}'. Active table cleared.")
+        self._show_themed_info(
+            "Stashed to Dossier",
+            f"Successfully moved {added_count} listing(s) into vault '{target_vault}'!\n\n• Vault Total: {len(current_vault_items)} listings\n• Live Table: Cleared and ready for your next sweep.\n\nClick '📁 Dossiers' anytime to review or export!",
+            icon="📥"
+        )
 
     def _view_or_restore_dossier(self):
-        """View or restore listings stored in the Dossier Staging Vault."""
-        if not self.staged_dossier:
-            messagebox.showinfo("Dossier Staging Vault", "Your Dossier Staging Vault is currently empty.\n\nTriage your harvest and click '📥 Stash to Dossier' to park verified targets and clear the screen before your next sweep wave!")
+        """Open the Multi-Dossier Investigation Vault Manager Modal."""
+        if self._win_dossier_manager and self._win_dossier_manager.winfo_exists():
+            self._win_dossier_manager.lift()
+            self._win_dossier_manager.focus_force()
             return
 
-        count = len(self.staged_dossier)
-        ans = messagebox.askyesnocancel("Dossier Staging Vault", f"Your Dossier Staging Vault currently contains {count} verified listings.\n\n• [Yes]: Restore all {count} listings back into the Live Results Table\n• [No]: Keep them safely parked in the vault\n• [Cancel]: Do nothing", icon="question")
-        if ans is True:
-            existing_urls = {str(it.get("url", "")).split("?")[0].lower() for it in self.results if it.get("url")}
-            existing_ids = {str(it.get("item_id", "")).strip() for it in self.results if it.get("item_id")}
-            restored = 0
-            for it in self.staged_dossier:
-                u = str(it.get("url", "")).split("?")[0].lower()
-                iid = str(it.get("item_id", "")).strip()
-                if (u and u not in existing_urls) or (iid and iid not in existing_ids) or (not u and not iid):
-                    self.results.append(it)
-                    if u: existing_urls.add(u)
-                    if iid: existing_ids.add(iid)
-                    restored += 1
-            self.staged_dossier.clear()
-            self.data_store.clear_staged_dossier()
-            if hasattr(self, "btn_view_dossier"):
-                self.btn_view_dossier.config(text="📁 Staged (0)")
+        def _on_restore(items, mode="replace", vault_name=""):
+            if mode == "replace":
+                self.results = list(items)
+            else:
+                existing_urls = {str(it.get("url", "")).split("?")[0].lower() for it in self.results if it.get("url")}
+                existing_ids = {str(it.get("item_id", "")).strip() for it in self.results if it.get("item_id")}
+                for it in items:
+                    u = str(it.get("url", "")).split("?")[0].lower()
+                    iid = str(it.get("item_id", "")).strip()
+                    if (u and u not in existing_urls) or (iid and iid not in existing_ids) or (not u and not iid):
+                        self.results.append(it)
+                        if u: existing_urls.add(u)
+                        if iid: existing_ids.add(iid)
             self.seen_item_ids = {str(it.get("url", "")).split("?")[0] for it in self.results if it.get("url")}
             self._repopulate_results_table()
-            self._log(f"📁 Restored {restored} listing(s) from Staging Vault back into Live Results Table.")
-            self._status(f"📁 Restored {restored} listings to Live Results Table.")
+            self._update_dossier_btn()
+            action_desc = "Restored" if mode == "replace" else "Merged"
+            self._log(f"📁 {action_desc} {len(items)} listing(s) from vault '{vault_name}' into Live Results Table.")
+            self._status(f"📁 {action_desc} {len(items)} listings to Live Table.")
+
+        self._win_dossier_manager = DossierManagerModal(
+            self,
+            self.theme,
+            self.data_store,
+            exporter=getattr(self, "exporter", None),
+            on_restore_callback=_on_restore
+        )
 
     def _on_filter_changed(self, *args):
         """Triggered on keystroke in live search filter entry."""
@@ -6555,6 +6648,7 @@ class EbayTool(tk.Tk):
 
         menu.add_command(label="✏ Edit Listing Values (F2)", command=self._edit_selected_listing)
         menu.add_command(label="🔄 Refresh / Rescrape Selected", command=self._rescrape_selected_listings)
+        menu.add_command(label="🔄 Re-Scan Visual Matches (All Listings)", command=self._rescan_visual_matches)
         menu.add_separator()
         menu.add_command(label="💾 Export to Excel (Ctrl+E)", command=self._export)
         menu.add_command(label="🌐 Multi-Locale Expander", command=self._open_multi_locale_expander)
@@ -9249,31 +9343,35 @@ class EbayTool(tk.Tk):
     #  EXPORT
     # ══════════════════════════════════════════════════════════════════════════
     def _export(self):
-        if not self.results and not self.staged_dossier:
-            messagebox.showinfo("Export", "No results to export.")
+        total_staged = self.data_store.get_total_staged_count() if self.data_store else 0
+        if not self.results and total_staged == 0:
+            self._show_themed_info("Export", "No results or staged dossiers to export.", icon="💾")
             return
 
         export_items = list(self.results)
-        if self.staged_dossier:
-            total_staged = len(self.staged_dossier)
+        if total_staged > 0:
             total_active = len(self.results)
+            vault_count = len(self.data_store.get_dossier_names())
             msg = (
-                f"You have {total_staged} listing(s) parked in your Staged Dossier and "
+                f"You have {total_staged} listing(s) staged across {vault_count} Dossier Vault(s) and "
                 f"{total_active} listing(s) in your active results table.\n\n"
-                f"• [Yes]: Export MASTER DOSSIER (Combine both waves = {total_staged + total_active} listings)\n"
-                f"• [No]: Export ACTIVE RESULTS only ({total_active} listings)\n"
+                f"• [Yes]: Export MASTER COMBINED REPORT (All Dossiers + Active Table = {total_staged + total_active} listings)\n"
+                f"• [No]: Export ACTIVE RESULTS ONLY ({total_active} listings)\n"
                 f"• [Cancel]: Cancel export"
             )
-            ans = messagebox.askyesnocancel("Export Staged Dossier", msg, icon="question")
+            ans = messagebox.askyesnocancel("Export Dossiers", msg, icon="question")
             if ans is None:
                 return
             elif ans is True:
                 seen_ids = {str(it.get("item_id", "")).strip() for it in export_items}
-                for it in self.staged_dossier:
+                seen_urls = {str(it.get("url", "")).split("?")[0].lower() for it in export_items if it.get("url")}
+                for it in self.data_store.get_all_dossiers_combined():
                     iid = str(it.get("item_id", "")).strip()
-                    if iid not in seen_ids:
+                    u = str(it.get("url", "")).split("?")[0].lower()
+                    if (iid and iid not in seen_ids) or (u and u not in seen_urls) or (not iid and not u):
                         export_items.append(it)
-                        seen_ids.add(iid)
+                        if iid: seen_ids.add(iid)
+                        if u: seen_urls.add(u)
 
         # Determine items to export: honor active Hide Benign filter so benign packaging is not exported
         if hasattr(self, "filter_hide_benign_var") and self.filter_hide_benign_var.get():

@@ -109,23 +109,32 @@ class VisualCatalogModal(tk.Toplevel):
         top_btns = tk.Frame(header, bg=panel_bg)
         top_btns.pack(side="right")
 
-        self.merge_btn = tk.Button(top_btns, text="🔗 Merge Selected (0)", font=FONT_BOLD, bg=accent_color,
+        self.select_all_btn = tk.Button(top_btns, text="☑️ Select All", font=FONT_NORM, bg=btn_bg, fg=btn_fg,
+                                        relief="flat", padx=6, pady=4, cursor="hand2", command=self._toggle_select_all)
+        self.select_all_btn.pack(side="left", padx=2)
+
+        self.del_sel_btn = tk.Button(top_btns, text="🗑️ Remove Selected (0)", font=FONT_BOLD,
+                                     bg=self._t("danger", "#dc2626"), fg="#FFFFFF",
+                                     relief="flat", padx=8, pady=4, cursor="hand2", command=self._delete_selected_cards)
+        self.del_sel_btn.pack(side="left", padx=2)
+
+        self.merge_btn = tk.Button(top_btns, text="🔗 Merge (0)", font=FONT_BOLD, bg=accent_color,
                                    fg="black" if self.theme.get("name","").startswith("⚡") else "white",
                                    relief="flat", padx=8, pady=4, cursor="hand2", command=self._merge_selected_cards)
-        self.merge_btn.pack(side="left", padx=3)
+        self.merge_btn.pack(side="left", padx=2)
 
-        tk.Button(top_btns, text="🔄 Re-Scan Session", font=FONT_BOLD, bg=btn_bg, fg=accent_color,
-                  relief="flat", padx=8, pady=4, cursor="hand2", command=self._rescan_session_matches).pack(side="left", padx=3)
-        tk.Button(top_btns, text="📤 Export", font=FONT_BOLD, bg=btn_bg, fg=btn_fg,
-                  relief="flat", padx=6, pady=4, cursor="hand2", command=self._export_visual_pack).pack(side="left", padx=3)
-        tk.Button(top_btns, text="📥 Import", font=FONT_BOLD, bg=btn_bg, fg=btn_fg,
-                  relief="flat", padx=6, pady=4, cursor="hand2", command=self._import_visual_pack).pack(side="left", padx=3)
+        tk.Button(top_btns, text="🔄 Re-Scan", font=FONT_BOLD, bg=btn_bg, fg=accent_color,
+                  relief="flat", padx=6, pady=4, cursor="hand2", command=self._rescan_session_matches).pack(side="left", padx=2)
+        tk.Button(top_btns, text="📤 Export", font=FONT_NORM, bg=btn_bg, fg=btn_fg,
+                  relief="flat", padx=5, pady=4, cursor="hand2", command=self._export_visual_pack).pack(side="left", padx=2)
+        tk.Button(top_btns, text="📥 Import", font=FONT_NORM, bg=btn_bg, fg=btn_fg,
+                  relief="flat", padx=5, pady=4, cursor="hand2", command=self._import_visual_pack).pack(side="left", padx=2)
         tk.Button(top_btns, text="➕ Add File", font=FONT_BOLD, bg=btn_bg, fg=btn_fg,
-                  relief="flat", padx=8, pady=4, cursor="hand2", command=self._add_from_file).pack(side="left", padx=3)
+                  relief="flat", padx=6, pady=4, cursor="hand2", command=self._add_from_file).pack(side="left", padx=2)
         tk.Button(top_btns, text="🌐 Add URL", font=FONT_BOLD, bg=btn_bg, fg=btn_fg,
-                  relief="flat", padx=8, pady=4, cursor="hand2", command=self._add_from_url).pack(side="left", padx=3)
-        tk.Button(top_btns, text="🗑️ Purge All Images", font=FONT_BOLD, bg=self._t("danger", "#dc2626"), fg="#FFFFFF",
-                  relief="flat", padx=8, pady=4, cursor="hand2", command=self._on_purge_all).pack(side="left", padx=6)
+                  relief="flat", padx=6, pady=4, cursor="hand2", command=self._add_from_url).pack(side="left", padx=2)
+        tk.Button(top_btns, text="🗑️ Purge All", font=FONT_BOLD, bg=self._t("danger", "#dc2626"), fg="#FFFFFF",
+                  relief="flat", padx=8, pady=4, cursor="hand2", command=self._on_purge_all).pack(side="left", padx=(4, 0))
 
         # Control Bar: Filters & Sensitivity Slider & Sorting
         ctrl_bar = tk.Frame(self, bg=panel_bg, padx=14, pady=8, bd=1, relief="solid")
@@ -265,9 +274,10 @@ class VisualCatalogModal(tk.Toplevel):
             self.selected_card_ids.add(entry_id)
             is_sel = True
 
-        self.merge_btn.config(text=f"🔗 Merge Selected ({len(self.selected_card_ids)})")
+        self.merge_btn.config(text=f"🔗 Merge ({len(self.selected_card_ids)})")
+        self.del_sel_btn.config(text=f"🗑️ Remove Selected ({len(self.selected_card_ids)})")
         
-        # In-place UI update: no gallery reload!
+        # In-place UI update: fast with zero lag
         reg = self.card_registry.get(entry_id)
         if reg:
             reg["var"].set(is_sel)
@@ -342,7 +352,7 @@ class VisualCatalogModal(tk.Toplevel):
         card_bd_color = accent_color if is_selected else self._t("border", "#333333")
         card = tk.Frame(parent, bg=panel_bg, bd=2 if is_selected else 1, relief="solid",
                         highlightbackground=card_bd_color, highlightcolor=card_bd_color,
-                        padx=10, pady=8)
+                        padx=10, pady=8, cursor="hand2")
 
         # Selection Checkbox
         sel_var = tk.BooleanVar(value=is_selected)
@@ -404,7 +414,7 @@ class VisualCatalogModal(tk.Toplevel):
         sweep_btn.pack(anchor="se")
 
         # Center Info Box
-        info = tk.Frame(card, bg=panel_bg)
+        info = tk.Frame(card, bg=panel_bg, cursor="hand2")
         info.pack(side="left", fill="both", expand=True)
 
         is_benign = entry.get("type") == "benign"
@@ -413,21 +423,31 @@ class VisualCatalogModal(tk.Toplevel):
         cluster_tag = f" • 🔗 {variants_count} VARIANTS" if variants_count > 1 else ""
         badge_text = ("🟢 BENIGN PACKAGING" if is_benign else "🔴 KNOWN COUNTERFEIT") + cluster_tag
 
-        b_lbl = tk.Label(info, text=badge_text, font=("Segoe UI", 8, "bold"), bg=panel_bg, fg=badge_color)
+        b_lbl = tk.Label(info, text=badge_text, font=("Segoe UI", 8, "bold"), bg=panel_bg, fg=badge_color, cursor="hand2")
         b_lbl.pack(anchor="w")
 
         title_lbl = tk.Label(info, text=entry.get("label", "Untitled Asset"), font=FONT_BOLD,
-                             bg=panel_bg, fg=text_color, anchor="w", wraplength=260, justify="left")
+                             bg=panel_bg, fg=text_color, anchor="w", wraplength=260, justify="left", cursor="hand2")
         title_lbl.pack(anchor="w", pady=(2, 0))
 
         phash_str = entry.get("hash", "")[:16] + "..." if entry.get("hash") else "No Hash"
         details_txt = f"Hash: {phash_str} • Matches: {entry.get('match_count', 0)}"
-        dt_lbl = tk.Label(info, text=details_txt, font=FONT_SM, bg=panel_bg, fg=subtext_color, anchor="w")
+        dt_lbl = tk.Label(info, text=details_txt, font=FONT_SM, bg=panel_bg, fg=subtext_color, anchor="w", cursor="hand2")
         dt_lbl.pack(anchor="w")
 
         if entry.get("created_at"):
-            cr_lbl = tk.Label(info, text=f"Added: {entry.get('created_at')}", font=FONT_SM, bg=panel_bg, fg=subtext_color)
+            cr_lbl = tk.Label(info, text=f"Added: {entry.get('created_at')}", font=FONT_SM, bg=panel_bg, fg=subtext_color, cursor="hand2")
             cr_lbl.pack(anchor="w")
+            cr_lbl.bind("<Button-1>", lambda e: self._toggle_card_selection(eid))
+
+        # Direct click bindings on card elements for fast, seamless selection
+        card.bind("<Button-1>", lambda e: self._toggle_card_selection(eid))
+        info.bind("<Button-1>", lambda e: self._toggle_card_selection(eid))
+        b_lbl.bind("<Button-1>", lambda e: self._toggle_card_selection(eid))
+        title_lbl.bind("<Button-1>", lambda e: self._toggle_card_selection(eid))
+        dt_lbl.bind("<Button-1>", lambda e: self._toggle_card_selection(eid))
+
+        return card
 
         return card
 
@@ -595,12 +615,139 @@ class VisualCatalogModal(tk.Toplevel):
         if hasattr(self.master, "_reverse_visual_search_from_url"):
             self.master._reverse_visual_search_from_url(source, label=label)
 
+    def _show_themed_confirm(self, title: str, message: str, confirm_text: str = "Confirm", cancel_text: str = "Cancel", danger: bool = False) -> bool:
+        """Themed modal confirmation dialog matching current visual catalog theme."""
+        win = tk.Toplevel(self)
+        win.title(title)
+        win.configure(bg=self._t("bg", "#121212"))
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+        
+        if hasattr(self.master, "_apply_dark_titlebar"):
+            self.master._apply_dark_titlebar(win)
+        self._center_window(500, 240, target_win=win)
+
+        p_bg = self._t("panel", "#1e1e1e")
+        card = tk.Frame(win, bg=p_bg, padx=20, pady=16, highlightbackground=self._t("border", "#333333"), highlightthickness=1)
+        card.pack(fill="both", expand=True, padx=10, pady=10)
+
+        head_row = tk.Frame(card, bg=p_bg)
+        head_row.pack(fill="x", pady=(0, 8))
+        icon_str = "🗑️" if danger else "⚠️"
+        tk.Label(head_row, text=f"{icon_str} {title}", font=FONT_TITLE, bg=p_bg,
+                 fg=self._t("danger", "#ef4444") if danger else self._t("accent", "#00d2ff")).pack(side="left")
+
+        msg_lbl = tk.Label(card, text=message, font=FONT_NORM, bg=p_bg, fg=self._t("text", "#ffffff"),
+                           justify="left", wraplength=440)
+        msg_lbl.pack(fill="x", pady=(0, 16))
+
+        btn_row = tk.Frame(card, bg=p_bg)
+        btn_row.pack(fill="x", side="bottom")
+
+        result = [False]
+
+        def _on_confirm():
+            result[0] = True
+            win.destroy()
+
+        def _on_cancel():
+            result[0] = False
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _on_cancel)
+        win.bind("<Escape>", lambda e: _on_cancel())
+        win.bind("<Return>", lambda e: _on_confirm())
+
+        c_bg = self._t("danger", "#ef4444") if danger else self._t("accent", "#00d2ff")
+        c_fg = "white" if danger or not self._t("btn_accent_fg") else self._t("btn_accent_fg", "white")
+        btn_confirm = tk.Button(btn_row, text=confirm_text, font=FONT_BOLD,
+                                bg=c_bg, fg=c_fg,
+                                relief="flat", padx=14, pady=5, cursor="hand2", command=_on_confirm)
+        btn_confirm.pack(side="right", padx=(8, 0))
+
+        btn_cancel = tk.Button(btn_row, text=cancel_text, font=FONT_NORM,
+                               bg=self._t("btn_normal_bg", p_bg), fg=self._t("btn_normal_fg", self._t("text", "#ffffff")),
+                               relief="flat", padx=12, pady=5, cursor="hand2", command=_on_cancel)
+        btn_cancel.pack(side="right")
+
+        win.wait_window()
+        return result[0]
+
+    def _toggle_select_all(self):
+        f_val = self.filter_var.get()
+        entries = self.vcm.get_all_entries() if f_val == "all" else self.vcm.list_entries(entry_type=f_val)
+        all_ids = {e.get("id") for e in entries if e.get("id")}
+        
+        if self.selected_card_ids >= all_ids and all_ids:
+            self.selected_card_ids.clear()
+            self.select_all_btn.config(text="☑️ Select All")
+        else:
+            self.selected_card_ids = set(all_ids)
+            self.select_all_btn.config(text="☐ Unselect All")
+
+        self.merge_btn.config(text=f"🔗 Merge ({len(self.selected_card_ids)})")
+        self.del_sel_btn.config(text=f"🗑️ Remove Selected ({len(self.selected_card_ids)})")
+        
+        accent_color = self._t("accent", "#00d2ff")
+        border_color = self._t("border", "#333333")
+        for eid, reg in self.card_registry.items():
+            is_sel = eid in self.selected_card_ids
+            reg["var"].set(is_sel)
+            reg["card"].config(highlightbackground=accent_color if is_sel else border_color,
+                               bd=2 if is_sel else 1)
+
+    def _delete_selected_cards(self):
+        if not self.selected_card_ids:
+            messagebox.showinfo("Select Items", "Please select one or more visual fingerprints to remove.")
+            return
+
+        count = len(self.selected_card_ids)
+        if not self._show_themed_confirm(
+            "Remove Selected Images",
+            f"Are you sure you want to permanently remove {count} selected visual threat signature(s) and their cached thumbnails from disk?\n\nThis action cannot be undone.",
+            confirm_text=f"🗑️ Remove {count} Item(s)",
+            danger=True
+        ):
+            return
+
+        for eid in list(self.selected_card_ids):
+            self.vcm.delete_entry(eid)
+
+        self.selected_card_ids.clear()
+        self.merge_btn.config(text="🔗 Merge (0)")
+        self.del_sel_btn.config(text="🗑️ Remove Selected (0)")
+        self._load_gallery()
+        if self.on_update:
+            try:
+                self.on_update()
+            except Exception:
+                pass
+
+    def _sweep_from_card(self, entry):
+        source = entry.get("source_url") or entry.get("thumb_path")
+        if not source:
+            messagebox.showwarning("Warning", "No source image available for this entry.")
+            return
+
+        label = entry.get("label", "Visual Search")
+        if hasattr(self.master, "_reverse_visual_search_from_url"):
+            self.master._reverse_visual_search_from_url(source, label=label)
+
     def _delete_entry(self, entry_id):
-        if messagebox.askyesno("Confirm Delete", "Remove this visual threat asset / cluster from your catalog?", parent=self):
+        entry = next((e for e in self.vcm.get_all_entries() if e.get("id") == entry_id), None)
+        lbl = f"'{entry.get('label')}'" if entry and entry.get("label") else "this visual threat asset"
+        if self._show_themed_confirm(
+            "Delete Visual Asset",
+            f"Are you sure you want to remove {lbl} from your Visual Catalog?",
+            confirm_text="🗑️ Delete",
+            danger=True
+        ):
             if self.vcm.delete_entry(entry_id):
                 if entry_id in self.selected_card_ids:
                     self.selected_card_ids.remove(entry_id)
-                self.merge_btn.config(text=f"🔗 Merge Selected ({len(self.selected_card_ids)})")
+                self.merge_btn.config(text=f"🔗 Merge ({len(self.selected_card_ids)})")
+                self.del_sel_btn.config(text=f"🗑️ Remove Selected ({len(self.selected_card_ids)})")
                 self._load_gallery()
                 if self.on_update:
                     self.on_update()
@@ -760,25 +907,27 @@ class VisualCatalogModal(tk.Toplevel):
                   fg=self._t("subtext", "#888888"), relief="flat", padx=8, pady=4, command=dlg.destroy).pack(side="right", padx=6)
 
     def _on_purge_all(self):
-        """Purge all image entries from the visual catalog with confirmation."""
+        """Purge all image entries from the visual catalog with themed confirmation."""
         cur_filter = self.filter_var.get()
         filter_desc = "ALL visual catalog signatures (Benign & Counterfeit)" if cur_filter == "all" else f"all {cur_filter} image signatures"
-        entries = self.vcm.list_entries(cur_filter)
+        entries = self.vcm.list_entries(cur_filter) if cur_filter != "all" else self.vcm.get_all_entries()
         if not entries:
             messagebox.showinfo("Catalog Empty", "There are no image entries in this view to purge.", parent=self)
             return
 
-        if not messagebox.askyesno(
-            "Purge All Images",
+        if not self._show_themed_confirm(
+            "Purge Visual Catalog",
             f"Are you sure you want to permanently delete {len(entries)} image signature(s) ({filter_desc}) and wipe all cached thumbnails from disk?\n\nThis action cannot be undone.",
-            icon="warning",
-            parent=self
+            confirm_text="🗑️ Purge All Images",
+            danger=True
         ):
             return
 
         purged_count = self.vcm.purge_all_entries(cur_filter)
-        self.selected_ids.clear()
+        self.selected_card_ids.clear()
         self._card_thumb_cache.clear()
+        self.merge_btn.config(text="🔗 Merge (0)")
+        self.del_sel_btn.config(text="🗑️ Remove Selected (0)")
         self._load_gallery()
         if self.on_update:
             try:

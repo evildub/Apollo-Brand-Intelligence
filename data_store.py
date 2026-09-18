@@ -227,6 +227,16 @@ class DataStore:
                     self._save()
                     return
 
+    def remove_multiple_brands(self, names: list[str]):
+        """Remove multiple brand items in one save operation."""
+        for name in names:
+            self.remove_brand_item(name)
+
+    def purge_all_brands(self):
+        """Permanently purge all brands, sub-brands, models, and inclusions from the Brand Registry."""
+        self._data["brands"] = {}
+        self._save()
+
     def reorder_parent_brands(self, new_order: list[str]):
         """Persist new parent brand ordering."""
         new_brands = {}

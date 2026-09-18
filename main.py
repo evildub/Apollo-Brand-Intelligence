@@ -1556,11 +1556,12 @@ class EbayTool(tk.Tk):
         btn_row.pack(fill="x", padx=8, pady=2)
         self.themed_widgets["bg_frames"].append(btn_row)
 
-        self._btn(btn_row, "＋ Parent", self._add_parent_brand).pack(side="left", padx=(0, 4))
-        self._btn(btn_row, "＋ Sub", self._add_sub_brand).pack(side="left", padx=(0, 4))
-        self._btn(btn_row, "✏️ Edit / Inclusions", self._open_brand_editor_modal, accent=True).pack(side="left", padx=(0, 4))
-        self._btn(btn_row, "▲ Up", lambda: self._move_selected_brand(-1)).pack(side="left", padx=(0, 4))
-        self._btn(btn_row, "▼ Down", lambda: self._move_selected_brand(1)).pack(side="left", padx=(0, 4))
+        self._btn(btn_row, "＋ Parent", self._add_parent_brand).pack(side="left", padx=(0, 3))
+        self._btn(btn_row, "＋ Sub", self._add_sub_brand).pack(side="left", padx=(0, 3))
+        self._btn(btn_row, "✏️ Edit / Inclusions", self._open_brand_editor_modal, accent=True).pack(side="left", padx=(0, 3))
+        self._btn(btn_row, "▲ Up", lambda: self._move_selected_brand(-1)).pack(side="left", padx=(0, 3))
+        self._btn(btn_row, "▼ Down", lambda: self._move_selected_brand(1)).pack(side="left", padx=(0, 3))
+        self._btn(btn_row, "🗑️ Purge All", self._purge_all_brands, danger=True).pack(side="right", padx=(3, 0))
         self._btn(btn_row, "🗑 Remove", self._remove_brand, danger=True).pack(side="right")
 
         toggle_brands = self._create_resize_grip(frame, self.brand_tree, widget_type="treeview", min_val=3, max_val=40, default_val=6, max_toggle=22, name="brands")
@@ -2319,6 +2320,65 @@ class EbayTool(tk.Tk):
             win.focus_force()
         except Exception:
             pass
+
+    def _show_themed_confirm(self, title: str, message: str, confirm_text: str = "Confirm", cancel_text: str = "Cancel", danger: bool = False, parent=None) -> bool:
+        """Modal custom confirmation dialog styled matching current Apollo theme."""
+        t = self.theme
+        root_parent = parent or self
+        win = tk.Toplevel(root_parent)
+        win.title(title)
+        win.configure(bg=t["bg"])
+        win.resizable(False, False)
+        win.transient(root_parent)
+        win.grab_set()
+        self._apply_dark_titlebar(win)
+        
+        self._center_window(win, 500, 240)
+
+        card = tk.Frame(win, bg=t["panel"], padx=20, pady=16, highlightbackground=t["border"], highlightthickness=1)
+        card.pack(fill="both", expand=True, padx=10, pady=10)
+
+        head_row = tk.Frame(card, bg=t["panel"])
+        head_row.pack(fill="x", pady=(0, 8))
+        icon_str = "🗑️" if danger else ("⚠️" if ("Purge" in title or "Delete" in title or "Restore" in title) else "ℹ️")
+        tk.Label(head_row, text=f"{icon_str} {title}", font=FONT_HEAD, bg=t["panel"],
+                 fg=t["danger"] if danger else t["accent"]).pack(side="left")
+
+        msg_lbl = tk.Label(card, text=message, font=FONT_SM, bg=t["panel"], fg=t["text"],
+                           justify="left", wraplength=440)
+        msg_lbl.pack(fill="x", pady=(0, 16))
+
+        btn_row = tk.Frame(card, bg=t["panel"])
+        btn_row.pack(fill="x", side="bottom")
+
+        result = [False]
+
+        def _on_confirm():
+            result[0] = True
+            win.destroy()
+
+        def _on_cancel():
+            result[0] = False
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _on_cancel)
+        win.bind("<Escape>", lambda e: _on_cancel())
+        win.bind("<Return>", lambda e: _on_confirm())
+
+        c_bg = t["danger"] if danger else t["accent"]
+        c_fg = "white" if danger or not t.get("btn_accent_fg") else t.get("btn_accent_fg", "white")
+        btn_confirm = tk.Button(btn_row, text=confirm_text, font=FONT_BOLD,
+                                bg=c_bg, fg=c_fg,
+                                relief="flat", padx=14, pady=5, cursor="hand2", command=_on_confirm)
+        btn_confirm.pack(side="right", padx=(8, 0))
+
+        btn_cancel = tk.Button(btn_row, text=cancel_text, font=FONT_NORM,
+                               bg=t["btn_normal_bg"], fg=t["btn_normal_fg"],
+                               relief="flat", padx=12, pady=5, cursor="hand2", command=_on_cancel)
+        btn_cancel.pack(side="right")
+
+        win.wait_window()
+        return result[0]
 
     def _apply_dark_titlebar(self, win=None):
         """Enable immersive dark mode title bar, icon, and custom caption colors via Windows DWM API."""
@@ -3410,13 +3470,50 @@ class EbayTool(tk.Tk):
             ))
 
     def _remove_brand(self):
-        sel = self.brand_tree.focus()
-        if not sel:
+        selected = self.brand_tree.selection()
+        if not selected:
+            sel = self.brand_tree.focus()
+            if sel:
+                selected = (sel,)
+        if not selected:
+            messagebox.showinfo("Select Brand", "Please select one or more brands/models in the tree to remove.")
             return
-        name = self.brand_tree.item(sel)["text"]
-        if messagebox.askyesno("Confirm", f"Remove '{name}' and all children?"):
-            self.data_store.remove_brand_item(name)
+
+        names = [self.brand_tree.item(s)["text"] for s in selected if self.brand_tree.item(s)["text"]]
+        if not names:
+            return
+
+        item_desc = f"'{names[0]}'" if len(names) == 1 else f"{len(names)} selected brand items"
+        if self._show_themed_confirm(
+            "Remove Brand Item",
+            f"Are you sure you want to remove {item_desc} and all associated children from your Brand Registry?",
+            confirm_text="🗑️ Remove",
+            danger=True
+        ):
+            self.data_store.remove_multiple_brands(names)
             self._refresh_brand_tree()
+            self._update_include_preview()
+            self._log(f"🗑️ Removed {item_desc} from Brand Registry.")
+
+    def _purge_all_brands(self):
+        """Purge all brand items from the Brand Registry with a themed confirmation modal."""
+        brands = self.data_store.get_brands()
+        if not brands:
+            messagebox.showinfo("Registry Empty", "Your Brand Registry is already empty.")
+            return
+
+        if self._show_themed_confirm(
+            "Purge Brand Registry",
+            f"Are you sure you want to permanently delete ALL {len(brands)} brand(s), sub-brands, and models from the Brand Registry?\n\nThis will reset the Brand Registry to a clean slate (ideal for new analyst setup or loading a fresh Intel Pack).",
+            confirm_text="🗑️ Purge All Brands",
+            danger=True
+        ):
+            self.data_store.purge_all_brands()
+            self.brand_states.clear()
+            self._refresh_brand_tree()
+            self._update_include_preview()
+            self._log("🗑️ Purged all brands from Brand Registry. Ready for new profile/pack import.")
+            self._status("Brand Registry Purged (Clean Slate)")
 
     def _brand_dialog(self, title, callback):
         t = self.theme

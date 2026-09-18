@@ -2383,9 +2383,17 @@ class EbayTool(tk.Tk):
         win.wait_window()
         return result[0]
 
-    def _apply_dark_titlebar(self, win=None):
+    def _apply_dark_titlebar(self, win=None, schedule_ticks=True):
         """Enable immersive dark mode title bar, icon, and custom caption colors via Windows DWM API."""
         target = win if win is not None else self
+        if target is None:
+            return
+        try:
+            if not target.winfo_exists():
+                return
+        except Exception:
+            return
+
         self._load_app_icon(target)
         try:
             target.update_idletasks()
@@ -2431,16 +2439,33 @@ class EbayTool(tk.Tk):
                 c_border = ctypes.c_int(br_color)
                 ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(c_border), ctypes.sizeof(c_border))
 
-            # 3. Re-assert dark titlebar on focus changes so Windows does not revert to white when inactive
+            # Force immediate non-client area frame redraw so titlebar updates without needing click/deactivate cycle
+            # SWP_NOSIZE (1) | SWP_NOMOVE (2) | SWP_NOZORDER (4) | SWP_NOACTIVATE (16) | SWP_FRAMECHANGED (32) = 0x0037
+            ctypes.windll.user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0037)
+
+            # 3. Re-assert dark titlebar on lifecycle/focus changes so Windows does not revert
             if not getattr(target, "_dwm_focus_bound", False):
                 target._dwm_focus_bound = True
                 def _reassert_dark(e=None):
                     try:
-                        self.after(20, lambda: self._apply_dark_titlebar(target))
+                        if target.winfo_exists():
+                            self.after(20, lambda: self._apply_dark_titlebar(target, schedule_ticks=False))
                     except Exception:
                         pass
+                target.bind("<Map>", _reassert_dark, add="+")
+                target.bind("<FocusIn>", _reassert_dark, add="+")
                 target.bind("<FocusOut>", _reassert_dark, add="+")
+                target.bind("<Activate>", _reassert_dark, add="+")
                 target.bind("<Deactivate>", _reassert_dark, add="+")
+                target.bind("<Visibility>", _reassert_dark, add="+")
+
+            # 4. Staggered post-initialization ticks to catch Windows DWM frame initialization on newly mapped windows
+            if schedule_ticks:
+                for delay in (15, 60, 150, 350):
+                    try:
+                        self.after(delay, lambda: self._apply_dark_titlebar(target, schedule_ticks=False))
+                    except Exception:
+                        pass
         except Exception:
             pass
 

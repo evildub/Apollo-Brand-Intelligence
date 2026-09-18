@@ -1794,6 +1794,13 @@ class TestApolloCoreFeatures(unittest.TestCase):
         ds = self.data_store
 
         # 1. Verify profile names and active profile initialization
+        if "NFL (32 Teams)" in ds.get_profile_names():
+            ds.delete_profile("NFL (32 Teams)")
+        if "NFL Backup" in ds.get_profile_names():
+            ds.delete_profile("NFL Backup")
+        if "NFL Staging" in ds.get_profile_names():
+            ds.delete_profile("NFL Staging")
+
         profs = ds.get_profile_names()
         self.assertIn("Default", profs)
         self.assertEqual(ds.get_active_profile_name(), "Default")
@@ -1847,6 +1854,7 @@ class TestApolloCoreFeatures(unittest.TestCase):
 
         ds.delete_profile("NFL Staging")
         self.assertNotIn("NFL Staging", ds.get_profile_names())
+        ds.delete_profile("NFL (32 Teams)")
 
     def test_59_brand_pack_export_import_and_modal_contract(self):
         """Test Item 59: Verify Brand Profile Pack (.apollo-pack) export/import and BrandRegistryModal contract."""

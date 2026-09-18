@@ -357,6 +357,7 @@ FONT      = ("Segoe UI", 10)
 FONT_NORM = ("Segoe UI", 9)
 FONT_BOLD = ("Segoe UI", 9, "bold")
 FONT_SM   = ("Segoe UI", 9)
+FONT_XS   = ("Segoe UI", 8)
 FONT_LG   = ("Segoe UI", 12, "bold")
 FONT_HEAD = ("Segoe UI", 11, "bold")
 FONT_TITLE= ("Segoe UI", 13, "bold")
@@ -1641,23 +1642,27 @@ class EbayTool(tk.Tk):
         two_col_frame.pack(fill="x", padx=8, pady=(0, 2))
         self.themed_widgets["bg_frames"].append(two_col_frame)
 
+        two_col_frame.columnconfigure(0, weight=1, uniform="subcol")
+        two_col_frame.columnconfigure(1, weight=1, uniform="subcol")
+        two_col_frame.rowconfigure(0, weight=1)
+
         # ── Left Column: 🚫 Generic Exclusions ─────────────────────────────────
         col_left = tk.Frame(two_col_frame, bg=t["bg"])
-        col_left.pack(side="left", fill="both", expand=True, padx=(0, 4))
+        col_left.grid(row=0, column=0, sticky="nsew", padx=(0, 3))
         self.themed_widgets["bg_frames"].append(col_left)
 
         excl_tools = tk.Frame(col_left, bg=t["bg"])
         excl_tools.pack(fill="x", pady=(0, 2))
         self.themed_widgets["bg_frames"].append(excl_tools)
         tk.Label(excl_tools, text="🚫 Exclude:", font=FONT_BOLD, bg=t["bg"], fg=t["danger"]).pack(side="left")
-        self._btn(excl_tools, "☑ All", self._select_all_exclusions).pack(side="right")
-        self._btn(excl_tools, "☐ None", self._unselect_all_exclusions).pack(side="right", padx=(0, 2))
+        self._btn(excl_tools, "All", self._select_all_exclusions, padx=4, pady=1, font=FONT_XS).pack(side="right")
+        self._btn(excl_tools, "None", self._unselect_all_exclusions, padx=4, pady=1, font=FONT_XS).pack(side="right", padx=(0, 2))
 
         excl_outer = tk.Frame(col_left, bg=t["bg"])
         excl_outer.pack(fill="x")
         self.themed_widgets["bg_frames"].append(excl_outer)
 
-        self.excl_canvas = tk.Canvas(excl_outer, bg=t["entry_bg"], height=65,
+        self.excl_canvas = tk.Canvas(excl_outer, bg=t["entry_bg"], height=65, width=80,
                                      highlightthickness=1,
                                      highlightbackground=t["border"])
         excl_scroll = ttk.Scrollbar(excl_outer, orient="vertical", command=self.excl_canvas.yview)
@@ -1681,26 +1686,26 @@ class EbayTool(tk.Tk):
         self.new_excl_entry = self._entry(excl_btn_row, placeholder="Exclusion")
         self.new_excl_entry.pack(side="left", fill="x", expand=True, padx=(0, 2))
         self.new_excl_entry.bind("<Return>", lambda e: self._add_exclusion())
-        self._btn(excl_btn_row, "＋", self._add_exclusion).pack(side="left")
-        self._btn(excl_btn_row, "✕", self._remove_exclusion, danger=True).pack(side="left", padx=(2, 0))
+        self._btn(excl_btn_row, "＋", self._add_exclusion, padx=4, pady=1, font=FONT_XS).pack(side="left")
+        self._btn(excl_btn_row, "✕", self._remove_exclusion, danger=True, padx=4, pady=1, font=FONT_XS).pack(side="left", padx=(2, 0))
 
         # ── Right Column: 🎯 Generic Inclusions (Modifiers) ───────────────────
         col_right = tk.Frame(two_col_frame, bg=t["bg"])
-        col_right.pack(side="right", fill="both", expand=True, padx=(4, 0))
+        col_right.grid(row=0, column=1, sticky="nsew", padx=(3, 0))
         self.themed_widgets["bg_frames"].append(col_right)
 
         inc_tools = tk.Frame(col_right, bg=t["bg"])
         inc_tools.pack(fill="x", pady=(0, 2))
         self.themed_widgets["bg_frames"].append(inc_tools)
         tk.Label(inc_tools, text="🎯 Include:", font=FONT_BOLD, bg=t["bg"], fg=t["success"]).pack(side="left")
-        self._btn(inc_tools, "☑ All", self._select_all_inclusions).pack(side="right")
-        self._btn(inc_tools, "☐ None", self._unselect_all_inclusions).pack(side="right", padx=(0, 2))
+        self._btn(inc_tools, "All", self._select_all_inclusions, padx=4, pady=1, font=FONT_XS).pack(side="right")
+        self._btn(inc_tools, "None", self._unselect_all_inclusions, padx=4, pady=1, font=FONT_XS).pack(side="right", padx=(0, 2))
 
         inc_outer = tk.Frame(col_right, bg=t["bg"])
         inc_outer.pack(fill="x")
         self.themed_widgets["bg_frames"].append(inc_outer)
 
-        self.inc_canvas = tk.Canvas(inc_outer, bg=t["entry_bg"], height=65,
+        self.inc_canvas = tk.Canvas(inc_outer, bg=t["entry_bg"], height=65, width=80,
                                     highlightthickness=1,
                                     highlightbackground=t["border"])
         inc_scroll = ttk.Scrollbar(inc_outer, orient="vertical", command=self.inc_canvas.yview)
@@ -1721,13 +1726,13 @@ class EbayTool(tk.Tk):
         inc_btn_row.pack(fill="x", pady=(3, 0))
         self.themed_widgets["bg_frames"].append(inc_btn_row)
 
-        self.new_inc_entry = self._entry(inc_btn_row, placeholder="Inclusion (e.g. jersey)")
+        self.new_inc_entry = self._entry(inc_btn_row, placeholder="Inclusion")
         self.new_inc_entry.pack(side="left", fill="x", expand=True, padx=(0, 2))
         self.new_inc_entry.bind("<Return>", lambda e: self._add_inclusion())
-        self._btn(inc_btn_row, "＋", self._add_inclusion, accent=True).pack(side="left")
-        self._btn(inc_btn_row, "✕", self._remove_inclusion, danger=True).pack(side="left", padx=(2, 0))
+        self._btn(inc_btn_row, "＋", self._add_inclusion, accent=True, padx=4, pady=1, font=FONT_XS).pack(side="left")
+        self._btn(inc_btn_row, "✕", self._remove_inclusion, danger=True, padx=4, pady=1, font=FONT_XS).pack(side="left", padx=(2, 0))
 
-        self._create_resize_grip(self.excl_container, self.excl_canvas, widget_type="canvas_px", min_val=40, max_val=600, default_val=65, max_toggle=260, name="exclusions_inclusions")
+        self._create_resize_grip(self.excl_container, [self.excl_canvas, self.inc_canvas], widget_type="canvas_px", min_val=40, max_val=600, default_val=65, max_toggle=260, name="exclusions_inclusions")
 
         # ── Queue / Run Controls ──────────────────────────────────────────────
         toggle_queue_holder = []
@@ -2560,6 +2565,9 @@ class EbayTool(tk.Tk):
         dot = tk.Label(grip_line, text="···", font=("Segoe UI", 6, "bold"), bg=t["border"], fg=t["subtext"], cursor="size_ns")
         dot.place(relx=0.5, rely=0.5, anchor="center")
 
+        target_list = list(target_widget) if isinstance(target_widget, (list, tuple)) else [target_widget]
+        first_w = target_list[0]
+
         drag_state = {
             "start_y": 0,
             "start_val": default_val,
@@ -2583,14 +2591,9 @@ class EbayTool(tk.Tk):
 
         def on_press(e):
             drag_state["start_y"] = e.y_root
-            if widget_type in ("lines", "treeview"):
+            if widget_type in ("lines", "treeview", "canvas_px"):
                 try:
-                    drag_state["start_val"] = int(target_widget.cget("height"))
-                except Exception:
-                    drag_state["start_val"] = default_val
-            elif widget_type == "canvas_px":
-                try:
-                    drag_state["start_val"] = int(target_widget.cget("height"))
+                    drag_state["start_val"] = int(first_w.cget("height"))
                 except Exception:
                     drag_state["start_val"] = default_val
 
@@ -2601,24 +2604,28 @@ class EbayTool(tk.Tk):
                 new_v = max(min_val, min(max_val, drag_state["start_val"] + int(delta / step)))
                 if new_v != drag_state["current_val"]:
                     drag_state["current_val"] = new_v
-                    target_widget.configure(height=new_v)
+                    for w in target_list:
+                        w.configure(height=new_v)
                     if hasattr(self, "_update_left_scrollregion"):
                         self._update_left_scrollregion()
             elif widget_type == "canvas_px":
                 new_v = max(min_val, min(max_val, drag_state["start_val"] + delta))
                 if new_v != drag_state["current_val"]:
                     drag_state["current_val"] = new_v
-                    target_widget.configure(height=new_v)
+                    for w in target_list:
+                        w.configure(height=new_v)
                     if hasattr(self, "_update_left_scrollregion"):
                         self._update_left_scrollregion()
 
         def toggle_maximize():
             if drag_state["is_max"]:
-                target_widget.configure(height=min_val)
+                for w in target_list:
+                    w.configure(height=min_val)
                 drag_state["current_val"] = min_val
                 drag_state["is_max"] = False
             else:
-                target_widget.configure(height=max_val)
+                for w in target_list:
+                    w.configure(height=max_val)
                 drag_state["current_val"] = max_val
                 drag_state["is_max"] = True
             if hasattr(self, "_update_left_scrollregion"):
@@ -3116,7 +3123,7 @@ class EbayTool(tk.Tk):
 
         return valid_stores
 
-    def _btn(self, parent, text, cmd, accent=False, danger=False):
+    def _btn(self, parent, text, cmd, accent=False, danger=False, **kwargs):
         t = self.theme
         if accent:
             bg = t["accent"]
@@ -3131,10 +3138,14 @@ class EbayTool(tk.Tk):
             fg = t["btn_normal_fg"]
             active_bg = t["border"]
 
+        font = kwargs.pop("font", FONT_SM)
+        padx = kwargs.pop("padx", 8)
+        pady = kwargs.pop("pady", 3)
+
         btn = tk.Button(parent, text=text, command=cmd,
                         bg=bg, fg=fg, relief="flat",
-                        font=FONT_SM, padx=8, pady=3,
-                        activebackground=active_bg, cursor="hand2")
+                        font=font, padx=padx, pady=pady,
+                        activebackground=active_bg, cursor="hand2", **kwargs)
 
         if accent:
             self.themed_widgets["accent_btns"].append(btn)

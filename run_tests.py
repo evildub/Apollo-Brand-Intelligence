@@ -1789,6 +1789,100 @@ class TestApolloCoreFeatures(unittest.TestCase):
         # Pharma/Vet
         self.assertEqual(dummy_app._detect_product_type("SafeGuard Dewormer Paste for Horses and Dogs"), "Dewormers & Parasiticides")
 
+    def test_58_brand_profiles_multi_workspace_and_bulk_import(self):
+        """Test Item 58: Verify Brand Profiles isolation, workspace switching, and smart bulk import parser."""
+        ds = self.data_store
+
+        # 1. Verify profile names and active profile initialization
+        profs = ds.get_profile_names()
+        self.assertIn("Default", profs)
+        self.assertEqual(ds.get_active_profile_name(), "Default")
+
+        # 2. Create and switch to new Profile: 'NFL (32 Teams)'
+        ok = ds.create_profile("NFL (32 Teams)", initial_brands={})
+        self.assertTrue(ok)
+        self.assertIn("NFL (32 Teams)", ds.get_profile_names())
+
+        ds.set_active_profile("NFL (32 Teams)")
+        self.assertEqual(ds.get_active_profile_name(), "NFL (32 Teams)")
+        self.assertEqual(len(ds.get_brands()), 0, "New profile must start empty.")
+
+        # 3. Test Smart Bulk Import with multiple formats (plain lines, commas, hierarchy, bullets)
+        sample_paste = """
+        - Dallas Cowboys -> Dak Prescott, CeeDee Lamb
+        * Kansas City Chiefs: Patrick Mahomes, Travis Kelce
+        Philadelphia Eagles
+        San Francisco 49ers, Buffalo Bills, Detroit Lions
+        General Motors -> Chevrolet -> Corvette, Camaro
+        """
+        count = ds.bulk_import_brands_to_profile("NFL (32 Teams)", sample_paste)
+        self.assertTrue(count >= 5)
+
+        nfl_brands = ds.get_brands()
+        self.assertIn("Dallas Cowboys", nfl_brands)
+        self.assertIn("Kansas City Chiefs", nfl_brands)
+        self.assertIn("Philadelphia Eagles", nfl_brands)
+        self.assertIn("Buffalo Bills", nfl_brands)
+        self.assertIn("General Motors", nfl_brands)
+
+        # Check sub-brands and models
+        self.assertIn("Dak Prescott", nfl_brands["Dallas Cowboys"]["models"])
+        self.assertIn("CeeDee Lamb", nfl_brands["Dallas Cowboys"]["models"])
+        self.assertIn("Chevrolet", nfl_brands["General Motors"]["subs"])
+        self.assertIn("Corvette", nfl_brands["General Motors"]["subs"]["Chevrolet"])
+
+        # 4. Verify workspace isolation: 'Default' profile remains untouched
+        ds.set_active_profile("Default")
+        default_brands = ds.get_brands()
+        self.assertIn("Toyota", default_brands)
+        self.assertNotIn("Dallas Cowboys", default_brands, "Profiles must be completely isolated.")
+
+        # 5. Duplicate, Rename, and Delete
+        ds.duplicate_profile("NFL (32 Teams)", "NFL Backup")
+        self.assertIn("NFL Backup", ds.get_profile_names())
+
+        ds.rename_profile("NFL Backup", "NFL Staging")
+        self.assertIn("NFL Staging", ds.get_profile_names())
+        self.assertNotIn("NFL Backup", ds.get_profile_names())
+
+        ds.delete_profile("NFL Staging")
+        self.assertNotIn("NFL Staging", ds.get_profile_names())
+
+    def test_59_brand_pack_export_import_and_modal_contract(self):
+        """Test Item 59: Verify Brand Profile Pack (.apollo-pack) export/import and BrandRegistryModal contract."""
+        ds = self.data_store
+        from brand_registry_modal import BrandRegistryModal
+
+        # Create a sample profile to export
+        ds.create_profile("ExportTest", initial_brands={
+            "Nike": {
+                "subs": {"Jordan": ["Retro 1", "Retro 4"]},
+                "models": ["Air Max 90", "Dunk Low"],
+                "inclusions": ["swoosh", "vintage"]
+            }
+        })
+
+        pack_file = os.path.join(self.temp_dir, "Nike_BrandPack.apollo-pack")
+        ok = ds.export_profile_pack("ExportTest", pack_file)
+        self.assertTrue(ok)
+        self.assertTrue(os.path.exists(pack_file))
+
+        # Import pack under a new name
+        import_ok, imported_name = ds.import_profile_pack(pack_file, profile_name="ImportedTestProfile")
+        self.assertTrue(import_ok)
+        self.assertEqual(imported_name, "ImportedTestProfile")
+        self.assertIn("ImportedTestProfile", ds.get_profile_names())
+
+        imported_brands = ds.get_brand_profiles()["ImportedTestProfile"]
+        self.assertIn("Nike", imported_brands)
+        self.assertIn("Jordan", imported_brands["Nike"]["subs"])
+        self.assertIn("Retro 1", imported_brands["Nike"]["subs"]["Jordan"])
+        self.assertIn("vintage", imported_brands["Nike"]["inclusions"])
+
+        # Clean up
+        ds.delete_profile("ExportTest")
+        ds.delete_profile("ImportedTestProfile")
+
 
 if __name__ == "__main__":
     unittest.main()

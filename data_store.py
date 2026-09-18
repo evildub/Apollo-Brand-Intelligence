@@ -4,6 +4,7 @@ import sys
 import shutil
 import re
 import time
+import copy
 from datetime import datetime
 
 def get_base_dir():
@@ -87,20 +88,52 @@ class DataStore:
                     break
                 except Exception:
                     time.sleep(0.05)
-            self._data = loaded if isinstance(loaded, dict) else DEFAULT_DATA
+            self._data = loaded if isinstance(loaded, dict) else copy.deepcopy(DEFAULT_DATA)
+        else:
+            self._data = copy.deepcopy(DEFAULT_DATA)
 
-            # migrate old format if needed
-            for brand, val in self._data.get("brands", {}).items():
+        # Ensure settings and exclusions
+        self._data.setdefault("settings", {})
+        self._data.setdefault("exclusions", DEFAULT_DATA.get("exclusions", []))
+        
+        # Migrate or initialize brand profiles
+        if "brand_profiles" not in self._data or not isinstance(self._data["brand_profiles"], dict) or not self._data["brand_profiles"]:
+            self._data["brand_profiles"] = {}
+            if "brands" in self._data and isinstance(self._data["brands"], dict) and self._data["brands"]:
+                self._data["brand_profiles"]["Default"] = copy.deepcopy(self._data["brands"])
+            else:
+                self._data["brand_profiles"]["Default"] = copy.deepcopy(DEFAULT_DATA["brands"])
+        
+        # Ensure active_brand_profile
+        active_prof = self._data.get("active_brand_profile")
+        if not active_prof or active_prof not in self._data["brand_profiles"]:
+            active_prof = list(self._data["brand_profiles"].keys())[0] if self._data["brand_profiles"] else "Default"
+            if "Default" not in self._data["brand_profiles"]:
+                self._data["brand_profiles"]["Default"] = {}
+                active_prof = "Default"
+            self._data["active_brand_profile"] = active_prof
+            
+        # Ensure brands points to the active profile's brands dict
+        self._data["brands"] = self._data["brand_profiles"][active_prof]
+        
+        # Validate internal structure of each brand across all profiles
+        for prof_name, b_dict in self._data["brand_profiles"].items():
+            if not isinstance(b_dict, dict):
+                self._data["brand_profiles"][prof_name] = {}
+                continue
+            for brand, val in b_dict.items():
                 if not isinstance(val, dict):
-                    self._data["brands"][brand] = {"subs": {}, "models": []}
+                    b_dict[brand] = {"subs": {}, "models": [], "inclusions": []}
                 else:
                     val.setdefault("subs", {})
                     val.setdefault("models", [])
-        else:
-            self._data = DEFAULT_DATA
-            self._save()
+                    val.setdefault("inclusions", [])
 
     def _save(self):
+        # Sync active profile with self._data["brands"]
+        act = self.get_active_profile_name()
+        if "brand_profiles" in self._data and act in self._data["brand_profiles"]:
+            self._data["brand_profiles"][act] = self._data.get("brands", {})
         tmp_file = f"{DATA_FILE}.tmp"
         try:
             with open(tmp_file, "w", encoding="utf-8") as f:
@@ -148,6 +181,237 @@ class DataStore:
 
     def unlock_cowboys(self):
         self.set_setting("unlocked_cowboys", True)
+
+    # ── Brand Profiles / Multi-Workspace Support ─────────────────────────────
+    def get_brand_profiles(self) -> dict:
+        """Return dict of all brand profiles: {profile_name: {brand_name: {...}}}."""
+        return self._data.get("brand_profiles", {})
+
+    def get_profile_names(self) -> list[str]:
+        """Return list of all profile names, ensuring active/Default are prioritized."""
+        profs = list(self._data.get("brand_profiles", {}).keys())
+        if not profs:
+            profs = ["Default"]
+        return sorted(profs)
+
+    def get_active_profile_name(self) -> str:
+        """Return currently active brand profile name."""
+        name = self._data.get("active_brand_profile", "Default")
+        if name not in self._data.get("brand_profiles", {}):
+            if self._data.get("brand_profiles"):
+                name = list(self._data["brand_profiles"].keys())[0]
+            else:
+                name = "Default"
+                self._data.setdefault("brand_profiles", {})["Default"] = copy.deepcopy(DEFAULT_DATA["brands"])
+            self._data["active_brand_profile"] = name
+        return name
+
+    def set_active_profile(self, name: str) -> bool:
+        """Switch active brand profile and sync self._data['brands']."""
+        if not name or name not in self._data.get("brand_profiles", {}):
+            return False
+        self._data["active_brand_profile"] = name
+        self._data["brands"] = self._data["brand_profiles"][name]
+        self._save()
+        return True
+
+    def create_profile(self, name: str, initial_brands: dict = None) -> bool:
+        """Create a new named brand profile."""
+        name = name.strip()
+        if not name:
+            return False
+        profs = self._data.setdefault("brand_profiles", {})
+        if name in profs:
+            return False
+        profs[name] = copy.deepcopy(initial_brands) if isinstance(initial_brands, dict) else {}
+        self._save()
+        return True
+
+    def duplicate_profile(self, source_name: str, target_name: str) -> bool:
+        """Duplicate an existing brand profile to a new name."""
+        target_name = target_name.strip()
+        if not target_name:
+            return False
+        profs = self._data.setdefault("brand_profiles", {})
+        if source_name not in profs or target_name in profs:
+            return False
+        profs[target_name] = copy.deepcopy(profs[source_name])
+        self._save()
+        return True
+
+    def rename_profile(self, old_name: str, new_name: str) -> bool:
+        """Rename an existing brand profile."""
+        new_name = new_name.strip()
+        if not new_name or old_name == new_name:
+            return False
+        profs = self._data.setdefault("brand_profiles", {})
+        if old_name not in profs or new_name in profs:
+            return False
+        profs[new_name] = profs.pop(old_name)
+        if self._data.get("active_brand_profile") == old_name:
+            self._data["active_brand_profile"] = new_name
+            self._data["brands"] = profs[new_name]
+        self._save()
+        return True
+
+    def delete_profile(self, name: str) -> bool:
+        """Delete a brand profile (will not delete if it's the only remaining profile)."""
+        profs = self._data.setdefault("brand_profiles", {})
+        if name not in profs or len(profs) <= 1:
+            return False
+        del profs[name]
+        if self._data.get("active_brand_profile") == name:
+            new_active = list(profs.keys())[0]
+            self._data["active_brand_profile"] = new_active
+            self._data["brands"] = profs[new_active]
+        self._save()
+        return True
+
+    def bulk_import_brands_to_profile(self, profile_name: str, text: str) -> int:
+        """
+        Parse raw text and import brands/subs/models into the specified profile.
+        Supports:
+        - Plain newlines / comma separated brand names: "Dallas Cowboys", "Kansas City Chiefs"
+        - Hierarchical definitions: "Toyota -> Lexus -> RX" or "General Motors: Chevrolet: Corvette"
+        - CSV-style lines: "Brand, Sub, Model"
+        """
+        if not text or not text.strip():
+            return 0
+        profs = self._data.setdefault("brand_profiles", {})
+        if profile_name not in profs:
+            profs[profile_name] = {}
+        target_dict = profs[profile_name]
+
+        imported_count = 0
+        lines = text.strip().splitlines()
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            # Strip markdown list markers (- , * , 1. , etc.)
+            line = re.sub(r"^[\*\-\•\d+\.]+\s*", "", line).strip()
+            if not line:
+                continue
+
+            # Check for hierarchy delimiter: "->", "=>", ":", "/", ">"
+            delim = None
+            for d in ["->", "=>", ">", ":", "/"]:
+                if d in line:
+                    delim = d
+                    break
+
+            if delim:
+                parts = [p.strip().strip('"\'') for p in line.split(delim) if p.strip()]
+                if not parts:
+                    continue
+                parent = parts[0]
+                if parent not in target_dict:
+                    target_dict[parent] = {"subs": {}, "models": [], "inclusions": []}
+                    imported_count += 1
+                else:
+                    target_dict[parent].setdefault("subs", {})
+                    target_dict[parent].setdefault("models", [])
+                    target_dict[parent].setdefault("inclusions", [])
+                
+                if len(parts) == 2:
+                    # Parent -> Sub or Parent -> Model
+                    sub_or_model = parts[1]
+                    sub_parts = [sp.strip().strip('"\'') for sp in sub_or_model.split(",") if sp.strip()]
+                    for sp in sub_parts:
+                        if sp not in target_dict[parent]["models"]:
+                            target_dict[parent]["models"].append(sp)
+                elif len(parts) >= 3:
+                    sub = parts[1]
+                    target_dict[parent]["subs"].setdefault(sub, [])
+                    for m in parts[2:]:
+                        m_parts = [mp.strip().strip('"\'') for mp in m.split(",") if mp.strip()]
+                        for mp in m_parts:
+                            if mp not in target_dict[parent]["subs"][sub]:
+                                target_dict[parent]["subs"][sub].append(mp)
+            else:
+                # Check for comma-separated list of standalone brand names on this line
+                if "," in line and not line.startswith('"'):
+                    b_items = [b.strip().strip('"\'') for b in line.split(",") if b.strip()]
+                    for b in b_items:
+                        if b and b not in target_dict:
+                            target_dict[b] = {"subs": {}, "models": [], "inclusions": []}
+                            imported_count += 1
+                        elif b:
+                            target_dict[b].setdefault("subs", {})
+                            target_dict[b].setdefault("models", [])
+                            target_dict[b].setdefault("inclusions", [])
+                else:
+                    b_name = line.strip().strip('"\'')
+                    if b_name and b_name not in target_dict:
+                        target_dict[b_name] = {"subs": {}, "models": [], "inclusions": []}
+                        imported_count += 1
+                    elif b_name:
+                        target_dict[b_name].setdefault("subs", {})
+                        target_dict[b_name].setdefault("models", [])
+                        target_dict[b_name].setdefault("inclusions", [])
+
+        if self.get_active_profile_name() == profile_name:
+            self._data["brands"] = target_dict
+        self._save()
+        return imported_count
+
+    def export_profile_pack(self, profile_name: str, file_path: str) -> bool:
+        """Export a brand profile to an Apollo Brand Intelligence Pack file (.apollo-pack / .json)."""
+        profs = self._data.get("brand_profiles", {})
+        if profile_name not in profs:
+            return False
+        pack_data = {
+            "apollo_version": "3.0",
+            "pack_type": "brand_profile",
+            "profile_name": profile_name,
+            "exported_at": datetime.now().isoformat(),
+            "brands": profs[profile_name]
+        }
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(pack_data, f, indent=2, ensure_ascii=False)
+            return True
+        except Exception:
+            return False
+
+    def import_profile_pack(self, file_path: str, profile_name: str = None) -> tuple[bool, str]:
+        """Import a brand profile pack file into the DataStore."""
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                return False, "Invalid pack format: Root is not a JSON object."
+            
+            # Extract brands dict and suggested profile name
+            if "brands" in data and isinstance(data["brands"], dict):
+                pack_brands = data["brands"]
+                suggested_name = profile_name or data.get("profile_name") or os.path.splitext(os.path.basename(file_path))[0]
+            else:
+                # Raw brands dictionary
+                pack_brands = data
+                suggested_name = profile_name or os.path.splitext(os.path.basename(file_path))[0]
+            
+            suggested_name = suggested_name.strip() or "Imported Profile"
+            profs = self._data.setdefault("brand_profiles", {})
+            target_name = suggested_name
+            suffix = 1
+            while target_name in profs and profile_name is None:
+                target_name = f"{suggested_name} ({suffix})"
+                suffix += 1
+
+            profs[target_name] = copy.deepcopy(pack_brands)
+            for b_name, b_val in profs[target_name].items():
+                if not isinstance(b_val, dict):
+                    profs[target_name][b_name] = {"subs": {}, "models": [], "inclusions": []}
+                else:
+                    b_val.setdefault("subs", {})
+                    b_val.setdefault("models", [])
+                    b_val.setdefault("inclusions", [])
+            
+            self._save()
+            return True, target_name
+        except Exception as e:
+            return False, str(e)
 
     # ── brands ────────────────────────────────────────────────────────────────
     def get_brands(self):

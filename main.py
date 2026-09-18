@@ -49,6 +49,7 @@ from visual_catalog_modal import VisualCatalogModal
 from vero_disclosure_modal import VeroDisclosureModal
 from field_guide_modal import FieldGuideModal
 from product_type_modal import ProductTypeModal
+from brand_registry_modal import BrandRegistryModal
 from tooltip import add_tooltip, HoverTip
 
 # ── Color Palette Definitions ─────────────────────────────────────────────────
@@ -809,6 +810,7 @@ class EbayTool(tk.Tk):
         self._win_whitelist = None
         self._win_field_guide = None
         self._win_product_type = None
+        self._win_brand_registry = None
 
         self._build_ui()
         self._refresh_brand_tree()
@@ -1501,6 +1503,23 @@ class EbayTool(tk.Tk):
 
         self._section(frame, "🏷  Brand Library (Target & Exclude)", toggle_cmd=_toggle_brands_proxy)
 
+        # Profile Selector Toolbar (Row 0)
+        prof_row = tk.Frame(frame, bg=t["bg"])
+        prof_row.pack(fill="x", padx=8, pady=(0, 3))
+        self.themed_widgets["bg_frames"].append(prof_row)
+
+        tk.Label(prof_row, text="Profile:", font=FONT_BOLD, bg=t["bg"], fg=t["accent"]).pack(side="left", padx=(0, 4))
+        self.brand_profile_var = tk.StringVar(value=self.data_store.get_active_profile_name())
+        self.brand_profile_combo = ttk.Combobox(
+            prof_row, textvariable=self.brand_profile_var,
+            values=self.data_store.get_profile_names(), width=13, state="readonly", font=FONT_SM
+        )
+        self.brand_profile_combo.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        self.brand_profile_combo.bind("<<ComboboxSelected>>", self._on_brand_profile_changed)
+
+        self.btn_brand_mgr = self._btn(prof_row, "🏷️ Manage", self._open_brand_registry_modal, accent=True)
+        self.btn_brand_mgr.pack(side="right")
+
         # Target / Exclude State Selection Toolbar (Row 1)
         target_tools_1 = tk.Frame(frame, bg=t["bg"])
         target_tools_1.pack(fill="x", padx=8, pady=(0, 2))
@@ -1549,7 +1568,7 @@ class EbayTool(tk.Tk):
         self.brand_tree.bind("<Alt-Down>", lambda e: self._move_selected_brand(1))
         self.brand_tree.bind("<Control-Up>", lambda e: self._move_selected_brand(-1))
         self.brand_tree.bind("<Control-Down>", lambda e: self._move_selected_brand(1))
-        self.brand_tree.bind("<F2>", lambda e: self._open_brand_editor_modal())
+        self.brand_tree.bind("<F2>", lambda e: self._open_brand_registry_modal())
 
         # Brand Library management buttons (Spacious, unclipped 2-tier layout)
         btn_row = tk.Frame(frame, bg=t["bg"])
@@ -1558,7 +1577,7 @@ class EbayTool(tk.Tk):
 
         self._btn(btn_row, "＋ Parent", self._add_parent_brand).pack(side="left", padx=(0, 3))
         self._btn(btn_row, "＋ Sub", self._add_sub_brand).pack(side="left", padx=(0, 3))
-        self._btn(btn_row, "✏️ Edit / Inclusions", self._open_brand_editor_modal, accent=True).pack(side="left", padx=(0, 3))
+        self._btn(btn_row, "🏷️ Brand Manager", self._open_brand_registry_modal, accent=True).pack(side="left", padx=(0, 3))
         self._btn(btn_row, "▲ Up", lambda: self._move_selected_brand(-1)).pack(side="left", padx=(0, 3))
         self._btn(btn_row, "▼ Down", lambda: self._move_selected_brand(1)).pack(side="left", padx=(0, 3))
         self._btn(btn_row, "🗑️ Purge All", self._purge_all_brands, danger=True).pack(side="right", padx=(3, 0))
@@ -1802,36 +1821,19 @@ class EbayTool(tk.Tk):
         self.thumb_size_combo.pack(side="left", padx=(0, 6))
         self.thumb_size_combo.bind("<<ComboboxSelected>>", self._on_thumb_size_changed)
 
-        # Primary Action: Export (Packed FIRST on right so it is anchored to the far right and NEVER clipped)
+        # Primary Action Bar (Executive Clean 4-Button Toolbar): Export, Clear, Threat Intel, Rescrape
+        # (Edit, Network, Copy, Enrich, Multi-Locale, Remove are fully accessible in Right-Click & Hotkeys)
         self.btn_export = self._btn(toolbar, "💾 Export", self._export, accent=True)
         self.btn_export.pack(side="right", padx=(4, 2))
 
-        self.btn_multi_loc = self._btn(toolbar, "🌐 Multi-Locale", self._open_multi_locale_expander, accent=False)
-        self.btn_multi_loc.pack(side="right", padx=2)
-
-        self.btn_copy_urls = self._btn(toolbar, "📋 Copy", self._copy_all_listing_urls)
-        self.btn_copy_urls.pack(side="right", padx=2)
+        self.btn_clear_res = self._btn(toolbar, "🗑 Clear", self._clear_results, danger=True)
+        self.btn_clear_res.pack(side="right", padx=2)
 
         self.btn_threat_enrich = self._btn(toolbar, "🌍 Threat", self._enrich_seller_threat_intel, accent=False)
         self.btn_threat_enrich.pack(side="right", padx=2)
 
-        self.btn_network_scan = self._btn(toolbar, "🔗 Network", self._open_connected_network_scanner, accent=False)
-        self.btn_network_scan.pack(side="right", padx=2)
-
         self.btn_rescrape = self._btn(toolbar, "🔄 Rescrape", self._rescrape_selected_listings)
         self.btn_rescrape.pack(side="right", padx=2)
-
-        self.btn_edit_item = self._btn(toolbar, "✏ Edit", self._edit_selected_listing)
-        self.btn_edit_item.pack(side="right", padx=2)
-
-        self.btn_enrich_sellers = self._btn(toolbar, "🏪 Enrich", self._enrich_sellers)
-        self.btn_enrich_sellers.pack(side="right", padx=2)
-
-        self.btn_remove_item = self._btn(toolbar, "✕ Remove", self._remove_selected_results)
-        self.btn_remove_item.pack(side="right", padx=2)
-
-        self.btn_clear_res = self._btn(toolbar, "🗑 Clear", self._clear_results, danger=True)
-        self.btn_clear_res.pack(side="right", padx=2)
 
         # ── 1.5 Live Search Filter Bar ────────────────────────────────────────
         filter_bar = tk.Frame(frame, bg=t["panel"], pady=4, padx=8)
@@ -6911,6 +6913,48 @@ class EbayTool(tk.Tk):
                     updated_count += 1
         self._repopulate_results_table()
         self._log(f"🏷 Product Taxonomy updated: Re-tagged {updated_count} listing(s) across active session ({len(self.results)} total).")
+
+    def _open_brand_registry_modal(self):
+        """Open the dedicated Brand Intelligence Registry & Portfolio Manager Modal."""
+        if self._win_brand_registry and self._win_brand_registry.winfo_exists():
+            self._win_brand_registry.lift()
+            self._win_brand_registry.focus_force()
+            return
+
+        def _on_save():
+            self._refresh_brand_profile_selector()
+            self._refresh_brand_tree()
+            self._update_include_preview()
+            self._repopulate_results_table()
+
+        self._win_brand_registry = BrandRegistryModal(
+            self,
+            self.theme,
+            self.data_store,
+            on_save_callback=_on_save
+        )
+
+    _open_brand_editor_modal = _open_brand_registry_modal
+
+    def _on_brand_profile_changed(self, event=None):
+        """Handle analyst selecting a different brand profile in the left panel dropdown."""
+        if not hasattr(self, "brand_profile_var") or not self.data_store:
+            return
+        selected_prof = self.brand_profile_var.get()
+        if selected_prof:
+            self.data_store.set_active_profile(selected_prof)
+            self.brand_states.clear()
+            self._refresh_brand_tree()
+            self._update_include_preview()
+            self._status(f"Active Brand Profile: '{selected_prof}'")
+
+    def _refresh_brand_profile_selector(self):
+        """Refresh brand profile combobox values and active selection."""
+        if hasattr(self, "brand_profile_combo") and self.data_store:
+            profs = self.data_store.get_profile_names()
+            active = self.data_store.get_active_profile_name()
+            self.brand_profile_combo["values"] = profs
+            self.brand_profile_var.set(active)
 
     def _open_product_type_manager(self):
         """Open the Product Type & Industry Taxonomy Manager Modal."""

@@ -50,18 +50,118 @@ ADDR_KEYWORDS = {
 }
 
 
-def parse_vero_line(line: str) -> Optional[Dict[str, str]]:
+def parse_vero_line(line: str, default_marketplace: str = "eBay") -> Optional[Dict[str, str]]:
     """
-    Parse a single VeRO / eBay seller disclosure line into structured components.
-    Handles US, European, and Chinese Pinyin multi-segment addresses without column shifts.
-    Example: 'trdracing / xu jie xu yu xiu qu yong fu lu 35 2, guang zhou, 510000, CN'
+    Parse a single VeRO / seller disclosure line into structured 9-column format.
+    Extracts Seller Name, Marketplace, Phone, Combined Physical Address, Email,
+    Authorization, Partner Type, Tag, and Seller Category.
+    Supports both unstructured tracking lines and tab/pipe-delimited Genesis rows.
     """
     if not line or not line.strip():
         return None
 
     raw = line.strip()
 
-    # 1. Split Seller Handle from Disclosure Body
+    # Skip header lines
+    low_raw = raw.lower()
+    if low_raw.startswith("seller name") or low_raw.startswith("seller handle") or low_raw.startswith("seller_name"):
+        return None
+
+    # Check for direct tab-separated Genesis/Excel paste (>= 3 columns)
+    if "\t" in raw and len(raw.split("\t")) >= 3:
+        toks = [t.strip() for t in raw.split("\t")]
+        s_name = toks[0]
+        s_mkt = toks[1] if len(toks) > 1 and toks[1] else (default_marketplace or "eBay")
+        s_phone = toks[2] if len(toks) > 2 else ""
+        s_addr = toks[3] if len(toks) > 3 else ""
+        s_email = toks[4] if len(toks) > 4 else ""
+        s_auth = toks[5] if len(toks) > 5 and toks[5] else "Unauthorized"
+        s_ptype = toks[6] if len(toks) > 6 and toks[6] else "3rd-Party Seller"
+        s_tag = toks[7] if len(toks) > 7 and toks[7] else "VeRO Disclosed Origin"
+        s_cat = toks[8] if len(toks) > 8 and toks[8] else "VeRO Disclosed Seller"
+
+        # Try to extract country and city from physical address if available
+        cntry = "Unresolved"
+        city = ""
+        zip_code = ""
+        if s_addr:
+            segs = [s.strip() for s in s_addr.split(",") if s.strip()]
+            if segs and len(segs[-1]) <= 3:
+                cntry = segs[-1].upper()
+            elif segs and any(c in segs[-1].upper() for c in ("CHINA", "CN", "US", "USA", "UK", "DE", "FR", "CA", "AU", "IT", "ES")):
+                cntry = segs[-1]
+
+        return {
+            "seller_name": s_name,
+            "marketplace": s_mkt,
+            "seller_phone_number": s_phone,
+            "phone": s_phone,
+            "seller_physical_address": s_addr,
+            "physical_address": s_addr,
+            "seller_email_address": s_email,
+            "email": s_email,
+            "authorization": s_auth,
+            "partner_type": s_ptype,
+            "tag": s_tag,
+            "seller_category": s_cat,
+            "handle": s_name,
+            "contact_name": s_name,
+            "street_address": s_addr,
+            "city": city,
+            "postal_code": zip_code,
+            "country": cntry,
+            "raw_disclosure": raw,
+            "imported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+    # 1. Extract Email Address
+    email = ""
+    email_m = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', raw)
+    if email_m:
+        email = email_m.group(0).strip()
+
+    # 2. Extract Phone Number (strict word boundaries and explicit keywords or international prefix)
+    phone = ""
+    phone_m = re.search(r'\b(?:tel|telephone|phone|ph|mobile|cel|cell|contact)[:\s]+([\+0-9\-\.\s\(\)]{7,25})', raw, re.IGNORECASE)
+    if phone_m:
+        p_cand = phone_m.group(1).strip()
+        digits = re.sub(r'\D', '', p_cand)
+        if len(digits) >= 7:
+            phone = p_cand.rstrip(' ,|;')
+    if not phone:
+        gen_phone = re.search(r'(\+\d{1,3}[-.\s]?(?:\(?\d{2,4}\)?[-.\s]?)?\d{3,4}[-.\s]?\d{4})', raw)
+        if gen_phone:
+            digits = re.sub(r'\D', '', gen_phone.group(1))
+            if len(digits) >= 7:
+                phone = gen_phone.group(1).strip()
+
+    # 3. Detect Marketplace
+    r_low = raw.lower()
+    marketplace = default_marketplace or "eBay"
+    if "aliexpress" in r_low:
+        marketplace = "AliExpress"
+    elif "tiktok" in r_low:
+        marketplace = "TikTok Shop"
+    elif "vinted" in r_low:
+        marketplace = "Vinted"
+    elif "mercadolibre" in r_low or "mercado" in r_low:
+        marketplace = "Mercado Libre"
+    elif "amazon" in r_low:
+        marketplace = "Amazon"
+    elif "temu" in r_low:
+        marketplace = "Temu"
+    elif "wish" in r_low:
+        marketplace = "Wish"
+    elif "etsy" in r_low:
+        marketplace = "Etsy"
+    elif "redbubble" in r_low:
+        marketplace = "Redbubble"
+    elif "printerval" in r_low:
+        marketplace = "Printerval"
+    elif "ebay" in r_low:
+        marketplace = "eBay"
+
+    # 4. Split Seller Handle from Disclosure Body
     parts = re.split(r'\s+/\s+|\s*\|\s*|\t+|\s*:\s*(?=[a-zA-Z0-9])', raw, maxsplit=1)
     if len(parts) == 2:
         handle = parts[0].strip()
@@ -78,8 +178,17 @@ def parse_vero_line(line: str) -> Optional[Dict[str, str]]:
     # Clean handle
     handle = re.sub(r'^(?:seller|user|handle|id)[:\s]*', '', handle, flags=re.IGNORECASE).strip()
 
-    # 2. Split comma segments
-    comma_segments = [s.strip() for s in disclosure.split(',') if s.strip()]
+    # Clean metadata segments from address disclosure
+    disclosure_clean = re.sub(r'\|\s*(?:phone|tel|mobile|cel|email|mail|contact|tag|category|partner|auth)[^|]+', '', disclosure, flags=re.IGNORECASE)
+    if email and email in disclosure_clean:
+        disclosure_clean = disclosure_clean.replace(email, '')
+    if phone and phone in disclosure_clean:
+        disclosure_clean = disclosure_clean.replace(phone, '')
+    disclosure_clean = re.sub(r'\b(?:phone|tel|email|mail)[:\s]*', '', disclosure_clean, flags=re.IGNORECASE).strip()
+    disclosure_clean = re.sub(r'\|\s*$', '', disclosure_clean).strip()
+
+    # 5. Split comma segments
+    comma_segments = [s.strip() for s in disclosure_clean.split(',') if s.strip()]
 
     country = ""
     postal_code = ""
@@ -102,9 +211,7 @@ def parse_vero_line(line: str) -> Optional[Dict[str, str]]:
     # Detect Postal Code / State / City from remaining trailing segments
     if rem:
         seg = rem[-1]
-        # Check if segment has "State Zip" (e.g., "TX 78701", "CA 90210-1234", "ON M5V 2T6")
         state_zip_m = re.search(r'\b([A-Z]{2})\s+([A-Z0-9\s-]{3,10})$', seg, re.IGNORECASE)
-        # Or purely a zip code (e.g. "510000", "78701", "90210-1234", "SW1A 1AA")
         pure_zip_m = re.match(r'^(?:\d{4,8}(?:-\d{4})?|[A-Z0-9]{2,4}\s?[A-Z0-9]{2,4})$', seg, re.IGNORECASE)
 
         if state_zip_m:
@@ -120,10 +227,8 @@ def parse_vero_line(line: str) -> Optional[Dict[str, str]]:
     if rem and len(rem) >= 2:
         city = rem.pop()
     elif rem and len(rem) == 1 and not city:
-        # Check if single remaining token has City at the end
         pass
 
-    # If postal code was embedded in city (e.g. "guang zhou 510000" or "Austin TX 78701")
     if city and not postal_code:
         zip_in_city = re.search(r'\b(\d{4,8}(?:-\d{4})?|[A-Z]\d[A-Z]\s?\d[A-Z]\d)\b', city)
         if zip_in_city:
@@ -132,7 +237,7 @@ def parse_vero_line(line: str) -> Optional[Dict[str, str]]:
 
     addr_text = ", ".join(rem).strip()
 
-    # 3. Name vs Street Address Extraction
+    # 6. Name vs Street Address Extraction
     words = addr_text.split()
     if len(words) >= 4:
         w1_low = words[1].lower()
@@ -172,20 +277,40 @@ def parse_vero_line(line: str) -> Optional[Dict[str, str]]:
     else:
         street_address = addr_text
 
+    norm_country = country.upper() if len(country) <= 3 else country.title()
+    addr_parts = [p for p in [street_address, city, postal_code, norm_country] if p]
+    physical_address = ", ".join(addr_parts) if addr_parts else disclosure
+
+    seller_name = handle or contact_name or "Unknown Seller"
+
     return {
+        # 9 Target Column alignment
+        "seller_name": seller_name,
+        "marketplace": marketplace,
+        "seller_phone_number": phone,
+        "phone": phone,
+        "seller_physical_address": physical_address,
+        "physical_address": physical_address,
+        "seller_email_address": email,
+        "email": email,
+        "authorization": "Unauthorized",
+        "partner_type": "3rd-Party Seller",
+        "tag": "VeRO Disclosed Origin",
+        "seller_category": "VeRO Disclosed Seller",
+        # Decomposition fields
         "handle": handle,
         "contact_name": contact_name,
         "street_address": street_address,
         "city": city,
         "postal_code": postal_code,
-        "country": country.upper() if len(country) <= 3 else country.title(),
+        "country": norm_country,
         "raw_disclosure": raw,
         "imported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
 
 
-def parse_vero_text(raw_text: str) -> List[Dict[str, str]]:
-    """Parse multi-line string containing VeRO / eBay seller disclosures."""
+def parse_vero_text(raw_text: str, default_marketplace: str = "eBay") -> List[Dict[str, str]]:
+    """Parse multi-line string containing VeRO / seller disclosures into 9-column records."""
     results = []
     seen_handles = set()
     if not raw_text:
@@ -195,7 +320,7 @@ def parse_vero_text(raw_text: str) -> List[Dict[str, str]]:
         line = line.strip()
         if not line or line.startswith("#") or line.startswith("//"):
             continue
-        rec = parse_vero_line(line)
+        rec = parse_vero_line(line, default_marketplace=default_marketplace)
         if rec and rec["handle"]:
             h_key = rec["handle"].lower()
             if h_key not in seen_handles:
@@ -204,8 +329,8 @@ def parse_vero_text(raw_text: str) -> List[Dict[str, str]]:
     return results
 
 
-def parse_vero_pdf(file_path: str) -> List[Dict[str, str]]:
-    """Extract text from a VeRO PDF file and parse structured disclosure records."""
+def parse_vero_pdf(file_path: str, default_marketplace: str = "eBay") -> List[Dict[str, str]]:
+    """Extract text from a VeRO PDF file and parse structured 9-column disclosure records."""
     if not PYPDF_AVAILABLE:
         raise RuntimeError("pypdf is required to read PDF files. Please install pypdf via 'pip install pypdf'.")
 
@@ -219,7 +344,7 @@ def parse_vero_pdf(file_path: str) -> List[Dict[str, str]]:
         full_text.append(txt)
 
     combined_text = "\n".join(full_text)
-    return parse_vero_text(combined_text)
+    return parse_vero_text(combined_text, default_marketplace=default_marketplace)
 
 
 def push_to_enforcement_registry(records: List[Dict[str, str]], data_store: Any) -> int:
@@ -235,7 +360,7 @@ def push_to_enforcement_registry(records: List[Dict[str, str]], data_store: Any)
     updated_count = 0
 
     for rec in records:
-        h = rec.get("handle")
+        h = rec.get("handle") or rec.get("seller_name")
         if not h:
             continue
 
@@ -263,6 +388,12 @@ def push_to_enforcement_registry(records: List[Dict[str, str]], data_store: Any)
             entry["contact_name"] = rec["contact_name"]
         if rec.get("street_address"):
             entry["street_address"] = rec["street_address"]
+        if rec.get("physical_address"):
+            entry["physical_address"] = rec["physical_address"]
+        if rec.get("phone"):
+            entry["phone"] = rec["phone"]
+        if rec.get("email"):
+            entry["email"] = rec["email"]
         if rec.get("city"):
             entry["city"] = rec["city"]
         if rec.get("postal_code"):
@@ -289,17 +420,18 @@ def push_to_enforcement_registry(records: List[Dict[str, str]], data_store: Any)
 
 def export_to_excel(records: List[Dict[str, str]], filepath: str):
     """
-    Export parsed VeRO disclosures to a beautifully formatted Genesis-ready Excel spreadsheet.
+    Export parsed VeRO disclosures to a beautifully formatted Genesis-ready Excel spreadsheet
+    with the exact 9 required & optional enforcement columns.
     """
     if not OPENPYXL_AVAILABLE:
         raise RuntimeError("openpyxl is required to export to Excel.")
 
     wb = openpyxl.Workbook()
     wb.properties.creator = "Jerry Seidenstucker"
-    wb.properties.title = "Apollo VeRO Seller Disclosure Report"
+    wb.properties.title = "Apollo Seller Intelligence Disclosure Report"
     wb.remove(wb.active)
 
-    ws = wb.create_sheet(title="VeRO Disclosures")
+    ws = wb.create_sheet(title="Seller Intelligence")
 
     # Header styling
     header_fill = PatternFill("solid", fgColor="0F172A")
@@ -310,8 +442,15 @@ def export_to_excel(records: List[Dict[str, str]], filepath: str):
     thin_border = Border(bottom=border_side, top=border_side, left=border_side, right=border_side)
 
     headers = [
-        "Seller Handle", "Contact / Legal Name", "Street Address", "City",
-        "Postal / Zip Code", "Country", "Raw Disclosure Line", "Import Date", "Source"
+        "Seller Name",
+        "Marketplace",
+        "Seller Phone Number",
+        "Seller Physical Address",
+        "Seller Email Address",
+        "Authorization",
+        "Partner Type",
+        "Tag",
+        "Seller Category"
     ]
 
     for col_num, h_text in enumerate(headers, 1):
@@ -325,15 +464,15 @@ def export_to_excel(records: List[Dict[str, str]], filepath: str):
     for r_idx, rec in enumerate(records, 2):
         row_fill = row_fill_a if r_idx % 2 == 0 else row_fill_b
         row_data = [
-            rec.get("handle", ""),
-            rec.get("contact_name", ""),
-            rec.get("street_address", ""),
-            rec.get("city", ""),
-            rec.get("postal_code", ""),
-            rec.get("country", ""),
-            rec.get("raw_disclosure", ""),
-            rec.get("imported_at", ""),
-            "VeRO / eBay Disclosure"
+            rec.get("seller_name") or rec.get("handle") or rec.get("contact_name", ""),
+            rec.get("marketplace", "eBay"),
+            rec.get("seller_phone_number") or rec.get("phone", ""),
+            rec.get("seller_physical_address") or rec.get("physical_address") or rec.get("street_address", ""),
+            rec.get("seller_email_address") or rec.get("email", ""),
+            rec.get("authorization", ""),
+            rec.get("partner_type", ""),
+            rec.get("tag", ""),
+            rec.get("seller_category", "")
         ]
         for c_idx, val in enumerate(row_data, 1):
             cell = ws.cell(row=r_idx, column=c_idx, value=val)
@@ -343,7 +482,7 @@ def export_to_excel(records: List[Dict[str, str]], filepath: str):
             cell.alignment = Alignment(vertical="center")
         ws.row_dimensions[r_idx].height = 20
 
-    col_widths = [20, 22, 40, 18, 16, 12, 60, 20, 22]
+    col_widths = [22, 16, 20, 45, 26, 18, 18, 22, 22]
     for idx, width in enumerate(col_widths, 1):
         col_letter = get_column_letter(idx)
         ws.column_dimensions[col_letter].width = width
@@ -354,14 +493,31 @@ def export_to_excel(records: List[Dict[str, str]], filepath: str):
 
 
 def export_to_csv(records: List[Dict[str, str]], filepath: str):
-    """Export parsed VeRO disclosures to CSV."""
-    fieldnames = [
-        "handle", "contact_name", "street_address", "city",
-        "postal_code", "country", "raw_disclosure", "imported_at"
+    """Export parsed disclosures to CSV matching the 9 target columns."""
+    headers = [
+        "Seller Name",
+        "Marketplace",
+        "Seller Phone Number",
+        "Seller Physical Address",
+        "Seller Email Address",
+        "Authorization",
+        "Partner Type",
+        "Tag",
+        "Seller Category"
     ]
     with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for r in records:
-            writer.writerow({k: r.get(k, "") for k in fieldnames})
+        writer = csv.writer(f)
+        writer.writerow(headers)
+        for rec in records:
+            writer.writerow([
+                rec.get("seller_name") or rec.get("handle") or rec.get("contact_name", ""),
+                rec.get("marketplace", "eBay"),
+                rec.get("seller_phone_number") or rec.get("phone", ""),
+                rec.get("seller_physical_address") or rec.get("physical_address") or rec.get("street_address", ""),
+                rec.get("seller_email_address") or rec.get("email", ""),
+                rec.get("authorization", ""),
+                rec.get("partner_type", ""),
+                rec.get("tag", ""),
+                rec.get("seller_category", "")
+            ])
     logger.info(f"VeRO CSV report exported: {filepath}")

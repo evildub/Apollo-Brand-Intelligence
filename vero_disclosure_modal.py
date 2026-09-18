@@ -98,7 +98,7 @@ class VeroDisclosureModal(tk.Toplevel):
 
         pdf_btn = tk.Button(
             tool_f,
-            text="📁 Open VeRO PDF File...",
+            text="📁 Open VeRO PDF...",
             font=FONT_BOLD,
             bg=t["accent2"],
             fg="#FFFFFF",
@@ -112,7 +112,7 @@ class VeroDisclosureModal(tk.Toplevel):
 
         paste_btn = tk.Button(
             tool_f,
-            text="📋 Paste from Clipboard",
+            text="📋 Paste Clipboard",
             font=FONT_SM,
             bg=t["bg"],
             fg=t["accent"],
@@ -152,6 +152,19 @@ class VeroDisclosureModal(tk.Toplevel):
         )
         clear_btn.pack(side="left", padx=(0, 6))
 
+        # Marketplace selector
+        tk.Label(tool_f, text="Marketplace:", font=FONT_SM, bg=t["panel"], fg=t["subtext"]).pack(side="left", padx=(10, 4))
+        self.mp_var = tk.StringVar(value="eBay")
+        self.mp_combo = ttk.Combobox(
+            tool_f,
+            textvariable=self.mp_var,
+            values=["eBay", "AliExpress", "TikTok Shop", "Vinted", "Mercado Libre", "Amazon", "Temu", "Wish", "Etsy", "Redbubble", "Printerval"],
+            state="readonly",
+            width=13,
+            font=FONT_SM
+        )
+        self.mp_combo.pack(side="left", padx=(0, 6))
+
         self.lbl_pdf_hint = tk.Label(
             tool_f,
             text="PDF Engine: Active (pypdf)" if PYPDF_AVAILABLE else "⚠ PDF Engine: Missing pypdf (Paste text active)",
@@ -171,7 +184,7 @@ class VeroDisclosureModal(tk.Toplevel):
 
         in_lbl = tk.Label(
             input_frame,
-            text="Raw Disclosure Text Input (Paste one seller line per row):",
+            text="Raw Disclosure Text Input (Paste one seller line per row or tab-delimited Genesis lines):",
             font=FONT_SM,
             bg=t["panel"],
             fg=t["subtext"]
@@ -211,7 +224,7 @@ class VeroDisclosureModal(tk.Toplevel):
 
         tk.Label(
             tbl_lbl_frame,
-            text="Parsed Structured Disclosures:",
+            text="Parsed Structured Disclosures (9-Column Genesis Format):",
             font=FONT_BOLD,
             bg=t["panel"],
             fg=t["accent"]
@@ -226,24 +239,38 @@ class VeroDisclosureModal(tk.Toplevel):
         )
         self.lbl_stats.pack(side="right")
 
-        cols = ("handle", "name", "address", "city", "zip", "country", "raw")
+        cols = (
+            "seller_name",
+            "marketplace",
+            "phone",
+            "physical_address",
+            "email",
+            "authorization",
+            "partner_type",
+            "tag",
+            "category"
+        )
         self.tree = ttk.Treeview(table_frame, columns=cols, show="headings", selectmode="extended")
         
-        self.tree.heading("handle", text="Seller Handle", anchor="w")
-        self.tree.heading("name", text="Contact / Legal Name", anchor="w")
-        self.tree.heading("address", text="Street Address", anchor="w")
-        self.tree.heading("city", text="City / District", anchor="w")
-        self.tree.heading("zip", text="Postal / Zip", anchor="w")
-        self.tree.heading("country", text="Country", anchor="w")
-        self.tree.heading("raw", text="Raw Disclosure Line", anchor="w")
+        self.tree.heading("seller_name", text="Seller Name (Req)", anchor="w")
+        self.tree.heading("marketplace", text="Marketplace (Req)", anchor="w")
+        self.tree.heading("phone", text="Seller Phone Number", anchor="w")
+        self.tree.heading("physical_address", text="Seller Physical Address", anchor="w")
+        self.tree.heading("email", text="Seller Email Address", anchor="w")
+        self.tree.heading("authorization", text="Authorization", anchor="w")
+        self.tree.heading("partner_type", text="Partner Type", anchor="w")
+        self.tree.heading("tag", text="Tag", anchor="w")
+        self.tree.heading("category", text="Seller Category", anchor="w")
 
-        self.tree.column("handle", width=140, minwidth=100)
-        self.tree.column("name", width=150, minwidth=110)
-        self.tree.column("address", width=250, minwidth=180)
-        self.tree.column("city", width=120, minwidth=90)
-        self.tree.column("zip", width=90, minwidth=70)
-        self.tree.column("country", width=70, minwidth=60)
-        self.tree.column("raw", width=300, minwidth=150)
+        self.tree.column("seller_name", width=140, minwidth=100)
+        self.tree.column("marketplace", width=100, minwidth=80)
+        self.tree.column("phone", width=120, minwidth=90)
+        self.tree.column("physical_address", width=250, minwidth=180)
+        self.tree.column("email", width=150, minwidth=110)
+        self.tree.column("authorization", width=100, minwidth=80)
+        self.tree.column("partner_type", width=110, minwidth=90)
+        self.tree.column("tag", width=120, minwidth=90)
+        self.tree.column("category", width=120, minwidth=90)
 
         tr_scroll_y = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
         tr_scroll_x = ttk.Scrollbar(table_frame, orient="horizontal", command=self.tree.xview)
@@ -258,8 +285,10 @@ class VeroDisclosureModal(tk.Toplevel):
         self.ctx_menu.add_command(label="➕ Push Selected to Enforcement Registry", command=self._on_push_selected_to_registry)
         self.ctx_menu.add_command(label="🏪 Add Selected Handles to Stores Queue", command=self._on_add_selected_to_stores)
         self.ctx_menu.add_separator()
-        self.ctx_menu.add_command(label="📋 Copy Seller Handle", command=self._on_copy_handle)
+        self.ctx_menu.add_command(label="📋 Copy Seller Name", command=self._on_copy_handle)
         self.ctx_menu.add_command(label="📋 Copy Full Address", command=self._on_copy_address)
+        self.ctx_menu.add_command(label="📋 Copy Phone Number", command=self._on_copy_phone)
+        self.ctx_menu.add_command(label="📋 Copy Email Address", command=self._on_copy_email)
         self.ctx_menu.add_separator()
         self.ctx_menu.add_command(label="🗑 Remove Selected from List", command=self._on_remove_selected)
 
@@ -366,7 +395,8 @@ class VeroDisclosureModal(tk.Toplevel):
             return
 
         try:
-            records = parse_vero_pdf(fp)
+            mkt = self.mp_var.get() or "eBay"
+            records = parse_vero_pdf(fp, default_marketplace=mkt)
             if not records:
                 messagebox.showwarning("No Disclosures Found", f"Could not find any disclosure lines in '{os.path.basename(fp)}'.")
                 return
@@ -394,7 +424,8 @@ class VeroDisclosureModal(tk.Toplevel):
         raw = self.txt_input.get("1.0", "end").strip()
         if not raw:
             return
-        records = parse_vero_text(raw)
+        mkt = self.mp_var.get() or "eBay"
+        records = parse_vero_text(raw, default_marketplace=mkt)
         self._populate_records(records, append=False)
 
     def _on_clear_all(self):
@@ -410,30 +441,39 @@ class VeroDisclosureModal(tk.Toplevel):
             for it in self.tree.get_children():
                 self.tree.delete(it)
 
-        existing_handles = {r["handle"].lower() for r in self.parsed_records}
+        existing_keys = {
+            (r.get("seller_name") or r.get("handle", "")).lower()
+            for r in self.parsed_records
+        }
+
         for rec in records:
-            h = rec.get("handle", "")
-            if not h or (append and h.lower() in existing_handles):
+            s_name = rec.get("seller_name") or rec.get("handle") or rec.get("contact_name", "")
+            if not s_name:
+                continue
+            key = s_name.lower()
+            if append and key in existing_keys:
                 continue
             self.parsed_records.append(rec)
-            existing_handles.add(h.lower())
+            existing_keys.add(key)
 
             self.tree.insert("", "end", values=(
-                rec.get("handle", ""),
-                rec.get("contact_name", ""),
-                rec.get("street_address", ""),
-                rec.get("city", ""),
-                rec.get("postal_code", ""),
-                rec.get("country", ""),
-                rec.get("raw_disclosure", "")
+                s_name,
+                rec.get("marketplace", "eBay"),
+                rec.get("seller_phone_number") or rec.get("phone", ""),
+                rec.get("seller_physical_address") or rec.get("physical_address") or rec.get("street_address", ""),
+                rec.get("seller_email_address") or rec.get("email", ""),
+                rec.get("authorization", "Unauthorized"),
+                rec.get("partner_type", "3rd-Party Seller"),
+                rec.get("tag", "VeRO Disclosed Origin"),
+                rec.get("seller_category", "VeRO Disclosed Seller")
             ))
 
         self._update_stats()
 
     def _update_stats(self):
         total = len(self.parsed_records)
-        cn_count = sum(1 for r in self.parsed_records if "CN" in r.get("country", "").upper() or "CHINA" in r.get("country", "").upper())
-        us_count = sum(1 for r in self.parsed_records if "US" in r.get("country", "").upper() or "UNITED STATES" in r.get("country", "").upper())
+        cn_count = sum(1 for r in self.parsed_records if "CN" in r.get("country", "").upper() or "CHINA" in r.get("country", "").upper() or "CN" in r.get("seller_physical_address", "").upper())
+        us_count = sum(1 for r in self.parsed_records if "US" in r.get("country", "").upper() or "UNITED STATES" in r.get("country", "").upper() or "US" in r.get("seller_physical_address", "").upper())
         other_count = total - (cn_count + us_count)
         self.lbl_stats.config(
             text=f"Total: {total} | 🇨🇳 Direct China: {cn_count} | 🇺🇸 Domestic US: {us_count} | 🌍 Other: {other_count}"
@@ -443,12 +483,15 @@ class VeroDisclosureModal(tk.Toplevel):
         selected_ids = self.tree.selection()
         if not selected_ids:
             return []
-        selected_handles = set()
+        selected_names = set()
         for sid in selected_ids:
             vals = self.tree.item(sid, "values")
             if vals:
-                selected_handles.add(vals[0].strip().lower())
-        return [r for r in self.parsed_records if r.get("handle", "").strip().lower() in selected_handles]
+                selected_names.add(str(vals[0]).strip().lower())
+        return [
+            r for r in self.parsed_records
+            if (r.get("seller_name") or r.get("handle", "")).strip().lower() in selected_names
+        ]
 
     def _on_push_all_to_registry(self):
         if not self.parsed_records:
@@ -475,7 +518,7 @@ class VeroDisclosureModal(tk.Toplevel):
         if not self.parsed_records:
             messagebox.showwarning("No Records", "There are no parsed disclosure records to add.")
             return
-        handles = [r["handle"] for r in self.parsed_records if r.get("handle")]
+        handles = [r.get("seller_name") or r.get("handle") for r in self.parsed_records if (r.get("seller_name") or r.get("handle"))]
         self._append_to_stores_queue(handles)
 
     def _on_add_selected_to_stores(self):
@@ -483,7 +526,7 @@ class VeroDisclosureModal(tk.Toplevel):
         if not sel:
             messagebox.showinfo("Select Sellers", "Please select one or more sellers from the table.")
             return
-        handles = [r["handle"] for r in sel if r.get("handle")]
+        handles = [r.get("seller_name") or r.get("handle") for r in sel if (r.get("seller_name") or r.get("handle"))]
         self._append_to_stores_queue(handles)
 
     def _append_to_stores_queue(self, handles: List[str]):
@@ -512,7 +555,7 @@ class VeroDisclosureModal(tk.Toplevel):
         sel = self._get_selected_records()
         if not sel:
             return
-        handles = "\n".join(r["handle"] for r in sel if r.get("handle"))
+        handles = "\n".join(r.get("seller_name") or r.get("handle", "") for r in sel if (r.get("seller_name") or r.get("handle")))
         self.clipboard_clear()
         self.clipboard_append(handles)
 
@@ -520,24 +563,40 @@ class VeroDisclosureModal(tk.Toplevel):
         sel = self._get_selected_records()
         if not sel:
             return
-        lines = []
-        for r in sel:
-            parts = [r.get("contact_name", ""), r.get("street_address", ""), r.get("city", ""), r.get("postal_code", ""), r.get("country", "")]
-            lines.append(", ".join(p for p in parts if p))
+        lines = [r.get("seller_physical_address") or r.get("physical_address") or r.get("street_address", "") for r in sel]
         self.clipboard_clear()
-        self.clipboard_append("\n".join(lines))
+        self.clipboard_append("\n".join(l for l in lines if l))
+
+    def _on_copy_phone(self):
+        sel = self._get_selected_records()
+        if not sel:
+            return
+        lines = [r.get("seller_phone_number") or r.get("phone", "") for r in sel]
+        self.clipboard_clear()
+        self.clipboard_append("\n".join(l for l in lines if l))
+
+    def _on_copy_email(self):
+        sel = self._get_selected_records()
+        if not sel:
+            return
+        lines = [r.get("seller_email_address") or r.get("email", "") for r in sel]
+        self.clipboard_clear()
+        self.clipboard_append("\n".join(l for l in lines if l))
 
     def _on_remove_selected(self):
         selected_ids = self.tree.selection()
         if not selected_ids:
             return
-        selected_handles = set()
+        selected_names = set()
         for sid in selected_ids:
             vals = self.tree.item(sid, "values")
             if vals:
-                selected_handles.add(vals[0].strip().lower())
+                selected_names.add(str(vals[0]).strip().lower())
             self.tree.delete(sid)
-        self.parsed_records = [r for r in self.parsed_records if r.get("handle", "").strip().lower() not in selected_handles]
+        self.parsed_records = [
+            r for r in self.parsed_records
+            if (r.get("seller_name") or r.get("handle", "")).strip().lower() not in selected_names
+        ]
         self._update_stats()
 
     def _on_export_excel(self):

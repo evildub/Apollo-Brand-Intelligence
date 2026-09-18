@@ -1372,7 +1372,7 @@ class TestApolloCoreFeatures(unittest.TestCase):
         self.assertEqual(clean_name, "TestBankMaster")
 
     def test_43_vero_seller_disclosure_decomposition(self):
-        """Test Item 43: Verify VeRO / eBay seller disclosure decomposition into structured contact and address parts."""
+        """Test Item 43: Verify VeRO / eBay seller disclosure decomposition into structured contact, phone, email, and 9-column parts."""
         from vero_pdf_parser import parse_vero_line, parse_vero_text
 
         # Chinese pinyin seller tracking lines
@@ -1380,6 +1380,8 @@ class TestApolloCoreFeatures(unittest.TestCase):
         rec1 = parse_vero_line(line1)
         self.assertIsNotNone(rec1)
         self.assertEqual(rec1["handle"], "trdracing")
+        self.assertEqual(rec1["seller_name"], "trdracing")
+        self.assertEqual(rec1["marketplace"], "eBay")
         self.assertEqual(rec1["contact_name"], "xu jie")
         self.assertEqual(rec1["street_address"], "xu yu xiu qu yong fu lu 35 2")
         self.assertEqual(rec1["city"], "guang zhou")
@@ -1390,19 +1392,23 @@ class TestApolloCoreFeatures(unittest.TestCase):
         rec2 = parse_vero_line(line2)
         self.assertIsNotNone(rec2)
         self.assertEqual(rec2["handle"], "yu1587_21")
+        self.assertEqual(rec2["seller_name"], "yu1587_21")
         self.assertEqual(rec2["contact_name"], "zhao kun yu")
         self.assertEqual(rec2["city"], "guang zhou")
         self.assertEqual(rec2["postal_code"], "510000")
         self.assertEqual(rec2["country"], "CN")
 
-        # Western seller tracking line
-        line3 = "speedy_auto_us / John Doe 123 Industrial Parkway, Suite 400, Los Angeles, 90001, US"
+        # Western seller tracking line with phone and email
+        line3 = "speedy_auto_us / John Doe 123 Industrial Parkway, Suite 400, Los Angeles, 90001, US | phone: +1-555-123-4567 | email: support@speedyauto.com"
         rec3 = parse_vero_line(line3)
         self.assertEqual(rec3["handle"], "speedy_auto_us")
+        self.assertEqual(rec3["seller_name"], "speedy_auto_us")
         self.assertEqual(rec3["contact_name"], "John Doe")
         self.assertEqual(rec3["city"], "Los Angeles")
         self.assertEqual(rec3["postal_code"], "90001")
         self.assertEqual(rec3["country"], "US")
+        self.assertEqual(rec3["email"], "support@speedyauto.com")
+        self.assertIn("555-123-4567", rec3["phone"])
 
         # German seller tracking line
         line4 = "euro_parts_de / Hans Schmidt Industriestrasse 14, Munich, 80331, DE"
@@ -1414,7 +1420,7 @@ class TestApolloCoreFeatures(unittest.TestCase):
         self.assertEqual(rec4["country"], "DE")
 
     def test_44_vero_registry_ingestion_and_excel_export(self):
-        """Test Item 44: Verify VeRO disclosures push into DataStore Enforcement Registry and export Genesis-compliant Excel."""
+        """Test Item 44: Verify VeRO disclosures push into DataStore Enforcement Registry and export Genesis-compliant 9-column Excel."""
         from vero_pdf_parser import parse_vero_text, push_to_enforcement_registry, export_to_excel, export_to_csv
         raw_text = """
         trdracing / xu jie xu yu xiu qu yong fu lu 35 2, guang zhou, 510000, CN
@@ -1443,11 +1449,19 @@ class TestApolloCoreFeatures(unittest.TestCase):
         self.assertTrue(os.path.exists(csv_path))
 
         wb = openpyxl.load_workbook(xlsx_path)
-        self.assertIn("VeRO Disclosures", wb.sheetnames)
-        ws = wb["VeRO Disclosures"]
-        self.assertEqual(ws.cell(row=1, column=1).value, "Seller Handle")
+        self.assertIn("Seller Intelligence", wb.sheetnames)
+        ws = wb["Seller Intelligence"]
+        self.assertEqual(ws.cell(row=1, column=1).value, "Seller Name")
+        self.assertEqual(ws.cell(row=1, column=2).value, "Marketplace")
+        self.assertEqual(ws.cell(row=1, column=3).value, "Seller Phone Number")
+        self.assertEqual(ws.cell(row=1, column=4).value, "Seller Physical Address")
+        self.assertEqual(ws.cell(row=1, column=5).value, "Seller Email Address")
+        self.assertEqual(ws.cell(row=1, column=6).value, "Authorization")
+        self.assertEqual(ws.cell(row=1, column=7).value, "Partner Type")
+        self.assertEqual(ws.cell(row=1, column=8).value, "Tag")
+        self.assertEqual(ws.cell(row=1, column=9).value, "Seller Category")
         self.assertEqual(ws.cell(row=2, column=1).value, "trdracing")
-        self.assertEqual(ws.cell(row=2, column=2).value, "xu jie")
+        self.assertEqual(ws.cell(row=2, column=2).value, "eBay")
     def test_45_session_vault_registry(self):
         """Test Item 45: Verify SessionVault tracks all gated marketplaces and checks status."""
         from session_vault import SessionVault, VAULT_PLATFORMS

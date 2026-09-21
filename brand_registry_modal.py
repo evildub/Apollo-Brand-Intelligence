@@ -29,8 +29,14 @@ class BrandRegistryModal(tk.Toplevel):
         self.on_save_callback = on_save_callback
 
         self.title("🏷 Brand Intelligence Registry & Profile Manager")
-        self.geometry("1060x740")
-        self.minsize(920, 620)
+        
+        # Generous responsive window geometry for multi-monitor / 1080p+ displays
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        win_w = min(1320, max(1120, int(screen_w * 0.90)))
+        win_h = min(920, max(760, int(screen_h * 0.90)))
+        self.geometry(f"{win_w}x{win_h}")
+        self.minsize(1020, 660)
         self.configure(bg=self._t("bg", "#121212"))
         self.transient(master)
 
@@ -55,7 +61,7 @@ class BrandRegistryModal(tk.Toplevel):
         self._populate_brand_tree()
 
         if hasattr(master, "_center_window"):
-            master._center_window(self, 1060, 740)
+            master._center_window(self, win_w, win_h)
         else:
             self.deiconify()
         self.lift()
@@ -79,10 +85,14 @@ class BrandRegistryModal(tk.Toplevel):
             fg = t.get("text", "#ffffff")
             abg = t.get("border", "#334155")
 
+        font = kwargs.pop("font", FONT_BOLD if accent else FONT_NORM)
+        padx = kwargs.pop("padx", 8)
+        pady = kwargs.pop("pady", 3)
+
         b = tk.Button(
-            parent, text=text, command=command, font=FONT_BOLD if accent else FONT_NORM,
+            parent, text=text, command=command, font=font,
             bg=bg, fg=fg, activebackground=abg, activeforeground=fg,
-            relief="flat", cursor="hand2", padx=kwargs.pop("padx", 10), pady=kwargs.pop("pady", 4), **kwargs
+            relief="flat", cursor="hand2", padx=padx, pady=pady, **kwargs
         )
         return b
 
@@ -110,35 +120,29 @@ class BrandRegistryModal(tk.Toplevel):
 
     # ── Header & Profile Switcher ─────────────────────────────────────────────
     def _build_header(self):
-        hdr = tk.Frame(self, bg=self._t("panel", "#1e1e1e"), padx=16, pady=10)
+        hdr = tk.Frame(self, bg=self._t("panel", "#1e1e1e"), padx=16, pady=8)
         hdr.pack(fill="x", side="top")
 
-        # Left Info
-        left_info = tk.Frame(hdr, bg=self._t("panel", "#1e1e1e"))
-        left_info.pack(side="left", fill="y")
+        # Top Row: Title on Left, Profile Toolbar on Right
+        top_row = tk.Frame(hdr, bg=self._t("panel", "#1e1e1e"))
+        top_row.pack(fill="x", side="top")
 
-        t_row = tk.Frame(left_info, bg=self._t("panel", "#1e1e1e"))
-        t_row.pack(anchor="w")
+        t_left = tk.Frame(top_row, bg=self._t("panel", "#1e1e1e"))
+        t_left.pack(side="left")
 
         tk.Label(
-            t_row, text="🏷", font=("Segoe UI", 14),
+            t_left, text="🏷", font=("Segoe UI", 14),
             bg=self._t("panel", "#1e1e1e"), fg=self._t("accent", "#38bdf8")
         ).pack(side="left", padx=(0, 6))
 
         tk.Label(
-            t_row, text="Brand Intelligence Registry & Profile Manager", font=FONT_TITLE,
+            t_left, text="Brand Intelligence Registry & Profile Manager", font=FONT_TITLE,
             bg=self._t("panel", "#1e1e1e"), fg=self._t("text", "#ffffff")
         ).pack(side="left")
 
-        tk.Label(
-            left_info,
-            text="Manage isolated brand workspaces, sub-brands, player/model lines, mandatory inclusion keywords, and pack exports.",
-            font=FONT_SM, bg=self._t("panel", "#1e1e1e"), fg=self._t("subtext", "#94a3b8")
-        ).pack(anchor="w", pady=(2, 0))
-
         # Right Profile Selector Toolbar
-        prof_bar = tk.Frame(hdr, bg=self._t("panel", "#1e1e1e"))
-        prof_bar.pack(side="right", fill="y")
+        prof_bar = tk.Frame(top_row, bg=self._t("panel", "#1e1e1e"))
+        prof_bar.pack(side="right")
 
         tk.Label(
             prof_bar, text="Active Profile:", font=FONT_BOLD,
@@ -147,16 +151,24 @@ class BrandRegistryModal(tk.Toplevel):
 
         self.profile_var = tk.StringVar()
         self.profile_combo = ttk.Combobox(
-            prof_bar, textvariable=self.profile_var, width=18, state="readonly", font=FONT_NORM
+            prof_bar, textvariable=self.profile_var, width=16, state="readonly", font=FONT_NORM
         )
         self.profile_combo.pack(side="left", padx=(0, 6))
         self.profile_combo.bind("<<ComboboxSelected>>", self._on_profile_selected)
 
-        self._btn(prof_bar, "＋ New", self._create_new_profile, accent=True).pack(side="left", padx=(0, 3))
-        self._btn(prof_bar, "📋 Clone", self._clone_profile).pack(side="left", padx=(0, 3))
-        self._btn(prof_bar, "💾 Export", self._export_active_profile_pack).pack(side="left", padx=(0, 3))
-        self._btn(prof_bar, "📥 Import", self._import_profile_pack).pack(side="left", padx=(0, 3))
-        self._btn(prof_bar, "🗑 Delete", self._delete_active_profile, danger=True).pack(side="left")
+        self._btn(prof_bar, "＋ New", self._create_new_profile, accent=True, padx=6, pady=2, font=FONT_SM).pack(side="left", padx=(0, 3))
+        self._btn(prof_bar, "📋 Clone", self._clone_profile, padx=6, pady=2, font=FONT_SM).pack(side="left", padx=(0, 3))
+        self._btn(prof_bar, "💾 Export", self._export_active_profile_pack, padx=6, pady=2, font=FONT_SM).pack(side="left", padx=(0, 3))
+        self._btn(prof_bar, "📥 Import", self._import_profile_pack, padx=6, pady=2, font=FONT_SM).pack(side="left", padx=(0, 3))
+        self._btn(prof_bar, "🗑 Delete", self._delete_active_profile, danger=True, padx=6, pady=2, font=FONT_SM).pack(side="left")
+
+        # Bottom Subtitle
+        sub_lbl = tk.Label(
+            hdr,
+            text="Manage isolated brand workspaces, sub-brands, player/model lines, mandatory inclusion keywords, and pack exports.",
+            font=FONT_SM, bg=self._t("panel", "#1e1e1e"), fg=self._t("subtext", "#94a3b8")
+        )
+        sub_lbl.pack(anchor="w", side="top", pady=(4, 0))
 
     def _refresh_profile_selector(self):
         if not self.data_store:
@@ -350,17 +362,27 @@ class BrandRegistryModal(tk.Toplevel):
         self.brand_tree.bind("<<TreeviewSelect>>", self._on_tree_selected)
         self.brand_tree.bind("<Double-1>", lambda e: self._on_tree_double_click())
 
-        # Left Toolbar Actions
-        act_row1 = tk.Frame(left_pane, bg=self._t("bg", "#121212"), pady=4)
-        act_row1.pack(fill="x", side="top")
+        # Left Toolbar Actions (2 Organized, Roomy Rows)
+        act_box = tk.Frame(left_pane, bg=self._t("bg", "#121212"), pady=4)
+        act_box.pack(fill="x", side="top")
 
-        self._btn(act_row1, "＋ Parent Brand", self._add_parent_brand, accent=True).pack(side="left", padx=(0, 4))
-        self._btn(act_row1, "＋ Sub-Brand", self._add_sub_brand).pack(side="left", padx=(0, 4))
-        self._btn(act_row1, "＋ Model / Line", self._add_model_item).pack(side="left", padx=(0, 4))
-        self._btn(act_row1, "▲ Up", lambda: self._move_brand(-1)).pack(side="left", padx=(0, 2))
-        self._btn(act_row1, "▼ Down", lambda: self._move_brand(1)).pack(side="left", padx=(0, 4))
-        self._btn(act_row1, "🗑 Remove", self._remove_selected_nodes, danger=True).pack(side="right")
-        self._btn(act_row1, "🗑 Purge", self._purge_active_profile, danger=True).pack(side="right", padx=(0, 4))
+        # Row 1: Add Entities
+        act_row1 = tk.Frame(act_box, bg=self._t("bg", "#121212"))
+        act_row1.pack(fill="x", pady=(2, 2))
+
+        self._btn(act_row1, "＋ Parent Brand", self._add_parent_brand, accent=True, padx=8, pady=3, font=FONT_SM).pack(side="left", padx=(0, 4))
+        self._btn(act_row1, "＋ Sub-Brand", self._add_sub_brand, padx=8, pady=3, font=FONT_SM).pack(side="left", padx=(0, 4))
+        self._btn(act_row1, "＋ Model / Line", self._add_model_item, padx=8, pady=3, font=FONT_SM).pack(side="left", padx=(0, 4))
+
+        # Row 2: Ordering & Danger Actions
+        act_row2 = tk.Frame(act_box, bg=self._t("bg", "#121212"))
+        act_row2.pack(fill="x", pady=(2, 0))
+
+        self._btn(act_row2, "▲ Move Up", lambda: self._move_brand(-1), padx=6, pady=2, font=FONT_SM).pack(side="left", padx=(0, 3))
+        self._btn(act_row2, "▼ Move Down", lambda: self._move_brand(1), padx=6, pady=2, font=FONT_SM).pack(side="left", padx=(0, 4))
+
+        self._btn(act_row2, "🗑 Remove Selected", self._remove_selected_nodes, danger=True, padx=8, pady=2, font=FONT_SM).pack(side="right")
+        self._btn(act_row2, "⚠️ Purge Profile", self._purge_active_profile, danger=True, padx=6, pady=2, font=FONT_SM).pack(side="right", padx=(0, 4))
 
         # ── RIGHT PANE: Brand Detail Editor ───────────────────────────────────
         right_pane = tk.Frame(body, bg=self._t("panel", "#1e1e1e"), padx=14, pady=12)

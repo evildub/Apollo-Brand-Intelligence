@@ -2152,6 +2152,7 @@ class EbayTool(tk.Tk):
     def _apply_full_theme(self):
         t = self.theme
         self.configure(bg=t["bg"])
+        is_bright = t.get("name", "").startswith("⚡") or t.get("name", "").startswith("🪙")
 
         # 1. Background frames
         for f in self.themed_widgets["bg_frames"]:
@@ -2323,6 +2324,53 @@ class EbayTool(tk.Tk):
         self._apply_dark_titlebar()
         self._log(f"Theme switched to: {t['name']}")
 
+    def _ask_string_dialog(self, title, prompt, initialvalue=""):
+        result = [None]
+        t = self.theme
+        win = tk.Toplevel(self)
+        win.title(title)
+        win.configure(bg=t["bg"])
+        win.geometry("400x160")
+        win.resizable(False, False)
+        
+        self._apply_dark_titlebar(win)
+        self._center_window(win, 400, 160)
+        win.transient(self)
+        try:
+            win.grab_set()
+        except Exception:
+            pass
+
+        tk.Label(win, text=prompt, bg=t["bg"], fg=t["text"], font=FONT_NORM).pack(padx=20, pady=(20, 8), anchor="w")
+        
+        entry = tk.Entry(win, bg=t["entry_bg"], fg=t["text"], insertbackground=t["text"], relief="flat", font=FONT_NORM)
+        entry.pack(fill="x", padx=20, pady=4)
+        if initialvalue:
+            entry.insert(0, initialvalue)
+        entry.focus()
+        entry.select_range(0, "end")
+
+        btn_frame = tk.Frame(win, bg=t["bg"])
+        btn_frame.pack(fill="x", padx=20, pady=(12, 0))
+
+        def on_ok(e=None):
+            result[0] = entry.get()
+            try: win.grab_release()
+            except Exception: pass
+            win.destroy()
+
+        def on_cancel(e=None):
+            try: win.grab_release()
+            except Exception: pass
+            win.destroy()
+
+        self._btn(btn_frame, "OK", on_ok, accent=True).pack(side="right", padx=(4, 0))
+        self._btn(btn_frame, "Cancel", on_cancel).pack(side="right")
+        win.bind("<Return>", on_ok)
+        win.bind("<Escape>", on_cancel)
+        win.wait_window()
+        return result[0]
+
     def _load_app_icon(self, window=None):
         """Set application icon for main window or top-level dialog."""
         target = window or self
@@ -2451,9 +2499,15 @@ class EbayTool(tk.Tk):
         except Exception:
             return
 
+        # Throttle to prevent recursive event loops
+        now = time.time()
+        last_t = getattr(target, "_last_dwm_call", 0)
+        if now - last_t < 0.15:
+            return
+        target._last_dwm_call = now
+
         self._load_app_icon(target)
         try:
-            target.update_idletasks()
             w_id = target.winfo_id()
             hwnd = ctypes.windll.user32.GetAncestor(w_id, 2)  # GA_ROOT = 2
             if not hwnd:
@@ -2464,7 +2518,10 @@ class EbayTool(tk.Tk):
             # 1. Immersive dark mode (Windows 10 1809+ / Windows 11) - must use BOOL TRUE (1)
             v_dark = ctypes.c_int(1)
             for attr in (20, 19):
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v_dark), ctypes.sizeof(v_dark))
+                try:
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v_dark), ctypes.sizeof(v_dark))
+                except Exception:
+                    pass
 
             # 2. Windows 11 custom title bar caption, text & border colors (Build 22000+)
             t = self.theme or {}
@@ -2473,56 +2530,54 @@ class EbayTool(tk.Tk):
             border_hex = t.get("border", t.get("panel", "#1e1e1e"))
 
             if bg_hex and len(bg_hex) == 7:
-                r = int(bg_hex[1:3], 16)
-                g = int(bg_hex[3:5], 16)
-                b = int(bg_hex[5:7], 16)
-                color_ref = (b << 16) | (g << 8) | r
-                c_color = ctypes.c_int(color_ref)
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 35, ctypes.byref(c_color), ctypes.sizeof(c_color))
+                try:
+                    r = int(bg_hex[1:3], 16)
+                    g = int(bg_hex[3:5], 16)
+                    b = int(bg_hex[5:7], 16)
+                    color_ref = (b << 16) | (g << 8) | r
+                    c_color = ctypes.c_int(color_ref)
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 35, ctypes.byref(c_color), ctypes.sizeof(c_color))
+                except Exception:
+                    pass
 
             if fg_hex and len(fg_hex) == 7:
-                r = int(fg_hex[1:3], 16)
-                g = int(fg_hex[3:5], 16)
-                b = int(fg_hex[5:7], 16)
-                t_color = (b << 16) | (g << 8) | r
-                c_text = ctypes.c_int(t_color)
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 36, ctypes.byref(c_text), ctypes.sizeof(c_text))
+                try:
+                    r = int(fg_hex[1:3], 16)
+                    g = int(fg_hex[3:5], 16)
+                    b = int(fg_hex[5:7], 16)
+                    t_color = (b << 16) | (g << 8) | r
+                    c_text = ctypes.c_int(t_color)
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 36, ctypes.byref(c_text), ctypes.sizeof(c_text))
+                except Exception:
+                    pass
 
             if border_hex and len(border_hex) == 7:
-                r = int(border_hex[1:3], 16)
-                g = int(border_hex[3:5], 16)
-                b = int(border_hex[5:7], 16)
-                br_color = (b << 16) | (g << 8) | r
-                c_border = ctypes.c_int(br_color)
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(c_border), ctypes.sizeof(c_border))
+                try:
+                    r = int(border_hex[1:3], 16)
+                    g = int(border_hex[3:5], 16)
+                    b = int(border_hex[5:7], 16)
+                    br_color = (b << 16) | (g << 8) | r
+                    c_border = ctypes.c_int(br_color)
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(c_border), ctypes.sizeof(c_border))
+                except Exception:
+                    pass
 
-            # Force immediate non-client area frame redraw so titlebar updates without needing click/deactivate cycle
-            # SWP_NOSIZE (1) | SWP_NOMOVE (2) | SWP_NOZORDER (4) | SWP_NOACTIVATE (16) | SWP_FRAMECHANGED (32) = 0x0037
-            ctypes.windll.user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0037)
+            # Force immediate non-client area frame redraw so titlebar updates
+            try:
+                ctypes.windll.user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0037)
+            except Exception:
+                pass
 
-            # 3. Re-assert dark titlebar on lifecycle/focus changes so Windows does not revert
+            # 3. Only bind to <Map> once so newly mapped windows get dark titlebar without endless loops
             if not getattr(target, "_dwm_focus_bound", False):
                 target._dwm_focus_bound = True
                 def _reassert_dark(e=None):
                     try:
                         if target.winfo_exists():
-                            self.after(20, lambda: self._apply_dark_titlebar(target, schedule_ticks=False))
+                            self.after(50, lambda: self._apply_dark_titlebar(target, schedule_ticks=False))
                     except Exception:
                         pass
                 target.bind("<Map>", _reassert_dark, add="+")
-                target.bind("<FocusIn>", _reassert_dark, add="+")
-                target.bind("<FocusOut>", _reassert_dark, add="+")
-                target.bind("<Activate>", _reassert_dark, add="+")
-                target.bind("<Deactivate>", _reassert_dark, add="+")
-                target.bind("<Visibility>", _reassert_dark, add="+")
-
-            # 4. Staggered post-initialization ticks to catch Windows DWM frame initialization on newly mapped windows
-            if schedule_ticks:
-                for delay in (15, 60, 150, 350):
-                    try:
-                        self.after(delay, lambda: self._apply_dark_titlebar(target, schedule_ticks=False))
-                    except Exception:
-                        pass
         except Exception:
             pass
 

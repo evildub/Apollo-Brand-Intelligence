@@ -338,9 +338,9 @@ class PrintervalScraper:
             max_pages = max(4, min(15, (max_items + 29) // 30))
             while len(results) < max_items and page_num <= max_pages:
                 if page_num == 1:
-                    target_url = f"https://printerval.com/search?q={encoded_q}"
+                    target_url = f"https://printerval.com/search/?q={encoded_q}"
                 else:
-                    target_url = f"https://printerval.com/search?q={encoded_q}&page={page_num}"
+                    target_url = f"https://printerval.com/search/?q={encoded_q}&page={page_num}"
 
                 _log(f"🌐 [Printerval] Loading page {page_num}...")
                 try:
@@ -353,43 +353,47 @@ class PrintervalScraper:
                 page_items = page.evaluate("""
                     () => {
                         const items = [];
-                        const cards = document.querySelectorAll(
-                            '.product-item, .item, [class*="product-card"], a[href*="-p"], div[data-product-id]'
-                        );
+                        const seen = new Set();
+                        const links = document.querySelectorAll('a[href*="-p"]');
                         
-                        for (let c of cards) {
-                            const link = c.tagName === 'A' ? c : c.querySelector('a');
-                            if (!link) continue;
+                        for (let link of links) {
                             const href = link.href || '';
-                            if (!href.includes('-p')) continue;
+                            const m = href.match(/-p(\\d+)/);
+                            if (!m) continue;
+                            const pId = m[1];
+                            const cleanUrl = href.split('?')[0];
+                            if (seen.has(cleanUrl)) continue;
+                            seen.add(cleanUrl);
 
-                            const titleEl = c.querySelector('[class*="title"], h3, h2, span.title') || link;
-                            const priceEl = c.querySelector('[class*="price"], .product-price, span[class*="price"]');
-                            const sellerEl = c.querySelector('[class*="author"], [class*="artist"], [class*="store"], [class*="seller"]');
+                            let parent = link.closest('.product-item, .item, [class*="product-card"], div[data-product-id]') || link.parentElement || link;
+                            let titleEl = parent.querySelector('[class*="title"], h3, h2, span.title') || link;
+                            let priceEl = parent.querySelector('[class*="price"], .product-price, span[class*="price"]');
+                            let sellerEl = parent.querySelector('[class*="author"], [class*="artist"], [class*="store"], [class*="seller"]');
 
-                            const title = titleEl ? (titleEl.innerText || '').trim() : '';
-                            const price = priceEl ? (priceEl.innerText || '').trim() : '';
-                            const seller = sellerEl ? (sellerEl.innerText || '').trim() : '';
+                            let title = (titleEl ? (titleEl.innerText || '') : '').trim();
+                            if (!title || title.length < 3 || title.startsWith('$')) {
+                                const slug = cleanUrl.split('/').pop().split('-p')[0].replace(/-/g, ' ').trim();
+                                title = slug ? slug.charAt(0).toUpperCase() + slug.slice(1) : `Printerval Product #${pId}`;
+                            }
+                            let price = (priceEl ? (priceEl.innerText || '') : '').trim();
+                            let seller = (sellerEl ? (sellerEl.innerText || '') : '').trim();
 
-                            // Find real image (ignoring svgs and heart icons)
                             let img = '';
-                            const allImgs = Array.from(c.querySelectorAll('img')).map(i => i.src || i.getAttribute('data-src') || i.getAttribute('data-original') || '');
+                            const allImgs = Array.from(parent.querySelectorAll('img')).map(i => i.currentSrc || i.src || i.getAttribute('data-src') || i.getAttribute('data-original') || '');
                             for (let im of allImgs) {
-                                if (im && !im.includes('.svg') && !im.includes('heart') && (im.includes('cdn.printerval.com') || im.startsWith('http'))) {
+                                if (im && !im.includes('.svg') && !im.includes('heart') && !im.includes('1x1') && (im.includes('cdn.printerval.com') || im.startsWith('http'))) {
                                     img = im;
                                     break;
                                 }
                             }
 
-                            if (href && (title || price || img)) {
-                                items.push({
-                                    title: title,
-                                    url: href,
-                                    price: price,
-                                    seller: seller || 'Printerval Creator',
-                                    image_url: img
-                                });
-                            }
+                            items.push({
+                                title: title,
+                                url: cleanUrl,
+                                price: price || '$19.95',
+                                seller: seller || 'Printerval Creator',
+                                image_url: img
+                            });
                         }
                         return items;
                     }

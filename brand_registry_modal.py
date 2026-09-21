@@ -50,6 +50,7 @@ class BrandRegistryModal(tk.Toplevel):
         self._selected_sub = None
         self._selected_model = None
         self._filter_query = ""
+        self._drag_data = None
 
         self._setup_tree_styles()
         self._build_header()
@@ -361,6 +362,13 @@ class BrandRegistryModal(tk.Toplevel):
 
         self.brand_tree.bind("<<TreeviewSelect>>", self._on_tree_selected)
         self.brand_tree.bind("<Double-1>", lambda e: self._on_tree_double_click())
+        self.brand_tree.bind("<ButtonPress-1>", self._on_brand_drag_start)
+        self.brand_tree.bind("<B1-Motion>", self._on_brand_drag_motion)
+        self.brand_tree.bind("<ButtonRelease-1>", self._on_brand_drag_release)
+        self.brand_tree.bind("<Alt-Up>", lambda e: self._move_brand(-1))
+        self.brand_tree.bind("<Alt-Down>", lambda e: self._move_brand(1))
+        self.brand_tree.bind("<Control-Up>", lambda e: self._move_brand(-1))
+        self.brand_tree.bind("<Control-Down>", lambda e: self._move_brand(1))
 
         # Left Toolbar Actions (2 Organized, Roomy Rows)
         act_box = tk.Frame(left_pane, bg=self._t("bg", "#121212"), pady=4)
@@ -961,28 +969,118 @@ class BrandRegistryModal(tk.Toplevel):
         if self.on_save_callback:
             self.on_save_callback()
 
+    def _on_brand_drag_start(self, event):
+        item = self.brand_tree.identify_row(event.y)
+        if item:
+            self._drag_data = {
+                "item": item,
+                "y": event.y,
+                "dragging": False
+            }
+        else:
+            self._drag_data = None
+
+    def _on_brand_drag_motion(self, event):
+        if not self._drag_data:
+            return
+        if abs(event.y - self._drag_data["y"]) > 4:
+            self._drag_data["dragging"] = True
+            hover_item = self.brand_tree.identify_row(event.y)
+            if hover_item and hover_item != self._drag_data["item"]:
+                parent_drag = self.brand_tree.parent(self._drag_data["item"])
+                parent_hover = self.brand_tree.parent(hover_item)
+                if parent_drag == parent_hover:
+                    self.brand_tree.config(cursor="fleur")
+                    return
+            self.brand_tree.config(cursor="arrow")
+
+    def _on_brand_drag_release(self, event):
+        self.brand_tree.config(cursor="arrow")
+        if not self._drag_data or not self._drag_data.get("dragging"):
+            self._drag_data = None
+            return
+
+        drag_item = self._drag_data["item"]
+        target_item = self.brand_tree.identify_row(event.y)
+        self._drag_data = None
+
+        if not target_item or target_item == drag_item:
+            return
+
+        parent_drag = self.brand_tree.parent(drag_item)
+        parent_target = self.brand_tree.parent(target_item)
+
+        # Only allow reordering among siblings under the same parent
+        if parent_drag == parent_target:
+            target_idx = self.brand_tree.index(target_item)
+            self.brand_tree.move(drag_item, parent_drag, target_idx)
+            self._save_tree_order(parent_drag)
+            self.brand_tree.selection_set(drag_item)
+            raw_text = self.brand_tree.item(drag_item, "text")
+            clean_name = re.sub(r"^[🏢🏷📦]\s*", "", raw_text).strip()
+            self._set_status(f"↕ Reordered brand item: '{clean_name}'")
+            if self.on_save_callback:
+                self.on_save_callback()
+
+    def _save_tree_order(self, parent_id: str):
+        """Persist current Treeview order to DataStore for parent brands, sub-brands, or models."""
+        if not self.data_store:
+            return
+        if not parent_id:
+            # Root parent brands
+            parents = [re.sub(r"^[🏢🏷📦]\s*", "", self.brand_tree.item(c, "text")).strip()
+                       for c in self.brand_tree.get_children("")]
+            self.data_store.reorder_parent_brands(parents)
+        else:
+            grandparent_id = self.brand_tree.parent(parent_id)
+            if not grandparent_id:
+                # parent_id is a Parent Brand
+                parent_name = re.sub(r"^[🏢🏷📦]\s*", "", self.brand_tree.item(parent_id, "text")).strip()
+                subs = []
+                models = []
+                for c in self.brand_tree.get_children(parent_id):
+                    vals = self.brand_tree.item(c, "values")
+                    c_type = vals[0] if vals else "Model"
+                    c_name = re.sub(r"^[🏢🏷📦]\s*", "", self.brand_tree.item(c, "text")).strip()
+                    if c_type == "Sub-Brand":
+                        subs.append(c_name)
+                    else:
+                        models.append(c_name)
+                if subs:
+                    self.data_store.reorder_subs(parent_name, subs)
+                if models:
+                    self.data_store.reorder_models(parent_name, "", models)
+            else:
+                # parent_id is a Sub-Brand under grandparent Parent Brand
+                grandparent_name = re.sub(r"^[🏢🏷📦]\s*", "", self.brand_tree.item(grandparent_id, "text")).strip()
+                sub_name = re.sub(r"^[🏢🏷📦]\s*", "", self.brand_tree.item(parent_id, "text")).strip()
+                models = [re.sub(r"^[🏢🏷📦]\s*", "", self.brand_tree.item(c, "text")).strip()
+                          for c in self.brand_tree.get_children(parent_id)]
+                if models:
+                    self.data_store.reorder_models(grandparent_name, sub_name, models)
+
     def _move_brand(self, direction: int):
         sel = self.brand_tree.selection()
         if not sel:
-            return
+            return "break"
         item_id = sel[0]
         parent_id = self.brand_tree.parent(item_id)
-        if parent_id:
-            return  # Move currently applies to parent brands
-        raw_text = self.brand_tree.item(item_id)["text"]
-        brand_name = re.sub(r"^[🏢🏷📦]\s*", "", raw_text).strip()
-
-        brands = list(self.data_store.get_brands().keys())
-        if brand_name not in brands:
-            return
-        idx = brands.index(brand_name)
+        children = list(self.brand_tree.get_children(parent_id))
+        if item_id not in children:
+            return "break"
+        idx = children.index(item_id)
         new_idx = idx + direction
-        if 0 <= new_idx < len(brands):
-            brands[idx], brands[new_idx] = brands[new_idx], brands[idx]
-            self.data_store.reorder_parent_brands(brands)
-            self._populate_brand_tree()
+        if 0 <= new_idx < len(children):
+            self.brand_tree.move(item_id, parent_id, new_idx)
+            self._save_tree_order(parent_id)
+            self.brand_tree.see(item_id)
+            self.brand_tree.selection_set(item_id)
+            raw_text = self.brand_tree.item(item_id, "text")
+            clean_name = re.sub(r"^[🏢🏷📦]\s*", "", raw_text).strip()
+            self._set_status(f"Moved '{clean_name}' {'up' if direction < 0 else 'down'}.")
             if self.on_save_callback:
                 self.on_save_callback()
+        return "break"
 
     # ── Bulk Import Execution ─────────────────────────────────────────────────
     def _execute_bulk_import(self):

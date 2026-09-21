@@ -52,26 +52,134 @@ class ThreadlessScraper:
         self.headless = headless
         self.session_vault = session_vault
         self.user_dir = os.path.abspath("data/threadless_session")
+        self.cookie_file = os.path.abspath("data/threadless_cookies.json")
         os.makedirs(self.user_dir, exist_ok=True)
+        os.makedirs(os.path.dirname(self.cookie_file), exist_ok=True)
 
-    def _get_context(self, p):
-        """Create persistent browser context with stealth scripts."""
+    def _clean_profile_locks(self):
+        """Safely remove orphaned browser lockfiles from persistent profile."""
+        if not os.path.exists(self.user_dir):
+            return
+        for fname in ["SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"]:
+            fpath = os.path.join(self.user_dir, fname)
+            try:
+                if os.path.exists(fpath):
+                    os.remove(fpath)
+            except Exception:
+                pass
+
+    def _get_context(self, p, force_visible: bool = False, window_pos: Optional[tuple] = None, window_size: Optional[tuple] = None):
+        """Create browser context with stealth anti-detection parameters and cookie restoration."""
+        self._clean_profile_locks()
         extra_args = [
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
-            "--disable-dev-shm-usage"
+            "--disable-infobars",
+            "--disable-dev-shm-usage",
+            "--no-first-run",
+            "--no-default-browser-check"
         ]
-        if self.headless:
+
+        if window_pos and len(window_pos) == 2:
+            extra_args.append(f"--window-position={window_pos[0]},{window_pos[1]}")
+        elif self.headless and not force_visible:
             extra_args.append("--window-position=-2400,-2400")
 
-        context = p.chromium.launch_persistent_context(
-            self.user_dir,
-            headless=False if self.headless else False,
-            channel="msedge",
-            args=extra_args,
-            viewport={"width": 1366, "height": 768}
-        )
+        w_size = window_size if (window_size and len(window_size) == 2) else (1366, 850)
+
+        # Attempt to launch persistent context; if locked by an active session, fallback to fresh launch
+        context = None
+        try:
+            context = p.chromium.launch_persistent_context(
+                self.user_dir,
+                headless=False if force_visible else (False if self.headless else False),
+                channel="msedge",
+                args=extra_args,
+                ignore_default_args=["--enable-automation"],
+                viewport={"width": w_size[0], "height": w_size[1]}
+            )
+        except Exception as pe:
+            logger.debug(f"Persistent context locked or unavailable ({pe}), falling back to standard launch with cookies...")
+            browser = p.chromium.launch(
+                headless=False if force_visible else (False if self.headless else False),
+                channel="msedge",
+                args=extra_args,
+                ignore_default_args=["--enable-automation"]
+            )
+            context = browser.new_context(viewport={"width": w_size[0], "height": w_size[1]})
+
+        # Load saved cookies if available
+        if os.path.exists(self.cookie_file):
+            try:
+                with open(self.cookie_file, "r", encoding="utf-8") as f:
+                    cookies = json.load(f)
+                    if isinstance(cookies, list) and cookies:
+                        valid_cookies = [c for c in cookies if isinstance(c, dict) and "threadless" in c.get("domain", "")]
+                        if valid_cookies:
+                            context.add_cookies(valid_cookies)
+            except Exception as ce:
+                logger.debug(f"Could not restore Threadless cookies: {ce}")
+
         return context
+
+    def launch_interactive_auth(self, window_pos: tuple = (100, 100), window_size: tuple = (1100, 800)):
+        """
+        Open a single visible browser session for the analyst to solve Cloudflare Turnstile verification
+        or log in, persisting clearance tokens permanently for subsequent scans.
+        """
+        self._clean_profile_locks()
+        time.sleep(0.3)
+
+        try:
+            with sync_playwright() as p:
+                context = self._get_context(p, force_visible=True, window_pos=window_pos, window_size=window_size)
+                page = context.pages[0] if context.pages else context.new_page()
+
+                page.add_init_script("""
+                    delete navigator.__proto__.webdriver;
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true });
+                    window.chrome = { runtime: {}, app: {}, csi: () => {}, loadTimes: () => {} };
+                """)
+
+                try:
+                    # Navigate directly to apparel search/shop endpoint where Turnstile clearance is established
+                    page.goto("https://www.threadless.com/shop/+apparel", wait_until="domcontentloaded", timeout=45000)
+                    logger.info("Threadless interactive authentication window opened.")
+                except Exception as e:
+                    logger.warning(f"Threadless interactive auth navigation note: {e}")
+
+                # Keep browser alive until user completes verification and manually closes the window
+                while True:
+                    try:
+                        if not context.pages or all(pg.is_closed() for pg in context.pages):
+                            break
+                        # Periodically save cookies as user navigates
+                        try:
+                            cks = context.cookies()
+                            if cks:
+                                with open(self.cookie_file, "w", encoding="utf-8") as cf:
+                                    json.dump(cks, cf, indent=2)
+                        except Exception:
+                            pass
+                        time.sleep(1.0)
+                    except Exception:
+                        break
+
+                try:
+                    cookies = context.cookies()
+                    if cookies:
+                        with open(self.cookie_file, "w", encoding="utf-8") as cf:
+                            json.dump(cookies, cf, indent=2)
+                        logger.info(f"Saved {len(cookies)} Threadless cookies from interactive auth.")
+                except Exception as ce:
+                    logger.warning(f"Failed to dump Threadless cookies: {ce}")
+
+                try:
+                    context.close()
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"Threadless interactive auth session error: {e}")
 
     def search(
         self,
@@ -108,7 +216,11 @@ class ThreadlessScraper:
             with sync_playwright() as p:
                 context = self._get_context(p)
                 page = context.pages[0] if context.pages else context.new_page()
-                page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+                page.add_init_script("""
+                    delete navigator.__proto__.webdriver;
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true });
+                    window.chrome = { runtime: {}, app: {}, csi: () => {}, loadTimes: () => {} };
+                """)
 
                 for page_num in range(1, depth_pages + 1):
                     enc_q = urllib.parse.quote_plus(clean_q)
@@ -116,19 +228,48 @@ class ThreadlessScraper:
                         clean_store = store_filter.strip().lstrip("@")
                         search_url = f"https://{clean_store}.threadless.com/?page={page_num}"
                     else:
-                        search_url = f"https://www.threadless.com/search/?q={enc_q}&page={page_num}"
+                        search_url = f"https://www.threadless.com/shop/+{enc_q}/?page={page_num}"
 
                     _status(f"🧵 [Threadless] Fetching page {page_num}/{depth_pages}...")
                     _log(f"🧵 [Threadless] Navigating to: {search_url}")
 
                     try:
-                        resp = page.goto(search_url, wait_until="domcontentloaded", timeout=25000)
-                        for _ in range(3):
-                            page.evaluate("window.scrollBy(0, 1000);")
-                            time.sleep(0.4)
-                        time.sleep(1.0)
+                        page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
                     except Exception as nav_e:
-                        _log(f"⚠ [Threadless] Navigation warning on page {page_num}: {nav_e}")
+                        _log(f"⚠ [Threadless] Navigation note on page {page_num}: {nav_e}")
+
+                    # Check for Cloudflare challenge
+                    curr_title = page.title()
+                    if "Just a moment..." in curr_title or "Attention Required!" in curr_title or "Cloudflare" in curr_title:
+                        _log("🛡️ [Threadless] Cloudflare challenge detected. Waiting for clearance...")
+                        for _ in range(25):
+                            page.wait_for_timeout(1000)
+                            curr_title = page.title()
+                            if "Just a moment..." not in curr_title and "Attention Required!" not in curr_title and "Cloudflare" not in curr_title and "Loading" not in curr_title:
+                                _log("✅ [Threadless] Cloudflare challenge passed!")
+                                break
+
+                        curr_title = page.title()
+                        if "Just a moment..." in curr_title or "Attention Required!" in curr_title or "Cloudflare" in curr_title:
+                            _log("🛡️ [Threadless] Cloudflare security challenge active.")
+                            _log("💡 [Threadless] Please click the '🧵 Threadless Connect' button in the toolbar to solve the verification once, then restart your scan.")
+                            break
+
+                    # Wait for Algolia InstantSearch / Hydrogen hydration
+                    try:
+                        page.wait_for_selector(".search-result-card, .ais-Hits-item, a[href*='/design/']", timeout=8000)
+                    except Exception:
+                        pass
+
+                    time.sleep(1.5)
+                    # Scroll down smoothly to trigger lazy-loaded images and cards
+                    for _ in range(4):
+                        try:
+                            page.evaluate("window.scrollBy(0, 900);")
+                        except Exception:
+                            pass
+                        time.sleep(0.4)
+                    time.sleep(1.0)
 
                     html = page.content()
                     page_items = self._parse_search_page(html)
@@ -139,6 +280,15 @@ class ThreadlessScraper:
                         if u and u not in seen_urls:
                             seen_urls.add(u)
                             results.append(it)
+
+                    # Save active cookies
+                    try:
+                        active_cookies = context.cookies()
+                        if active_cookies:
+                            with open(self.cookie_file, "w", encoding="utf-8") as cf:
+                                json.dump(active_cookies, cf, indent=2)
+                    except Exception:
+                        pass
 
                     if len(page_items) == 0:
                         _log(f"🧵 [Threadless] No more listings found on page {page_num}. Ending sweep.")
@@ -157,20 +307,25 @@ class ThreadlessScraper:
         return results
 
     def _parse_search_page(self, html: str) -> List[Dict[str, Any]]:
-        """Parse Threadless search grid into structured item dictionaries."""
+        """Parse Threadless modern Hydrogen / Algolia search grid and classic cards into structured item dictionaries."""
         items = []
         soup = BeautifulSoup(html, "html.parser")
 
-        # Select product cards
-        cards = soup.select(".catalog-item, .product-card, div[data-product], a[href*='/product/'], div[class*='ProductCard'], div[class*='product_tile']")
+        # Decompose header, footer, and navigation menus so header artist links never contaminate search results
+        for el in soup.select("header, nav, footer, .sub-menu, .threadless-header-menu-artists, .threadless-header"):
+            el.decompose()
+
+        # Match modern Algolia InstantSearch cards or classic search containers
+        cards = soup.select(".search-result-card, .ais-Hits-item, .catalog-item, .product-card, div[data-product]")
         if not cards:
-            cards = soup.select("div[class*='product'], div[class*='item-cell'], a[href*='threadless.com/designs/']")
+            # Fallback to direct design link anchors
+            cards = soup.select("a[href*='/design/'], a[href*='/designs/'], a[href*='/product/']")
 
         seen_on_page = set()
 
         for card in cards:
             try:
-                link_el = card if card.name == "a" else card.select_one("a[href*='/product/'], a[href*='/designs/'], a[href^='/']")
+                link_el = card if card.name == "a" else card.select_one(".search-result-link, a[href*='/design/'], a[href*='/designs/'], a[href*='/product/'], a[href^='/shop/']")
                 if not link_el or not link_el.get("href"):
                     continue
 
@@ -178,74 +333,110 @@ class ThreadlessScraper:
                 if not href.startswith("http"):
                     href = f"https://www.threadless.com{href}"
 
-                if any(x in href for x in ("/cart", "/checkout", "/help", "/artist-shops", "/login", "/signup")):
+                if any(x in href for x in ("/cart", "/checkout", "/help", "/artist-shops", "/login", "/signup", "/privacy", "/terms", "/about", "/designs/submit")):
                     continue
 
-                clean_url = href.split("?")[0] if "?" in href else href
+                clean_url = href.split("?")[0].split("#")[0]
                 if clean_url in seen_on_page:
                     continue
-                seen_on_page.add(clean_url)
 
-                # Extract Item ID
+                # Must be a design or product page
+                if not any(k in clean_url for k in ["/design/", "/designs/", "/product/"]) and "/shop/@" not in clean_url:
+                    continue
+
+                seen_on_page.add(clean_url)
+                container = card if card.name != "a" else (card.find_parent("div", class_=lambda c: c and "search-result" in c) or card.find_parent("li") or card)
+
+                # 1. Extract Item ID / Design Slug
                 item_id = ""
-                id_m = re.search(r"/product/(\d+)", clean_url) or re.search(r"/designs/([^/]+)", clean_url)
+                id_m = re.search(r'/design/([^/?#]+)', clean_url) or re.search(r'/designs/([^/?#]+)', clean_url) or re.search(r'/product/([^/?#]+)', clean_url)
                 if id_m:
                     item_id = id_m.group(1)
 
-                # Extract Title
+                # 2. Extract Seller / Artist Name
+                seller = "Threadless Artist"
+                artist_slug = ""
+                seller_m = re.search(r'/@([^/?#]+)', clean_url)
+                if seller_m:
+                    artist_slug = seller_m.group(1)
+                    seller = artist_slug.replace("_", " ").title()
+
+                # Check title container for explicit "by <Artist>"
+                title_container = container.select_one(".search-result-title, .product-title, [class*='title']")
+                if title_container:
+                    t_full = title_container.get_text(separator=" ", strip=True)
+                    by_m = re.search(r'\bby\s+([A-Za-z0-9_\-\s]+)$', t_full, flags=re.IGNORECASE)
+                    if by_m:
+                        seller = by_m.group(1).strip()
+
+                # 3. Extract Title
                 title = ""
-                title_el = card.select_one("[class*='title'], [class*='Title'], .product-title, h3, h4")
-                if title_el:
-                    title = title_el.get_text(strip=True)
-                if not title and link_el.get("title"):
-                    title = link_el["title"].strip()
+                if title_container:
+                    strong_el = title_container.find("strong")
+                    if strong_el:
+                        title = strong_el.get_text(strip=True)
+                    else:
+                        t_txt = title_container.get_text(strip=True)
+                        t_txt = re.sub(r'\s+by\s+.*$', '', t_txt, flags=re.IGNORECASE)
+                        title = t_txt.strip()
+
                 if not title and link_el.get("aria-label"):
                     title = link_el["aria-label"].strip()
-                if not title:
-                    img_el = card.select_one("img")
-                    if img_el and img_el.get("alt"):
-                        title = img_el["alt"].strip()
-                if not title:
-                    slug = clean_url.rstrip("/").split("/")[-1]
-                    slug_clean = re.sub(r"-\d+$", "", slug)
-                    title = slug_clean.replace("-", " ").replace("_", " ").title()
 
-                title = re.sub(r"\s+", " ", title).strip()
-                if not title or len(title) < 3:
+                img_el = container.find("img")
+                if not title and img_el and img_el.get("alt"):
+                    title = img_el["alt"].strip()
+
+                if not title and item_id:
+                    title = item_id.replace("-", " ").replace("_", " ").title()
+
+                title = re.sub(r'\s+', ' ', title).strip()
+                if not title or len(title) < 2 or title.lower() in ("cart", "search", "menu", "products", "designs"):
                     continue
 
-                # Extract Price
-                price = "$24.95"
-                price_el = card.select_one("[class*='price'], [class*='Price'], .product-price")
-                if price_el:
-                    p_txt = price_el.get_text(strip=True)
-                    p_m = re.search(r"\$\d+(?:\.\d{2})?", p_txt)
-                    if p_m:
-                        price = p_m.group(0)
-
-                # Extract Seller / Artist Name
-                seller = "Threadless Artist"
-                seller_el = card.select_one("a[href*='/@'], [class*='artist'], [class*='designer'], [class*='creator']")
-                if seller_el:
-                    s_txt = seller_el.get_text(strip=True)
-                    if s_txt:
-                        seller = re.sub(r"^(?:by|By|from|From|Shop:?)\s*", "", s_txt, flags=re.IGNORECASE).strip()
-
-                # Extract Image URL
+                # 4. Extract Image URL
                 image_url = ""
-                img_el = card.select_one("img")
                 if img_el:
-                    for attr in ["src", "data-src", "data-original", "data-srcset"]:
-                        val = img_el.get(attr)
-                        if val and "http" in val:
-                            image_url = val
-                            break
+                    src = img_el.get("src", "").strip()
+                    if src and (src.startswith("http") or src.startswith("/")):
+                        if not src.startswith("http"):
+                            src = f"https://www.threadless.com{src}"
+                        image_url = src
+                    elif img_el.get("srcset"):
+                        srcset = img_el.get("srcset", "").strip()
+                        parts = [p.strip().split(" ")[0] for p in srcset.split(",") if p.strip()]
+                        if parts:
+                            cand = parts[-1]
+                            if not cand.startswith("http"):
+                                cand = f"https://www.threadless.com{cand}"
+                            image_url = cand
+                    elif img_el.get("data-src"):
+                        dsrc = img_el.get("data-src", "").strip()
+                        if dsrc:
+                            if not dsrc.startswith("http"):
+                                dsrc = f"https://www.threadless.com{dsrc}"
+                            image_url = dsrc
+
+                # If image_url has maestro.threadless.com, ensure it has a valid width parameter
+                if "maestro.threadless.com" in image_url:
+                    if "preset=" in image_url:
+                        image_url = re.sub(r'\?preset=[^&]*', '?width=600', image_url)
+                    elif "?" not in image_url:
+                        image_url = f"{image_url}?width=600"
+                elif not image_url and artist_slug and item_id:
+                    image_url = f"https://maestro.threadless.com/api/v1/image/artist/{artist_slug}/design/{item_id}?width=600"
+
+                # 5. Extract Price
+                price = "$24.95"
+                p_match = re.search(r'\$\s*(\d+(?:\.\d{2})?)', container.get_text())
+                if p_match:
+                    price = f"${p_match.group(1)}"
 
                 items.append({
                     "title": title,
                     "url": clean_url,
                     "price": price,
-                    "item_id": item_id,
+                    "item_id": item_id or "threadless_item",
                     "seller": seller,
                     "platform": "threadless",
                     "thumbnail": image_url,

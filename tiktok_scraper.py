@@ -21,6 +21,7 @@ import threading
 import urllib.parse
 import urllib.request
 from typing import List, Dict, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
 
 try:
@@ -643,39 +644,8 @@ class TikTokScraper:
                 context = p.chromium.launch_persistent_context(self.profile_dir, **launch_kwargs)
                 page = context.pages[0] if context.pages else context.new_page()
                 page.goto(item_url, wait_until="domcontentloaded", timeout=30000)
-                time.sleep(2.0)
 
-                # Scroll down in stages to trigger lazy-loaded carousels and recommendation sections
-                for _ in range(6):
-                    try:
-                        page.evaluate("window.scrollBy(0, 1000);")
-                    except Exception:
-                        pass
-                    time.sleep(0.5)
-
-                try:
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-                except Exception:
-                    pass
-                time.sleep(1.0)
-
-                # Auto-recover target image hash if not provided initially
-                if not target_hash and HAS_PIL:
-                    try:
-                        target_img_src = page.evaluate("""() => {
-                            const meta = document.querySelector('meta[property="og:image"]');
-                            if (meta && meta.content) return meta.content;
-                            return '';
-                        }""")
-                        if target_img_src and str(target_img_src).startswith("http"):
-                            req = urllib.request.Request(str(target_img_src), headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                            with urllib.request.urlopen(req, timeout=5) as r:
-                                t_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
-                                target_hash = self.compute_dhash(t_img)
-                    except Exception:
-                        pass
-
-                raw_carousels = page.evaluate("""() => {
+                extract_script = """() => {
                     const res = [];
                     const seen = new Set();
 
@@ -811,11 +781,98 @@ class TikTokScraper:
                     }
 
                     return res;
-                }""")
+                }"""
 
-                context.close()
+                # Auto-recover target image hash if not provided initially
+                if not target_hash and HAS_PIL:
+                    try:
+                        target_img_src = page.evaluate("""() => {
+                            const meta = document.querySelector('meta[property="og:image"]');
+                            if (meta && meta.content) return meta.content;
+                            return '';
+                        }""")
+                        if target_img_src and str(target_img_src).startswith("http"):
+                            req = urllib.request.Request(str(target_img_src), headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                            with urllib.request.urlopen(req, timeout=3) as r:
+                                t_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
+                                target_hash = self.compute_dhash(t_img)
+                    except Exception:
+                        pass
 
-                # Process harvested cards and calculate visual match similarity
+                # Fast active carousel harvesting with inactivity early exit
+                raw_carousels = []
+                last_count = 0
+                last_change_time = time.time()
+                max_scan_duration = 5.0
+                idle_threshold = 1.5
+                start_scan = time.time()
+
+                for step in range(8):
+                    if time.time() - start_scan > max_scan_duration:
+                        break
+                    try:
+                        page.evaluate(f"window.scrollBy(0, {(step + 1) * 600});")
+                    except Exception:
+                        pass
+                    time.sleep(0.35)
+
+                    try:
+                        current_cards = page.evaluate(extract_script)
+                    except Exception:
+                        current_cards = []
+
+                    if len(current_cards) > last_count:
+                        last_count = len(current_cards)
+                        last_change_time = time.time()
+                        raw_carousels = current_cards
+                    elif last_count > 0 and (time.time() - last_change_time >= idle_threshold):
+                        break
+
+                if not raw_carousels:
+                    try:
+                        raw_carousels = page.evaluate(extract_script)
+                    except Exception:
+                        pass
+
+                # Close browser context immediately to release resources & close window
+                try:
+                    context.close()
+                except Exception:
+                    pass
+
+                # Parallel dHash calculation for harvested cards
+                card_similarities = {}
+                if target_hash and raw_carousels and HAS_PIL:
+                    def _calc_similarity(card):
+                        c_id = str(card.get("id", "")).strip()
+                        img_url = card.get("image_url", "")
+                        default_lbl = card.get("network_type", "Carousel Asset")
+                        if not img_url or not img_url.startswith("http"):
+                            return c_id, default_lbl
+                        try:
+                            req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                            with urllib.request.urlopen(req, timeout=1.8) as r:
+                                c_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
+                                c_hash = self.compute_dhash(c_img)
+                                dist = self.hamming_distance(target_hash, c_hash)
+                                if dist <= 8:
+                                    return c_id, f"🎯 Exact Visual Clone (d={dist})"
+                                elif dist <= 16:
+                                    return c_id, f"🖼 Visual Match (d={dist})"
+                        except Exception:
+                            pass
+                        return c_id, default_lbl
+
+                    with ThreadPoolExecutor(max_workers=10) as executor:
+                        futures = [executor.submit(_calc_similarity, c) for c in raw_carousels]
+                        for f in as_completed(futures):
+                            try:
+                                cid, sim = f.result()
+                                card_similarities[cid] = sim
+                            except Exception:
+                                pass
+
+                # Process harvested cards and build results
                 for card in raw_carousels:
                     c_id = str(card.get("id", "")).strip()
                     if c_id in seen_ids:
@@ -823,24 +880,9 @@ class TikTokScraper:
                     seen_ids.add(c_id)
 
                     img_url = card.get("image_url", "")
-                    similarity_lbl = card.get("network_type", "Carousel Asset")
-
-                    # Perceptual Image Matching against target photo
-                    if target_hash and img_url and img_url.startswith("http") and HAS_PIL:
-                        try:
-                            req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                            with urllib.request.urlopen(req, timeout=3.5) as r:
-                                c_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
-                                c_hash = self.compute_dhash(c_img)
-                                dist = self.hamming_distance(target_hash, c_hash)
-                                if dist <= 8:
-                                    similarity_lbl = f"🎯 Exact Visual Clone (d={dist})"
-                                elif dist <= 16:
-                                    similarity_lbl = f"🖼 Visual Match (d={dist})"
-                        except Exception:
-                            pass
-
+                    similarity_lbl = card_similarities.get(c_id, card.get("network_type", "Carousel Asset"))
                     s_name = card.get("seller") or "TikTok Shop Merchant"
+
                     discovered.append({
                         "brand": "",
                         "product_type": "",

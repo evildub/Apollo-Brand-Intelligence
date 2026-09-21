@@ -176,105 +176,109 @@ class PrintervalScraper:
                     except Exception:
                         pass
 
-    def _get_context(self, force_visible: bool = False, window_pos: tuple = (100, 100), window_size: tuple = (1100, 800)):
-        """Initialize or return existing persistent Playwright context with stealth evasions."""
+    def _get_context(self, p=None, force_visible: bool = False, window_pos: tuple = (100, 100), window_size: tuple = (1100, 800)):
+        """Initialize and return a persistent Playwright context with stealth evasions."""
         from playwright.sync_api import sync_playwright
-        if self._context is None:
+        if p is None:
+            p = sync_playwright().start()
+
+        self._clean_profile_locks()
+        edge_path = self._find_edge_path()
+
+        args = [
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",
+            "--disable-infobars",
+            "--disable-dev-shm-usage",
+        ]
+
+        # Cloudflare Evasion: Never run headless=True on Cloudflare-protected sites. Position window offscreen when stealth mode is requested.
+        is_headless = False
+        if self.headless and not force_visible:
+            args.extend(["--window-position=-2400,-2400", "--window-size=1366,850"])
+        elif force_visible:
+            args.extend([f"--window-position={window_pos[0]},{window_pos[1]}", f"--window-size={window_size[0]},{window_size[1]}"])
+
+        kwargs = {
+            "user_data_dir": self.profile_dir,
+            "headless": is_headless,
+            "args": args,
+            "viewport": {"width": window_size[0] if force_visible else 1366, "height": window_size[1] if force_visible else 850},
+            "locale": "en-US",
+            "ignore_default_args": ["--enable-automation"],
+        }
+        if edge_path:
+            kwargs["executable_path"] = edge_path
+        else:
+            kwargs["channel"] = "msedge"
+
+        try:
+            context = p.chromium.launch_persistent_context(**kwargs)
+        except Exception as e:
+            logger.warning(f"Persistent context launch retry after process cleanup: {e}")
             self._clean_profile_locks()
-            if self._pw is None:
-                self._pw = sync_playwright().start()
-            edge_path = self._find_edge_path()
-
-            args = [
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-infobars",
-                "--disable-dev-shm-usage",
-            ]
-
-            # Cloudflare Evasion: Never run headless=True on Cloudflare-protected sites. Position window offscreen when stealth mode is requested.
-            is_headless = False
-            if self.headless and not force_visible:
-                args.extend(["--window-position=-2400,-2400", "--window-size=1366,850"])
-            elif force_visible:
-                args.extend([f"--window-position={window_pos[0]},{window_pos[1]}", f"--window-size={window_size[0]},{window_size[1]}"])
-
-            kwargs = {
-                "user_data_dir": self.profile_dir,
-                "headless": is_headless,
-                "args": args,
-                "viewport": {"width": window_size[0] if force_visible else 1366, "height": window_size[1] if force_visible else 850},
-                "locale": "en-US",
-                "ignore_default_args": ["--enable-automation"],
-            }
-            if edge_path:
-                kwargs["executable_path"] = edge_path
-            else:
-                kwargs["channel"] = "msedge"
-
+            time.sleep(0.6)
             try:
-                self._context = self._pw.chromium.launch_persistent_context(**kwargs)
-            except Exception as e:
-                logger.warning(f"Persistent context launch retry after process cleanup: {e}")
-                self._clean_profile_locks()
-                time.sleep(0.6)
-                self._context = self._pw.chromium.launch_persistent_context(**kwargs)
+                context = p.chromium.launch_persistent_context(**kwargs)
+            except Exception:
+                import tempfile
+                temp_profile = tempfile.mkdtemp(prefix="pv_edge_session_")
+                kwargs["user_data_dir"] = temp_profile
+                context = p.chromium.launch_persistent_context(**kwargs)
 
-        return self._context
+        return context
 
     def launch_interactive_auth(self, window_pos: tuple = (100, 100), window_size: tuple = (1100, 800)):
         """
         Open a visible browser session for the analyst to solve the initial
         Cloudflare security check or accept cookies, persisting clearance tokens permanently.
         """
-        self.close()
+        from playwright.sync_api import sync_playwright
         self._clean_profile_locks()
-        time.sleep(0.5)
-
-        context = self._get_context(force_visible=True, window_pos=window_pos, window_size=window_size)
-        page = context.pages[0] if context.pages else context.new_page()
-
-        page.add_init_script("""
-            delete navigator.__proto__.webdriver;
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true });
-            window.chrome = { runtime: {}, app: {}, csi: () => {}, loadTimes: () => {} };
-        """)
+        time.sleep(0.3)
 
         try:
-            # First load homepage to establish base session cookies
-            page.goto("https://printerval.com", wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(1500)
-            # Then navigate directly to search endpoint where Cloudflare challenge is triggered
-            page.goto("https://printerval.com/search?q=apparel", wait_until="domcontentloaded", timeout=30000)
-            logger.info("Printerval interactive authentication window opened to search endpoint.")
-        except Exception as e:
-            logger.warning(f"Interactive auth navigation error: {e}")
+            with sync_playwright() as p:
+                context = self._get_context(p, force_visible=True, window_pos=window_pos, window_size=window_size)
+                page = context.pages[0] if context.pages else context.new_page()
 
-    def close(self):
-        """Safely close browser context and Playwright instance."""
-        try:
-            if self._context:
+                page.add_init_script("""
+                    delete navigator.__proto__.webdriver;
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true });
+                    window.chrome = { runtime: {}, app: {}, csi: () => {}, loadTimes: () => {} };
+                """)
+
                 try:
-                    self._context.close()
+                    # First load homepage to establish base session cookies
+                    page.goto("https://printerval.com", wait_until="domcontentloaded", timeout=30000)
+                    page.wait_for_timeout(1500)
+                    # Then navigate directly to search endpoint where Cloudflare challenge is triggered
+                    page.goto("https://printerval.com/search/?q=apparel", wait_until="domcontentloaded", timeout=30000)
+                    logger.info("Printerval interactive authentication window opened to search endpoint.")
+                except Exception as e:
+                    logger.warning(f"Interactive auth navigation error: {e}")
+
+                # Keep browser alive until user manually closes the window
+                while True:
+                    try:
+                        if not context.pages or all(pg.is_closed() for pg in context.pages):
+                            break
+                        time.sleep(1)
+                    except Exception:
+                        break
+
+                try:
+                    context.close()
                 except Exception:
                     pass
-                self._context = None
-            if self._browser:
-                try:
-                    self._browser.close()
-                except Exception:
-                    pass
-                self._browser = None
-            if self._pw:
-                try:
-                    self._pw.stop()
-                except Exception:
-                    pass
-                self._pw = None
         except Exception as e:
-            logger.debug(f"Error closing Printerval browser context: {e}")
+            logger.warning(f"Interactive auth session error: {e}")
         finally:
             self._clean_profile_locks()
+
+    def close(self):
+        """Safely clean profile locks."""
+        self._clean_profile_locks()
 
     def resolve_store_info(self, raw_input: str) -> dict:
         """Parse Printerval shop URL, creator name, or Global Search."""
@@ -313,6 +317,8 @@ class PrintervalScraper:
         Returns:
             List of normalized listing dicts.
         """
+        from playwright.sync_api import sync_playwright
+
         def _log(msg):
             if log_callback:
                 try: log_callback(msg)
@@ -326,143 +332,150 @@ class PrintervalScraper:
         encoded_q = urllib.parse.quote(query.strip())
         _log(f"👕 [Printerval] Initiating stealth search for '{query}'...")
 
-        context = self._get_context()
-        page = context.pages[0] if context.pages else context.new_page()
-
-        page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            window.chrome = { runtime: {} };
-        """)
-
         try:
-            max_pages = max(4, min(15, (max_items + 29) // 30))
-            while len(results) < max_items and page_num <= max_pages:
-                if page_num == 1:
-                    target_url = f"https://printerval.com/search/?q={encoded_q}"
-                else:
-                    target_url = f"https://printerval.com/search/?q={encoded_q}&page={page_num}"
+            with sync_playwright() as p:
+                context = self._get_context(p)
+                page = context.pages[0] if context.pages else context.new_page()
 
-                _log(f"🌐 [Printerval] Loading page {page_num}...")
-                try:
-                    page.goto(target_url, wait_until="domcontentloaded", timeout=22000)
-                    page.wait_for_timeout(2500)
-                except Exception as ex:
-                    _log(f"⚠ Page load timeout on Printerval: {ex}")
-
-                # Extract product cards
-                page_items = page.evaluate("""
-                    () => {
-                        const items = [];
-                        const seen = new Set();
-                        const links = document.querySelectorAll('a[href*="-p"]');
-                        
-                        for (let link of links) {
-                            const href = link.href || '';
-                            const m = href.match(/-p(\\d+)/);
-                            if (!m) continue;
-                            const pId = m[1];
-                            const cleanUrl = href.split('?')[0];
-                            if (seen.has(cleanUrl)) continue;
-                            seen.add(cleanUrl);
-
-                            let parent = link.closest('.product-item, .item, [class*="product-card"], div[data-product-id]') || link.parentElement || link;
-                            let titleEl = parent.querySelector('[class*="title"], h3, h2, span.title') || link;
-                            let priceEl = parent.querySelector('[class*="price"], .product-price, span[class*="price"]');
-                            let sellerEl = parent.querySelector('[class*="author"], [class*="artist"], [class*="store"], [class*="seller"]');
-
-                            let title = (titleEl ? (titleEl.innerText || '') : '').trim();
-                            if (!title || title.length < 3 || title.startsWith('$')) {
-                                const slug = cleanUrl.split('/').pop().split('-p')[0].replace(/-/g, ' ').trim();
-                                title = slug ? slug.charAt(0).toUpperCase() + slug.slice(1) : `Printerval Product #${pId}`;
-                            }
-                            let price = (priceEl ? (priceEl.innerText || '') : '').trim();
-                            let seller = (sellerEl ? (sellerEl.innerText || '') : '').trim();
-
-                            let img = '';
-                            const allImgs = Array.from(parent.querySelectorAll('img')).map(i => i.currentSrc || i.src || i.getAttribute('data-src') || i.getAttribute('data-original') || '');
-                            for (let im of allImgs) {
-                                if (im && !im.includes('.svg') && !im.includes('heart') && !im.includes('1x1') && (im.includes('cdn.printerval.com') || im.startsWith('http'))) {
-                                    img = im;
-                                    break;
-                                }
-                            }
-
-                            items.push({
-                                title: title,
-                                url: cleanUrl,
-                                price: price || '$19.95',
-                                seller: seller || 'Printerval Creator',
-                                image_url: img
-                            });
-                        }
-                        return items;
-                    }
+                page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                    window.chrome = { runtime: {} };
                 """)
 
-                if not page_items:
-                    curr_title = page.title()
-                    if "403" in curr_title or "blocked" in curr_title.lower() or "just a moment" in curr_title.lower():
-                        _log(f"🛡️ [Printerval] Cloudflare security challenge detected on search endpoint.")
-                        _log(f"💡 [Printerval] Please click the '👕 Printerval Connect' button in the toolbar to solve the verification once, then restart your scan.")
-                    else:
-                        _log(f"ℹ [Printerval] No listing cards found on page {page_num}.")
-                    break
+                try:
+                    max_pages = max(4, min(15, (max_items + 29) // 30))
+                    while len(results) < max_items and page_num <= max_pages:
+                        if page_num == 1:
+                            target_url = f"https://printerval.com/search/?q={encoded_q}"
+                        else:
+                            target_url = f"https://printerval.com/search/?q={encoded_q}&page={page_num}"
 
-                new_count = 0
-                for raw_it in page_items:
-                    u = raw_it.get("url", "").split("?")[0]
-                    m_id = re.search(r'-p(\d+)', u)
-                    if not m_id:
-                        continue
-                    item_id = m_id.group(1)
+                        _log(f"🌐 [Printerval] Loading page {page_num}...")
+                        try:
+                            page.goto(target_url, wait_until="domcontentloaded", timeout=22000)
+                            page.wait_for_timeout(2500)
+                        except Exception as ex:
+                            _log(f"⚠ Page load timeout on Printerval: {ex}")
 
-                    if not item_id or item_id in seen_ids:
-                        continue
-                    seen_ids.add(item_id)
+                        # Extract product cards
+                        page_items = page.evaluate("""
+                            () => {
+                                const items = [];
+                                const seen = new Set();
+                                const links = document.querySelectorAll('a[href*="-p"]');
+                                
+                                for (let link of links) {
+                                    const href = link.href || '';
+                                    const m = href.match(/-p(\\d+)/);
+                                    if (!m) continue;
+                                    const pId = m[1];
+                                    const cleanUrl = href.split('?')[0];
+                                    if (seen.has(cleanUrl)) continue;
+                                    seen.add(cleanUrl);
 
-                    title = raw_it.get("title", "")
-                    if not title or title.startswith("$") or len(title) < 3:
-                        # Derive title from url slug
-                        slug_part = u.split("/")[-1].split("-p")[0].replace("-", " ").title()
-                        title = slug_part if slug_part else f"Printerval Product #{item_id}"
+                                    let parent = link.closest('.product-item, .item, [class*="product-card"], div[data-product-id]') || link.parentElement || link;
+                                    let titleEl = parent.querySelector('[class*="title"], h3, h2, span.title') || link;
+                                    let priceEl = parent.querySelector('[class*="price"], .product-price, span[class*="price"]');
+                                    let sellerEl = parent.querySelector('[class*="author"], [class*="artist"], [class*="store"], [class*="seller"]');
 
-                    price = raw_it.get("price", "")
-                    if not price or not price.startswith("$"):
-                        price = "$19.95"
+                                    let title = (titleEl ? (titleEl.innerText || '') : '').trim();
+                                    if (!title || title.length < 3 || title.startsWith('$')) {
+                                        const slug = cleanUrl.split('/').pop().split('-p')[0].replace(/-/g, ' ').trim();
+                                        title = slug ? slug.charAt(0).toUpperCase() + slug.slice(1) : `Printerval Product #${pId}`;
+                                    }
+                                    let price = (priceEl ? (priceEl.innerText || '') : '').trim();
+                                    let seller = (sellerEl ? (sellerEl.innerText || '') : '').trim();
 
-                    results.append({
-                        "brand": "",
-                        "product_type": "Merchandise",
-                        "title": title,
-                        "item_id": item_id,
-                        "price": price,
-                        "seller": raw_it.get("seller") or "Printerval Creator",
-                        "location": "United States",
-                        "image_url": raw_it.get("image_url", ""),
-                        "url": u,
-                        "marketplace": "printerval.com",
-                        "condition": "New",
-                        "keyword": query
-                    })
-                    new_count += 1
+                                    let img = '';
+                                    const allImgs = Array.from(parent.querySelectorAll('img')).map(i => i.currentSrc || i.src || i.getAttribute('data-src') || i.getAttribute('data-original') || '');
+                                    for (let im of allImgs) {
+                                        if (im && !im.includes('.svg') && !im.includes('heart') && !im.includes('1x1') && (im.includes('cdn.printerval.com') || im.startsWith('http'))) {
+                                            img = im;
+                                            break;
+                                        }
+                                    }
 
-                    if len(results) >= max_items:
-                        break
+                                    items.push({
+                                        title: title,
+                                        url: cleanUrl,
+                                        price: price || '$19.95',
+                                        seller: seller || 'Printerval Creator',
+                                        image_url: img
+                                    });
+                                }
+                                return items;
+                            }
+                        """)
 
-                _log(f"📦 [Printerval] Harvested {new_count} listings from page {page_num} ({len(results)}/{max_items} total).")
+                        if not page_items:
+                            curr_title = page.title()
+                            if "403" in curr_title or "blocked" in curr_title.lower() or "just a moment" in curr_title.lower():
+                                _log(f"🛡️ [Printerval] Cloudflare security challenge detected on search endpoint.")
+                                _log(f"💡 [Printerval] Please click the '👕 Printerval Connect' button in the toolbar to solve the verification once, then restart your scan.")
+                            else:
+                                _log(f"ℹ [Printerval] No listing cards found on page {page_num}.")
+                            break
 
-                if len(results) >= max_items or new_count == 0:
-                    break
+                        new_count = 0
+                        for raw_it in page_items:
+                            u = raw_it.get("url", "").split("?")[0]
+                            m_id = re.search(r'-p(\d+)', u)
+                            if not m_id:
+                                continue
+                            item_id = m_id.group(1)
 
-                page_num += 1
-                time.sleep(1.5)
+                            if not item_id or item_id in seen_ids:
+                                continue
+                            seen_ids.add(item_id)
+
+                            title = raw_it.get("title", "")
+                            if not title or title.startswith("$") or len(title) < 3:
+                                # Derive title from url slug
+                                slug_part = u.split("/")[-1].split("-p")[0].replace("-", " ").title()
+                                title = slug_part if slug_part else f"Printerval Product #{item_id}"
+
+                            price = raw_it.get("price", "")
+                            if not price or not price.startswith("$"):
+                                price = "$19.95"
+
+                            results.append({
+                                "brand": "",
+                                "product_type": "Merchandise",
+                                "title": title,
+                                "item_id": item_id,
+                                "price": price,
+                                "seller": raw_it.get("seller") or "Printerval Creator",
+                                "location": "United States",
+                                "image_url": raw_it.get("image_url", ""),
+                                "url": u,
+                                "marketplace": "printerval.com",
+                                "condition": "New",
+                                "keyword": query
+                            })
+                            new_count += 1
+
+                            if len(results) >= max_items:
+                                break
+
+                        _log(f"📦 [Printerval] Harvested {new_count} listings from page {page_num} ({len(results)}/{max_items} total).")
+
+                        if len(results) >= max_items or new_count == 0:
+                            break
+
+                        page_num += 1
+                        time.sleep(1.5)
+
+                finally:
+                    try:
+                        context.close()
+                    except Exception:
+                        pass
 
         except Exception as e:
             _log(f"❌ Error during Printerval scraping: {e}")
             logger.exception("Printerval search failure")
         finally:
-            if self.headless:
-                self.close()
+            self._clean_profile_locks()
 
         _log(f"✅ [Printerval] Search complete: Retrieved {len(results)} listings.")
         return results
@@ -501,196 +514,205 @@ class PrintervalScraper:
         if not items_to_fetch:
             return items
 
-        context = self._get_context()
-        page = context.pages[0] if context.pages else context.new_page()
+        from playwright.sync_api import sync_playwright
 
         try:
-            processed_in_chunk = 0
-            for fetch_idx, (orig_idx, it) in enumerate(items_to_fetch):
-                if stop_event and stop_event.is_set():
-                    break
-
-                if processed_in_chunk >= chunk_size:
-                    time.sleep(random.uniform(2.0, 3.5))
-                    processed_in_chunk = 0
-
-                item_id = str(it.get("item_id", "")).strip()
-                raw_url = it.get("url", "")
-                url = raw_url if raw_url.startswith("http") else f"https://printerval.com/product-p{item_id}"
+            with sync_playwright() as p:
+                context = self._get_context(p)
+                page = context.pages[0] if context.pages else context.new_page()
 
                 try:
-                    page.goto(url, wait_until="domcontentloaded", timeout=18000)
-                    page.wait_for_timeout(1800)
+                    processed_in_chunk = 0
+                    for fetch_idx, (orig_idx, it) in enumerate(items_to_fetch):
+                        if stop_event and stop_event.is_set():
+                            break
 
-                    # Extract exact creator, price, and canonical title
-                    res = page.evaluate("""() => {
-                        let seller = '';
-                        let price = '';
-                        let title = '';
+                        if processed_in_chunk >= chunk_size:
+                            time.sleep(random.uniform(2.0, 3.5))
+                            processed_in_chunk = 0
 
-                        // 0. Direct JS variables (window.product, sellerNameProductDescription, etc.)
-                        try {
-                            if (window.product && window.product.seller_name) {
-                                seller = String(window.product.seller_name).trim();
-                            }
-                        } catch(e) {}
+                        item_id = str(it.get("item_id", "")).strip()
+                        raw_url = it.get("url", "")
+                        url = raw_url if raw_url.startswith("http") else f"https://printerval.com/product-p{item_id}"
 
-                        if (!seller) {
-                            try {
-                                if (typeof sellerNameProductDescription !== 'undefined' && sellerNameProductDescription) {
-                                    seller = String(sellerNameProductDescription).trim();
-                                }
-                            } catch(e) {}
-                        }
+                        try:
+                            page.goto(url, wait_until="domcontentloaded", timeout=18000)
+                            page.wait_for_timeout(1800)
 
-                        // 1. Script tag parsing for var product or var sellerNameProductDescription
-                        if (!seller) {
-                            const scripts = document.querySelectorAll('script');
-                            for (let s of scripts) {
-                                const txt = s.innerText || '';
-                                const m = txt.match(/["']seller_name["']\\s*:\\s*["']([^"']+)["']/i) || 
-                                          txt.match(/var\\s+sellerNameProductDescription\\s*=\\s*["']([^"']+)["']/i);
-                                if (m && m[1]) {
-                                    const cand = m[1].trim();
-                                    if (cand && !cand.toLowerCase().includes('printerval') && cand.length > 1) {
-                                        seller = cand;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
+                            # Extract exact creator, price, and canonical title
+                            res = page.evaluate("""() => {
+                                let seller = '';
+                                let price = '';
+                                let title = '';
 
-                        // 2. Author / Creator element
-                        if (!seller) {
-                            const authorEls = document.querySelectorAll(
-                                'span.author, .author, .design-pod-seller, .other-product-heading-author, .other-product-heading-author-info, [class*="shop-name"], a[href*="/shop/"], a[href*="/designer/"]'
-                            );
-                            for (let el of authorEls) {
-                                let raw = el ? (el.innerText || '') : '';
-                                let txt = raw.trim()
-                                    .replace(/^Designed\\s+(?:and\\s+sold\\s+)?by\\s*/i, '')
-                                    .replace(/More\\s+/i, '')
-                                    .replace(/'s\\s+products.*/i, '')
-                                    .trim();
-                                if (txt && txt.length > 1 && !txt.toLowerCase().includes('printerval') && !txt.toLowerCase().includes('designed')) {
-                                    seller = txt.split('\\n')[0].trim();
-                                    break;
-                                }
-                            }
-                        }
-
-                        // 3. Fallback via regex across full body text
-                        if (!seller && document.body) {
-                            const fullText = document.body.innerText || '';
-                            const m = fullText.match(/(?:Designed|Sold|Created)\\s+(?:and\\s+sold\\s+)?by\\s*\\n?\\s*([^\\n\\r]+)/i);
-                            if (m && m[1]) {
-                                let candidate = m[1].trim();
-                                if (candidate && !candidate.toLowerCase().includes('printerval')) {
-                                    seller = candidate;
-                                }
-                            }
-                        }
-
-                        // 4. Fallback for "More <Artist>'s products"
-                        if (!seller && document.body) {
-                            const fullText = document.body.innerText || '';
-                            const m2 = fullText.match(/More\\s+([^\\n\\r']+)'s\\s+products/i);
-                            if (m2 && m2[1]) {
-                                seller = m2[1].trim();
-                            }
-                        }
-
-                        // Canonical Title from H1
-                        const h1 = document.querySelector('h1');
-                        if (h1 && h1.innerText) title = h1.innerText.trim();
-
-                        // Price from JSON-LD or DOM
-                        const scripts = document.querySelectorAll('script[type="application/ld+json"]');
-                        for (let s of scripts) {
-                            try {
-                                const j = JSON.parse(s.innerText || '{}');
-                                if (j['@type'] === 'Product' && j.offers && j.offers.price) {
-                                    price = '$' + j.offers.price;
-                                    break;
-                                }
-                            } catch(e) {}
-                        }
-
-                        if (!price) {
-                            const priceEl = document.querySelector('.product-price-current, .pdp-price, .price, [class*="product-price"]');
-                            if (priceEl && priceEl.innerText) {
-                                const mP = priceEl.innerText.match(/\\$\\s*[\\d,]+(?:\\.\\d+)?/);
-                                if (mP) price = mP[0];
-                            }
-                        }
-
-                        // 4. Extract High-Resolution Product Image
-                        let img = '';
-                        const og = document.querySelector('meta[property="og:image"], meta[name="og:image"]');
-                        if (og && og.content && og.content.startsWith('http')) {
-                            img = og.content;
-                        }
-                        if (!img) {
-                            for (let s of scripts) {
+                                // 0. Direct JS variables (window.product, sellerNameProductDescription, etc.)
                                 try {
-                                    const j = JSON.parse(s.innerText || '{}');
-                                    if (j['image']) {
-                                        if (Array.isArray(j['image']) && j['image'].length > 0) {
-                                            img = j['image'][0];
-                                        } else if (typeof j['image'] === 'string') {
-                                            img = j['image'];
-                                        }
-                                        if (img) break;
+                                    if (window.product && window.product.seller_name) {
+                                        seller = String(window.product.seller_name).trim();
                                     }
                                 } catch(e) {}
-                            }
-                        }
-                        if (!img) {
-                            const domImgs = Array.from(document.querySelectorAll('img')).map(i => i.src || i.getAttribute('data-src') || '');
-                            for (let di of domImgs) {
-                                if (di && di.includes('cdn.printerval.com') && !di.includes('.svg')) {
-                                    img = di;
-                                    break;
+
+                                if (!seller) {
+                                    try {
+                                        if (typeof sellerNameProductDescription !== 'undefined' && sellerNameProductDescription) {
+                                            seller = String(sellerNameProductDescription).trim();
+                                        }
+                                    } catch(e) {}
                                 }
-                            }
-                        }
 
-                        return { seller: seller, price: price, title: title, image_url: img };
-                    }""")
+                                // 1. Script tag parsing for var product or var sellerNameProductDescription
+                                if (!seller) {
+                                    const scripts = document.querySelectorAll('script');
+                                    for (let s of scripts) {
+                                        const txt = s.innerText || '';
+                                        const m = txt.match(/["']seller_name["']\\s*:\\s*["']([^"']+)["']/i) || 
+                                                  txt.match(/var\\s+sellerNameProductDescription\\s*=\\s*["']([^"']+)["']/i);
+                                        if (m && m[1]) {
+                                            const cand = m[1].trim();
+                                            if (cand && !cand.toLowerCase().includes('printerval') && cand.length > 1) {
+                                                seller = cand;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
 
-                    if res.get("seller"):
-                        it["seller"] = res["seller"]
-                    if res.get("price"):
-                        it["price"] = res["price"]
-                    if res.get("title") and (not it.get("title") or it.get("title").startswith("Printerval") or len(it.get("title", "")) < len(res.get("title", ""))):
-                        it["title"] = res["title"]
-                    if res.get("image_url") and (not it.get("image_url") or "unsafe/540" in it.get("image_url", "")):
-                        it["image_url"] = res["image_url"]
+                                // 2. Author / Creator element
+                                if (!seller) {
+                                    const authorEls = document.querySelectorAll(
+                                        'span.author, .author, .design-pod-seller, .other-product-heading-author, .other-product-heading-author-info, [class*="shop-name"], a[href*="/shop/"], a[href*="/designer/"]'
+                                    );
+                                    for (let el of authorEls) {
+                                        let raw = el ? (el.innerText || '') : '';
+                                        let txt = raw.trim()
+                                            .replace(/^Designed\\s+(?:and\\s+sold\\s+)?by\\s*/i, '')
+                                            .replace(/More\\s+/i, '')
+                                            .replace(/'s\\s+products.*/i, '')
+                                            .trim();
+                                        if (txt && txt.length > 1 && !txt.toLowerCase().includes('printerval') && !txt.toLowerCase().includes('designed')) {
+                                            seller = txt.split('\\n')[0].trim();
+                                            break;
+                                        }
+                                    }
+                                }
 
-                    # Cache result
-                    if item_id:
-                        cache[item_id] = {
-                            "seller": it.get("seller"),
-                            "price": it.get("price"),
-                            "title": it.get("title"),
-                            "image_url": it.get("image_url")
-                        }
+                                // 3. Fallback via regex across full body text
+                                if (!seller && document.body) {
+                                    const fullText = document.body.innerText || '';
+                                    const m = fullText.match(/(?:Designed|Sold|Created)\\s+(?:and\\s+sold\\s+)?by\\s*\\n?\\s*([^\\n\\r]+)/i);
+                                    if (m && m[1]) {
+                                        let candidate = m[1].trim();
+                                        if (candidate && !candidate.toLowerCase().includes('printerval')) {
+                                            seller = candidate;
+                                        }
+                                    }
+                                }
 
-                except Exception as item_err:
-                    logger.debug(f"Error enriching item {item_id} ({url}): {item_err}")
+                                // 4. Fallback for "More <Artist>'s products"
+                                if (!seller && document.body) {
+                                    const fullText = document.body.innerText || '';
+                                    const m2 = fullText.match(/More\\s+([^\\n\\r']+)'s\\s+products/i);
+                                    if (m2 && m2[1]) {
+                                        seller = m2[1].trim();
+                                    }
+                                }
 
-                processed_in_chunk += 1
-                if progress_callback:
-                    progress_callback(orig_idx + 1, len(items), it)
+                                // Canonical Title from H1
+                                const h1 = document.querySelector('h1');
+                                if (h1 && h1.innerText) title = h1.innerText.trim();
 
-                time.sleep(random.uniform(0.5, 1.0))
+                                // Price from JSON-LD or DOM
+                                const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+                                for (let s of scripts) {
+                                    try {
+                                        const j = JSON.parse(s.innerText || '{}');
+                                        if (j['@type'] === 'Product' && j.offers && j.offers.price) {
+                                            price = '$' + j.offers.price;
+                                            break;
+                                        }
+                                    } catch(e) {}
+                                }
+
+                                if (!price) {
+                                    const priceEl = document.querySelector('.product-price-current, .pdp-price, .price, [class*="product-price"]');
+                                    if (priceEl && priceEl.innerText) {
+                                        const mP = priceEl.innerText.match(/\\$\\s*[\\d,]+(?:\\.\\d+)?/);
+                                        if (mP) price = mP[0];
+                                    }
+                                }
+
+                                // 4. Extract High-Resolution Product Image
+                                let img = '';
+                                const og = document.querySelector('meta[property="og:image"], meta[name="og:image"]');
+                                if (og && og.content && og.content.startsWith('http')) {
+                                    img = og.content;
+                                }
+                                if (!img) {
+                                    for (let s of scripts) {
+                                        try {
+                                            const j = JSON.parse(s.innerText || '{}');
+                                            if (j['image']) {
+                                                if (Array.isArray(j['image']) && j['image'].length > 0) {
+                                                    img = j['image'][0];
+                                                } else if (typeof j['image'] === 'string') {
+                                                    img = j['image'];
+                                                }
+                                                if (img) break;
+                                            }
+                                        } catch(e) {}
+                                    }
+                                }
+                                if (!img) {
+                                    const domImgs = Array.from(document.querySelectorAll('img')).map(i => i.src || i.getAttribute('data-src') || '');
+                                    for (let di of domImgs) {
+                                        if (di && di.includes('cdn.printerval.com') && !di.includes('.svg')) {
+                                            img = di;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                return { seller: seller, price: price, title: title, image_url: img };
+                            }""")
+
+                            if res.get("seller"):
+                                it["seller"] = res["seller"]
+                            if res.get("price"):
+                                it["price"] = res["price"]
+                            if res.get("title") and (not it.get("title") or it.get("title").startswith("Printerval") or len(it.get("title", "")) < len(res.get("title", ""))):
+                                it["title"] = res["title"]
+                            if res.get("image_url") and (not it.get("image_url") or "unsafe/540" in it.get("image_url", "")):
+                                it["image_url"] = res["image_url"]
+
+                            # Cache result
+                            if item_id:
+                                cache[item_id] = {
+                                    "seller": it.get("seller"),
+                                    "price": it.get("price"),
+                                    "title": it.get("title"),
+                                    "image_url": it.get("image_url")
+                                }
+
+                        except Exception as item_err:
+                            logger.debug(f"Error enriching item {item_id} ({url}): {item_err}")
+
+                        processed_in_chunk += 1
+                        if progress_callback:
+                            progress_callback(orig_idx + 1, len(items), it)
+
+                        time.sleep(random.uniform(0.5, 1.0))
+
+                finally:
+                    try:
+                        context.close()
+                    except Exception:
+                        pass
 
         except Exception as e:
             logger.error(f"Error during Printerval seller enrichment batch: {e}")
         finally:
             self._save_cache(cache)
-            if self.headless:
-                self.close()
+            self._clean_profile_locks()
 
         return items
 
@@ -730,200 +752,209 @@ class PrintervalScraper:
                 known_ids.add(iid)
 
         expanded_results = []
-        context = self._get_context()
-        page = context.pages[0] if context.pages else context.new_page()
-
-        page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            window.chrome = { runtime: {} };
-        """)
+        from playwright.sync_api import sync_playwright
 
         try:
-            total_parents = len(items)
-            for idx, parent in enumerate(items):
-                if stop_event and stop_event.is_set():
-                    _log("⏹ [Printerval] Variant expansion cancelled by user.")
-                    break
+            with sync_playwright() as p:
+                context = self._get_context(p)
+                page = context.pages[0] if context.pages else context.new_page()
 
-                parent_id = str(parent.get("item_id", "")).strip()
-                raw_url = parent.get("url", "")
-                url = raw_url if raw_url.startswith("http") else f"https://printerval.com/product-p{parent_id}"
-                seller = parent.get("seller") or "Printerval Creator"
-                brand = parent.get("brand", "")
-                keyword = parent.get("keyword", "")
-                parent_title = parent.get("title", "")
-
-                _log(f"👕 [Printerval] Expanding variants for [{idx+1}/{total_parents}]: '{parent_title[:35]}...'")
+                page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                    window.chrome = { runtime: {} };
+                """)
 
                 try:
-                    page.goto(url, wait_until="domcontentloaded", timeout=25000)
-                    page.wait_for_timeout(2500)
+                    total_parents = len(items)
+                    for idx, parent in enumerate(items):
+                        if stop_event and stop_event.is_set():
+                            _log("⏹ [Printerval] Variant expansion cancelled by user.")
+                            break
 
-                    # Click 'See all items' if present to expand full catalog modal/drawer
-                    page.evaluate("""() => {
-                        const btn = document.querySelector('.show-more-also-available, .component-seemore');
-                        if (btn) {
-                            btn.scrollIntoView({behavior: 'smooth', block: 'center'});
-                            btn.click();
-                        } else {
-                            const spans = Array.from(document.querySelectorAll('a, span, button, div'));
-                            for (let s of spans) {
-                                if ((s.innerText || '').trim().toLowerCase() === 'see all items') {
-                                    s.scrollIntoView({behavior: 'smooth', block: 'center'});
-                                    s.click();
-                                    break;
-                                }
-                            }
-                        }
-                    }""")
-                    page.wait_for_timeout(2000)
+                        parent_id = str(parent.get("item_id", "")).strip()
+                        raw_url = parent.get("url", "")
+                        url = raw_url if raw_url.startswith("http") else f"https://printerval.com/product-p{parent_id}"
+                        seller = parent.get("seller") or "Printerval Creator"
+                        brand = parent.get("brand", "")
+                        keyword = parent.get("keyword", "")
+                        parent_title = parent.get("title", "")
 
-                    # Extract all variant links and metadata strictly from variant containers
-                    extracted_variants = page.evaluate("""(parentId) => {
-                        const items = [];
-                        const seen = new Set();
-                        
-                        const selectors = [
-                            'a[data-source-box="also-available"]',
-                            '.js-also-available-product a',
-                            '#modal-also-available a[href*="-p"]',
-                            '.modal-also-available a[href*="-p"]',
-                            '.tab-more-also-available-product a[href*="-p"]',
-                            '.tab-more-also-available-product-wrapper a[href*="-p"]',
-                            '.box-also-available a[href*="-p"]',
-                            'a.js-also-available-product'
-                        ];
-                        
-                        const allElements = document.querySelectorAll(selectors.join(', '));
-                        for (let a of allElements) {
-                            const rawHref = a.href || '';
-                            const m = rawHref.match(/-p(\\d+)/);
-                            if (!m) continue;
-                            
-                            const vId = m[1];
-                            if (vId === parentId || seen.has(vId)) continue;
-                            seen.add(vId);
-                            
-                            const cleanUrl = rawHref.split('?')[0];
-                            const parentEl = a.closest('div.item, div.product-item, div.available-product-item, div.js-also-available-product, div') || a;
-                            
-                            // Text / Title
-                            let title = '';
-                            const titleEl = a.querySelector('[class*="title"], h3, h2, h4, span.title, p') || a;
-                            if (titleEl) {
-                                title = (titleEl.innerText || titleEl.getAttribute('title') || '').trim();
-                            }
-                            
-                            // Price
-                            let price = '';
-                            const priceEl = parentEl.querySelector('[class*="price"], .product-price-current, span');
-                            if (priceEl) {
-                                const mP = (priceEl.innerText || '').match(/\\$\\s*[\\d,]+(?:\\.\\d+)?/);
-                                if (mP) price = mP[0];
-                            }
-                            
-                            // High-Res Image Extraction (prioritize picture > source to avoid 1x1 placeholder pngs)
-                            let img = '';
-                            const picture = a.querySelector('picture') || (parentEl ? parentEl.querySelector('picture') : null);
-                            if (picture) {
-                                const source = picture.querySelector('source');
-                                if (source && source.srcset) {
-                                    const urls = source.srcset.match(/https?:\\/\\/[^\\s"']+/g);
-                                    if (urls && urls.length > 0) {
-                                        img = urls[urls.length - 1].replace(/\\s+\\d+[wx]$/, '').trim();
+                        _log(f"👕 [Printerval] Expanding variants for [{idx+1}/{total_parents}]: '{parent_title[:35]}...'")
+
+                        try:
+                            page.goto(url, wait_until="domcontentloaded", timeout=25000)
+                            page.wait_for_timeout(2500)
+
+                            # Click 'See all items' if present to expand full catalog modal/drawer
+                            page.evaluate("""() => {
+                                const btn = document.querySelector('.show-more-also-available, .component-seemore');
+                                if (btn) {
+                                    btn.scrollIntoView({behavior: 'smooth', block: 'center'});
+                                    btn.click();
+                                } else {
+                                    const spans = Array.from(document.querySelectorAll('a, span, button, div'));
+                                    for (let s of spans) {
+                                        if ((s.innerText || '').trim().toLowerCase() === 'see all items') {
+                                            s.scrollIntoView({behavior: 'smooth', block: 'center'});
+                                            s.click();
+                                            break;
+                                        }
                                     }
                                 }
-                            }
-                            if (!img) {
-                                const imgEl = a.querySelector('img') || (parentEl ? parentEl.querySelector('img') : null);
-                                if (imgEl) {
-                                    if (imgEl.currentSrc && imgEl.currentSrc.startsWith('http') && !imgEl.currentSrc.includes('1x1.png') && !imgEl.currentSrc.includes('data:')) {
-                                        img = imgEl.currentSrc;
-                                    } else if (imgEl.src && imgEl.src.startsWith('http') && !imgEl.src.includes('1x1.png') && !imgEl.src.includes('data:')) {
-                                        img = imgEl.src;
-                                    } else if (imgEl.getAttribute('data-src') && imgEl.getAttribute('data-src').startsWith('http')) {
-                                        img = imgEl.getAttribute('data-src');
-                                    } else if (imgEl.getAttribute('data-original') && imgEl.getAttribute('data-original').startsWith('http')) {
-                                        img = imgEl.getAttribute('data-original');
+                            }""")
+                            page.wait_for_timeout(2000)
+
+                            # Extract all variant links and metadata strictly from variant containers
+                            extracted_variants = page.evaluate("""(parentId) => {
+                                const items = [];
+                                const seen = new Set();
+                                
+                                const selectors = [
+                                    'a[data-source-box="also-available"]',
+                                    '.js-also-available-product a',
+                                    '#modal-also-available a[href*="-p"]',
+                                    '.modal-also-available a[href*="-p"]',
+                                    '.tab-more-also-available-product a[href*="-p"]',
+                                    '.tab-more-also-available-product-wrapper a[href*="-p"]',
+                                    '.box-also-available a[href*="-p"]',
+                                    'a.js-also-available-product'
+                                ];
+                                
+                                const allElements = document.querySelectorAll(selectors.join(', '));
+                                for (let a of allElements) {
+                                    const rawHref = a.href || '';
+                                    const m = rawHref.match(/-p(\\d+)/);
+                                    if (!m) continue;
+                                    
+                                    const vId = m[1];
+                                    if (vId === parentId || seen.has(vId)) continue;
+                                    seen.add(vId);
+                                    
+                                    const cleanUrl = rawHref.split('?')[0];
+                                    const parentEl = a.closest('div.item, div.product-item, div.available-product-item, div.js-also-available-product, div') || a;
+                                    
+                                    // Text / Title
+                                    let title = '';
+                                    const titleEl = a.querySelector('[class*="title"], h3, h2, h4, span.title, p') || a;
+                                    if (titleEl) {
+                                        title = (titleEl.innerText || titleEl.getAttribute('title') || '').trim();
                                     }
+                                    
+                                    // Price
+                                    let price = '';
+                                    const priceEl = parentEl.querySelector('[class*="price"], .product-price-current, span');
+                                    if (priceEl) {
+                                        const mP = (priceEl.innerText || '').match(/\\$\\s*[\\d,]+(?:\\.\\d+)?/);
+                                        if (mP) price = mP[0];
+                                    }
+                                    
+                                    // High-Res Image Extraction (prioritize picture > source to avoid 1x1 placeholder pngs)
+                                    let img = '';
+                                    const picture = a.querySelector('picture') || (parentEl ? parentEl.querySelector('picture') : null);
+                                    if (picture) {
+                                        const source = picture.querySelector('source');
+                                        if (source && source.srcset) {
+                                            const urls = source.srcset.match(/https?:\\/\\/[^\\s"']+/g);
+                                            if (urls && urls.length > 0) {
+                                                img = urls[urls.length - 1].replace(/\\s+\\d+[wx]$/, '').trim();
+                                            }
+                                        }
+                                    }
+                                    if (!img) {
+                                        const imgEl = a.querySelector('img') || (parentEl ? parentEl.querySelector('img') : null);
+                                        if (imgEl) {
+                                            if (imgEl.currentSrc && imgEl.currentSrc.startsWith('http') && !imgEl.currentSrc.includes('1x1.png') && !imgEl.currentSrc.includes('data:')) {
+                                                img = imgEl.currentSrc;
+                                            } else if (imgEl.src && imgEl.src.startsWith('http') && !imgEl.src.includes('1x1.png') && !imgEl.src.includes('data:')) {
+                                                img = imgEl.src;
+                                            } else if (imgEl.getAttribute('data-src') && imgEl.getAttribute('data-src').startsWith('http')) {
+                                                img = imgEl.getAttribute('data-src');
+                                            } else if (imgEl.getAttribute('data-original') && imgEl.getAttribute('data-original').startsWith('http')) {
+                                                img = imgEl.getAttribute('data-original');
+                                            }
+                                        }
+                                    }
+                                    
+                                    items.push({
+                                        item_id: vId,
+                                        url: cleanUrl,
+                                        title: title,
+                                        price: price,
+                                        image_url: img
+                                    });
                                 }
-                            }
-                            
-                            items.push({
-                                item_id: vId,
-                                url: cleanUrl,
-                                title: title,
-                                price: price,
-                                image_url: img
-                            });
-                        }
-                        return items;
-                    }""", parent_id)
+                                return items;
+                            }""", parent_id)
 
-                    new_for_this_parent = 0
+                            new_for_this_parent = 0
 
-                    for v in extracted_variants:
-                        v_id = str(v.get("item_id", "")).strip()
-                        if not v_id or v_id in known_ids:
-                            continue
+                            for v in extracted_variants:
+                                v_id = str(v.get("item_id", "")).strip()
+                                if not v_id or v_id in known_ids:
+                                    continue
 
-                        u = v.get("url", "")
-                        slug = u.split("/")[-1].split("-p")[0]
+                                u = v.get("url", "")
+                                slug = u.split("/")[-1].split("-p")[0]
 
-                        card_raw = v.get("title", "").replace("\n", " ").strip()
-                        card_clean = re.sub(r'\$\s*[\d,]+(?:\.\d+)?', '', card_raw).strip()
+                                card_raw = v.get("title", "").replace("\n", " ").strip()
+                                card_clean = re.sub(r'\$\s*[\d,]+(?:\.\d+)?', '', card_raw).strip()
 
-                        # Derive clean product type from slug
-                        type_part = slug.split("-")[-1].title() if "-" in slug else "Merchandise"
-                        if len(type_part) <= 2:
-                            type_part = "Merchandise"
+                                # Derive clean product type from slug
+                                type_part = slug.split("-")[-1].title() if "-" in slug else "Merchandise"
+                                if len(type_part) <= 2:
+                                    type_part = "Merchandise"
 
-                        # Synthesize full, clean listing title preserving parent design casing and full name
-                        v_title = self._synthesize_variant_title(parent_title, slug, card_clean)
+                                # Synthesize full, clean listing title preserving parent design casing and full name
+                                v_title = self._synthesize_variant_title(parent_title, slug, card_clean)
 
-                        # Token & Brand relevance validation: ensure variant matches the specific POD artwork/design
-                        if not self._is_valid_pod_variant(parent_title, v_title, slug, brand=brand, keyword=keyword):
-                            continue
+                                # Token & Brand relevance validation: ensure variant matches the specific POD artwork/design
+                                if not self._is_valid_pod_variant(parent_title, v_title, slug, brand=brand, keyword=keyword):
+                                    continue
 
-                        known_ids.add(v_id)
+                                known_ids.add(v_id)
 
-                        price = v.get("price") or parent.get("price") or "$19.95"
-                        variant_id = v_id if v_id else (re.search(r'-p(\d+)', u).group(1) if re.search(r'-p(\d+)', u) else f"{parent_id}_{slug}")
-                        v_img = v.get("image_url", "") or parent.get("image_url", "")
-                        variant_item = {
-                            "brand": brand,
-                            "product_type": type_part,
-                            "title": v_title,
-                            "item_id": variant_id,
-                            "price": price,
-                            "seller": seller,
-                            "location": "United States",
-                            "image_url": v_img,
-                            "thumbnail": v_img,
-                            "url": u,
-                            "marketplace": "printerval.com",
-                            "condition": "New",
-                            "keyword": keyword
-                        }
-                        expanded_results.append(variant_item)
-                        new_for_this_parent += 1
+                                price = v.get("price") or parent.get("price") or "$19.95"
+                                variant_id = v_id if v_id else (re.search(r'-p(\d+)', u).group(1) if re.search(r'-p(\d+)', u) else f"{parent_id}_{slug}")
+                                v_img = v.get("image_url", "") or parent.get("image_url", "")
+                                variant_item = {
+                                    "brand": brand,
+                                    "product_type": type_part,
+                                    "title": v_title,
+                                    "item_id": variant_id,
+                                    "price": price,
+                                    "seller": seller,
+                                    "location": "United States",
+                                    "image_url": v_img,
+                                    "thumbnail": v_img,
+                                    "url": u,
+                                    "marketplace": "printerval.com",
+                                    "condition": "New",
+                                    "keyword": keyword
+                                }
+                                expanded_results.append(variant_item)
+                                new_for_this_parent += 1
 
-                    _log(f"  ✓ Harvested +{new_for_this_parent} POD product variants for '{parent.get('title', '')[:30]}...' (Total new: {len(expanded_results)})")
+                            _log(f"  ✓ Harvested +{new_for_this_parent} POD product variants for '{parent.get('title', '')[:30]}...' (Total new: {len(expanded_results)})")
 
-                    if progress_callback:
-                        progress_callback(idx + 1, total_parents, len(expanded_results), parent)
+                            if progress_callback:
+                                progress_callback(idx + 1, total_parents, len(expanded_results), parent)
 
-                except Exception as ex:
-                    _log(f"⚠ [Printerval] Error expanding variants for {url}: {ex}")
+                        except Exception as ex:
+                            _log(f"⚠ [Printerval] Error expanding variants for {url}: {ex}")
 
-                time.sleep(random.uniform(0.8, 1.5))
+                        time.sleep(random.uniform(0.8, 1.5))
+
+                finally:
+                    try:
+                        context.close()
+                    except Exception:
+                        pass
 
         except Exception as e:
             _log(f"❌ [Printerval] Error during variant expansion batch: {e}")
             logger.exception("Printerval variant expansion failure")
         finally:
-            if self.headless:
-                self.close()
+            self._clean_profile_locks()
 
         _log(f"✅ [Printerval] Variant dredge complete: Added {len(expanded_results)} new POD listing URLs.")
         return expanded_results
@@ -956,6 +987,8 @@ class PrintervalScraper:
         - "Related merchandise"
         - "Seller's other products"
         Performs perceptual image matching (dHash) against target_img_url.
+        Uses active inactivity polling (closes as soon as no new items appear for 1.5s)
+        and concurrent multithreaded image dHash calculation.
         """
         if not item_url and item_id:
             item_url = f"https://printerval.com/product-p{item_id}"
@@ -972,222 +1005,273 @@ class PrintervalScraper:
         if target_img_url and str(target_img_url).startswith("http"):
             try:
                 req = urllib.request.Request(str(target_img_url), headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                with urllib.request.urlopen(req, timeout=5) as r:
+                with urllib.request.urlopen(req, timeout=3) as r:
                     t_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
                     target_hash = self.compute_dhash(t_img)
             except Exception:
                 pass
 
+        from playwright.sync_api import sync_playwright
+
+        carousels_data = []
         try:
-            context = self._get_context()
-            page = context.pages[0] if context.pages else context.new_page()
-            page.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-                window.chrome = { runtime: {} };
-            """)
+            with sync_playwright() as p:
+                context = self._get_context(p)
+                page = context.pages[0] if context.pages else context.new_page()
+                page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                    window.chrome = { runtime: {} };
+                """)
 
-            page.goto(item_url, wait_until="domcontentloaded", timeout=25000)
-            page.wait_for_timeout(2000)
-
-            # Scroll in stages to trigger lazy-loaded carousels
-            for _ in range(4):
                 try:
-                    page.evaluate("window.scrollBy(0, 1000);")
-                except Exception:
-                    pass
-                page.wait_for_timeout(400)
-
-            # Extract target image if not already hashed
-            if not target_hash:
-                try:
-                    t_src = page.evaluate("""() => {
-                        const og = document.querySelector('meta[property="og:image"], meta[name="og:image"]');
-                        if (og && og.content) return og.content;
-                        const src = document.querySelector('picture source[srcset]');
-                        if (src && src.srcset) {
-                            const urls = src.srcset.match(/https?:\\/\\/[^\\s"']+/g);
-                            if (urls && urls.length > 0) return urls[urls.length - 1].replace(/\\s+\\d+[wx]$/, '').trim();
-                        }
-                        const img = document.querySelector('img[src*="cdn.printerval.com"]');
-                        return img ? (img.currentSrc || img.src || '') : '';
-                    }""")
-                    if t_src and str(t_src).startswith("http"):
-                        req = urllib.request.Request(str(t_src), headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                        with urllib.request.urlopen(req, timeout=5) as r:
-                            t_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
-                            target_hash = self.compute_dhash(t_img)
-                except Exception:
-                    pass
-
-            carousels_data = page.evaluate("""() => {
-                const discovered = [];
-                const seen = new Set();
-
-                const sectionSelectors = [
-                    '.you-may-also-like-list',
-                    '.md-product-viewed-list',
-                    '.bought-together-other-product',
-                    '.related-items-wrapper',
-                    'div[class*="recommend"]',
-                    'div[class*="carousel"]',
-                    'div[class*="swiper"]',
-                    'div[class*="similar"]',
-                    'section'
-                ];
-
-                for (let sel of sectionSelectors) {
-                    const sections = document.querySelectorAll(sel);
-                    for (let sec of sections) {
-                        const hEl = sec.querySelector('h1, h2, h3, h4, h5, [class*="heading"], [class*="title"], .title');
-                        let secTitle = hEl ? hEl.innerText.trim() : '';
-                        let secType = '👥 You Might Also Like';
-
-                        const secClass = sec.className || '';
-                        if (secTitle.toLowerCase().includes('bought together') || secClass.includes('bought-together')) {
-                            secType = '🛒 Frequently Bought Together';
-                        } else if (secTitle.toLowerCase().includes('viewed') || secClass.includes('product-viewed')) {
-                            secType = '👥 Customers Also Viewed';
-                        } else if (secTitle.toLowerCase().includes('related') || secClass.includes('related-items')) {
-                            secType = '🔗 Related Merchandise';
-                        } else if (secTitle.toLowerCase().includes('more') && secTitle.toLowerCase().includes('products')) {
-                            secType = '🏪 Seller\\'s Other Products';
-                        }
-
-                        const cards = sec.querySelectorAll('.product-item, .item, [class*="product-card"], a[href*="-p"], .swiper-slide');
-                        for (let card of cards) {
-                            const link = card.tagName === 'A' ? card : card.querySelector('a[href*="-p"]');
-                            if (!link) continue;
-                            const href = link.href || '';
-                            if (!href.includes('-p')) continue;
-
-                            const cleanHref = href.split('?')[0].split('#')[0];
-                            if (seen.has(cleanHref)) continue;
-                            seen.add(cleanHref);
-
-                            const tEl = card.querySelector('[class*="title"], h3, h2, span.title') || link;
-                            const pEl = card.querySelector('[class*="price"], .product-price, span[class*="price"]');
-                            const sEl = card.querySelector('[class*="author"], [class*="artist"], [class*="store"], [class*="seller"], [class*="shop"]');
-
-                            let title = tEl ? (tEl.innerText || '').trim() : '';
-                            let price = pEl ? (pEl.innerText || '').trim() : '';
-                            let seller = sEl ? (sEl.innerText || '').trim() : '';
-
-                            // Extract image with complete data-srcset / data-original / lazy-load support
-                            let img = '';
-                            const sourceEls = card.querySelectorAll('picture source, source');
-                            for (let s of sourceEls) {
-                                const rawSet = s.srcset || s.getAttribute('data-srcset') || '';
-                                if (rawSet) {
-                                    const urls = rawSet.match(/https?:\\/\\/[^\\s"']+/g);
-                                    if (urls && urls.length > 0) {
-                                        img = urls[urls.length - 1].replace(/\\s+\\d+[wx]$/, '').trim();
-                                        break;
-                                    }
-                                }
-                            }
-
-                            if (!img || img.startsWith('data:') || img.includes('1x1.png')) {
-                                const imgEls = card.querySelectorAll('img');
-                                for (let im of imgEls) {
-                                    const cand = im.getAttribute('data-original') ||
-                                                 im.getAttribute('data-src') ||
-                                                 im.getAttribute('data-srcset') ||
-                                                 im.getAttribute('data-lazy-src') ||
-                                                 im.getAttribute('data-thumb') ||
-                                                 (im.currentSrc && !im.currentSrc.startsWith('data:') && !im.currentSrc.includes('1x1.png') ? im.currentSrc : '') ||
-                                                 (im.src && !im.src.startsWith('data:') && !im.src.includes('1x1.png') ? im.src : '');
-                                    if (cand) {
-                                        const urls = cand.match(/https?:\\/\\/[^\\s"']+/g);
-                                        if (urls && urls.length > 0) {
-                                            img = urls[urls.length - 1].replace(/\\s+\\d+[wx]$/, '').trim();
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-
-                            discovered.push({
-                                title: title,
-                                url: cleanHref,
-                                price_raw: price,
-                                seller: seller,
-                                image_url: img,
-                                network_type: secType
-                            });
-                        }
-                    }
-                }
-
-                return discovered;
-            }""")
-
-            cache = self._load_cache()
-            seen_ids = set([str(item_id)] if item_id else [])
-
-            for itm in carousels_data:
-                u = itm.get("url", "")
-                m = re.search(r'-p(\d+)', u)
-                if not m:
-                    continue
-                c_id = m.group(1)
-                if c_id in seen_ids:
-                    continue
-                seen_ids.add(c_id)
-
-                raw_price = itm.get("price_raw", "")
-                m_price = re.search(r'\$\s*[\d,]+(?:\.\d+)?', raw_price)
-                price_disp = m_price.group(0) if m_price else "$19.95"
-
-                seller_name = itm.get("seller") or ""
-                if not seller_name and c_id in cache:
-                    seller_name = cache[c_id].get("seller", "")
-                if not seller_name:
-                    seller_name = "Printerval Creator"
-
-                title = itm.get("title", "")
-                if not title or title.startswith("$") or len(title) < 3:
-                    slug_part = u.split("/")[-1].split("-p")[0].replace("-", " ").title()
-                    title = slug_part if slug_part else f"Printerval Product #{c_id}"
-
-                img_url = itm.get("image_url", "")
-                sim_label = itm.get("network_type", "👥 You Might Also Like")
-
-                if target_hash and img_url and str(img_url).startswith("http"):
                     try:
-                        req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                        with urllib.request.urlopen(req, timeout=3) as r:
-                            cand_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
-                            cand_hash = self.compute_dhash(cand_img)
-                            dist = self.hamming_distance(target_hash, cand_hash)
-                            if dist <= 6:
-                                sim_label = f"🎯 Exact Photo Match (dHash: {dist})"
-                            elif dist <= 14:
-                                sim_label = f"🖼 Visual Match (dHash: {dist})"
+                        page.goto(item_url, wait_until="domcontentloaded", timeout=12000)
                     except Exception:
                         pass
 
-                results.append({
-                    "brand": "",
-                    "product_type": "Merchandise",
-                    "title": title,
-                    "item_id": c_id,
-                    "price": price_disp,
-                    "seller": seller_name,
-                    "location": "United States",
-                    "seller_origin": "United States",
-                    "image_url": img_url,
-                    "url": u,
-                    "marketplace": "printerval.com",
-                    "condition": itm.get("network_type", "You Might Also Like"),
-                    "similarity": sim_label,
-                    "match_type": itm.get("network_type", "You Might Also Like")
-                })
+                    # Extract target image if not already hashed
+                    if not target_hash:
+                        try:
+                            t_src = page.evaluate("""() => {
+                                const og = document.querySelector('meta[property="og:image"], meta[name="og:image"]');
+                                if (og && og.content) return og.content;
+                                const src = document.querySelector('picture source[srcset]');
+                                if (src && src.srcset) {
+                                    const urls = src.srcset.match(/https?:\\/\\/[^\\s"']+/g);
+                                    if (urls && urls.length > 0) return urls[urls.length - 1].replace(/\\s+\\d+[wx]$/, '').trim();
+                                }
+                                const img = document.querySelector('img[src*="cdn.printerval.com"]');
+                                return img ? (img.currentSrc || img.src || '') : '';
+                            }""")
+                            if t_src and str(t_src).startswith("http"):
+                                req = urllib.request.Request(str(t_src), headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                                with urllib.request.urlopen(req, timeout=3) as r:
+                                    t_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
+                                    target_hash = self.compute_dhash(t_img)
+                        except Exception:
+                            pass
+
+                    # Active Carousel Harvester with Inactivity/Idle Early Exit
+                    start_time = time.time()
+                    last_new_time = time.time()
+                    last_count = 0
+                    idle_threshold = 1.5  # Inactivity threshold: close if no new items found for 1.5s
+                    max_scan_duration = 5.0  # Max total scan duration
+
+                    extract_js = """() => {
+                        const discovered = [];
+                        const seen = new Set();
+
+                        const sectionSelectors = [
+                            '.you-may-also-like-list',
+                            '.md-product-viewed-list',
+                            '.bought-together-other-product',
+                            '.related-items-wrapper',
+                            'div[class*="recommend"]',
+                            'div[class*="carousel"]',
+                            'div[class*="swiper"]',
+                            'div[class*="similar"]',
+                            'section'
+                        ];
+
+                        for (let sel of sectionSelectors) {
+                            const sections = document.querySelectorAll(sel);
+                            for (let sec of sections) {
+                                const hEl = sec.querySelector('h1, h2, h3, h4, h5, [class*="heading"], [class*="title"], .title');
+                                let secTitle = hEl ? hEl.innerText.trim() : '';
+                                let secType = '👥 You Might Also Like';
+
+                                const secClass = sec.className || '';
+                                if (secTitle.toLowerCase().includes('bought together') || secClass.includes('bought-together')) {
+                                    secType = '🛒 Frequently Bought Together';
+                                } else if (secTitle.toLowerCase().includes('viewed') || secClass.includes('product-viewed')) {
+                                    secType = '👥 Customers Also Viewed';
+                                } else if (secTitle.toLowerCase().includes('related') || secClass.includes('related-items')) {
+                                    secType = '🔗 Related Merchandise';
+                                } else if (secTitle.toLowerCase().includes('more') && secTitle.toLowerCase().includes('products')) {
+                                    secType = '🏪 Seller\\'s Other Products';
+                                }
+
+                                const cards = sec.querySelectorAll('.product-item, .item, [class*="product-card"], a[href*="-p"], .swiper-slide');
+                                for (let card of cards) {
+                                    const link = card.tagName === 'A' ? card : card.querySelector('a[href*="-p"]');
+                                    if (!link) continue;
+                                    const href = link.href || '';
+                                    if (!href.includes('-p')) continue;
+
+                                    const cleanHref = href.split('?')[0].split('#')[0];
+                                    if (seen.has(cleanHref)) continue;
+                                    seen.add(cleanHref);
+
+                                    const tEl = card.querySelector('[class*="title"], h3, h2, span.title') || link;
+                                    const pEl = card.querySelector('[class*="price"], .product-price, span[class*="price"]');
+                                    const sEl = card.querySelector('[class*="author"], [class*="artist"], [class*="store"], [class*="seller"], [class*="shop"]');
+
+                                    let title = tEl ? (tEl.innerText || '').trim() : '';
+                                    let price = pEl ? (pEl.innerText || '').trim() : '';
+                                    let seller = sEl ? (sEl.innerText || '').trim() : '';
+
+                                    // Extract image with complete data-srcset / data-original / lazy-load support
+                                    let img = '';
+                                    const sourceEls = card.querySelectorAll('picture source, source');
+                                    for (let s of sourceEls) {
+                                        const rawSet = s.srcset || s.getAttribute('data-srcset') || '';
+                                        if (rawSet) {
+                                            const urls = rawSet.match(/https?:\\/\\/[^\\s"']+/g);
+                                            if (urls && urls.length > 0) {
+                                                img = urls[urls.length - 1].replace(/\\s+\\d+[wx]$/, '').trim();
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    if (!img || img.startsWith('data:') || img.includes('1x1.png')) {
+                                        const imgEls = card.querySelectorAll('img');
+                                        for (let im of imgEls) {
+                                            const cand = im.getAttribute('data-original') ||
+                                                         im.getAttribute('data-src') ||
+                                                         im.getAttribute('data-srcset') ||
+                                                         im.getAttribute('data-lazy-src') ||
+                                                         im.getAttribute('data-thumb') ||
+                                                         (im.currentSrc && !im.currentSrc.startsWith('data:') && !im.currentSrc.includes('1x1.png') ? im.currentSrc : '') ||
+                                                         (im.src && !im.src.startsWith('data:') && !im.src.includes('1x1.png') ? im.src : '');
+                                            if (cand) {
+                                                const urls = cand.match(/https?:\\/\\/[^\\s"']+/g);
+                                                if (urls && urls.length > 0) {
+                                                    img = urls[urls.length - 1].replace(/\\s+\\d+[wx]$/, '').trim();
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    discovered.push({
+                                        title: title,
+                                        url: cleanHref,
+                                        price_raw: price,
+                                        seller: seller,
+                                        image_url: img,
+                                        network_type: secType
+                                    });
+                                }
+                            }
+                        }
+
+                        return discovered;
+                    }"""
+
+                    scroll_count = 0
+                    while (time.time() - start_time) < max_scan_duration:
+                        try:
+                            page.evaluate("window.scrollBy(0, 800);")
+                        except Exception:
+                            pass
+                        time.sleep(0.25)
+
+                        current_items = page.evaluate(extract_js)
+                        if len(current_items) > last_count:
+                            last_count = len(current_items)
+                            last_new_time = time.time()
+                            carousels_data = current_items
+                        elif last_count > 0 and (time.time() - last_new_time) >= idle_threshold:
+                            # Inactivity threshold reached -> break early
+                            break
+
+                        scroll_count += 1
+                        if scroll_count >= 10:
+                            break
+
+                    if not carousels_data:
+                        carousels_data = page.evaluate(extract_js)
+
+                finally:
+                    # Close browser context immediately
+                    try:
+                        context.close()
+                    except Exception:
+                        pass
 
         except Exception as e:
             logger.debug(f"Error finding connected network for Printerval item {item_url}: {e}")
         finally:
-            if self.headless:
-                self.close()
+            self._clean_profile_locks()
+
+        # Fast parallel perceptual image hashing (dHash) after browser window is closed
+        hash_results = {}
+        if target_hash and carousels_data:
+            from concurrent.futures import ThreadPoolExecutor
+            def _calc_dist(itm):
+                u_img = itm.get("image_url", "")
+                if u_img and str(u_img).startswith("http"):
+                    try:
+                        req = urllib.request.Request(u_img, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                        with urllib.request.urlopen(req, timeout=1.8) as r:
+                            c_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
+                            c_hash = self.compute_dhash(c_img)
+                            d = self.hamming_distance(target_hash, c_hash)
+                            if d <= 6:
+                                return (itm.get("url"), f"🎯 Exact Photo Match (dHash: {d})")
+                            elif d <= 14:
+                                return (itm.get("url"), f"🖼 Visual Match (dHash: {d})")
+                    except Exception:
+                        pass
+                return (itm.get("url"), None)
+
+            try:
+                with ThreadPoolExecutor(max_workers=10) as pool:
+                    for u, label in pool.map(_calc_dist, carousels_data):
+                        if label:
+                            hash_results[u] = label
+            except Exception:
+                pass
+
+        cache = self._load_cache()
+        seen_ids = set([str(item_id)] if item_id else [])
+
+        for itm in carousels_data:
+            u = itm.get("url", "")
+            m = re.search(r'-p(\d+)', u)
+            if not m:
+                continue
+            c_id = m.group(1)
+            if c_id in seen_ids:
+                continue
+            seen_ids.add(c_id)
+
+            raw_price = itm.get("price_raw", "")
+            m_price = re.search(r'\$\s*[\d,]+(?:\.\d+)?', raw_price)
+            price_disp = m_price.group(0) if m_price else "$19.95"
+
+            seller_name = itm.get("seller") or ""
+            if not seller_name and c_id in cache:
+                seller_name = cache[c_id].get("seller", "")
+            if not seller_name:
+                seller_name = "Printerval Creator"
+
+            title = itm.get("title", "")
+            if not title or title.startswith("$") or len(title) < 3:
+                slug_part = u.split("/")[-1].split("-p")[0].replace("-", " ").title()
+                title = slug_part if slug_part else f"Printerval Product #{c_id}"
+
+            img_url = itm.get("image_url", "")
+            sim_label = hash_results.get(u) or itm.get("network_type", "👥 You Might Also Like")
+
+            results.append({
+                "brand": "",
+                "product_type": "Merchandise",
+                "title": title,
+                "item_id": c_id,
+                "price": price_disp,
+                "seller": seller_name,
+                "location": "United States",
+                "seller_origin": "United States",
+                "image_url": img_url,
+                "url": u,
+                "marketplace": "printerval.com",
+                "condition": itm.get("network_type", "You Might Also Like"),
+                "similarity": sim_label,
+                "match_type": itm.get("network_type", "You Might Also Like")
+            })
 
         return results
 

@@ -1199,24 +1199,9 @@ class EbayScraper:
                 except Exception:
                     pass
                 try:
-                    page.goto(item_url, wait_until="domcontentloaded", timeout=20000)
+                    page.goto(item_url, wait_until="domcontentloaded", timeout=12000)
                 except Exception as e:
                     logger.debug(f"Initial goto notice for {item_url}: {e}")
-                
-                time.sleep(1.5)
-
-                # Scroll in stages to trigger lazy-loaded carousels (Similar items, Explore related, Compare)
-                for _ in range(5):
-                    try:
-                        page.evaluate("window.scrollBy(0, 800);")
-                    except Exception:
-                        pass
-                    time.sleep(0.4)
-                try:
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-                except Exception:
-                    pass
-                time.sleep(0.6)
 
                 # Auto-recover target image hash if not provided initially
                 if not target_hash:
@@ -1229,13 +1214,13 @@ class EbayScraper:
                         }""")
                         if target_img_src and str(target_img_src).startswith("http"):
                             req = urllib.request.Request(str(target_img_src), headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                            with urllib.request.urlopen(req, timeout=5) as r:
+                            with urllib.request.urlopen(req, timeout=3) as r:
                                 t_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
                                 target_hash = self.compute_dhash(t_img)
                     except Exception:
                         pass
 
-                raw_data = page.evaluate("""() => {
+                extract_ebay_js = """() => {
                     const res = [];
                     const seen = new Set();
                     document.querySelectorAll('a[href*="/itm/"]').forEach(a => {
@@ -1261,7 +1246,6 @@ class EbayScraper:
                             }
                             if (title.startsWith("New Listing")) title = title.replace("New Listing", "").trim();
                             if (title.includes("Opens in a new window")) title = title.replace(/Opens in a new window.*/i, "").trim();
-                            // Surgically strip ONLY parenthetical compatibility suffixes at the very end
                             title = title.replace(/\\s*\\((?:For|Fits|Fits for|Compatible with|Replacement for):\\s*[^)]+\\)\\s*$/i, '').trim();
 
                             if (!title) title = 'Discovered Listing ' + m[1];
@@ -1299,11 +1283,9 @@ class EbayScraper:
                             
                             let price = '';
                             if (card) {
-                                // 1. Remove all discount, badge, shipping, logistics, and strikethrough original-price spans
                                 const bad = card.querySelectorAll('[class*="discount"], [class*="shipping"], [class*="logistics"], [class*="coupon"], [class*="badge"], [class*="was-price"], [class*="strikethrough"], .clipped');
                                 bad.forEach(b => b.remove());
                                 
-                                // 2. Search candidate price elements
                                 const priceCandidates = card.querySelectorAll('.s-card__price, .s-item__price, [class*="price"], [class*="Price"], span');
                                 for (const el of priceCandidates) {
                                     const rawT = (el.innerText || '').trim();
@@ -1314,7 +1296,6 @@ class EbayScraper:
                                         break;
                                     }
                                 }
-                                // 3. Fallback: card HTML currency search
                                 if (!price) {
                                     const mHtml = card.innerHTML.match(/(?:\\$\\s*[\\d,]+(?:\\.\\d{2})?|US\\s*\\$\\s*[\\d,]+(?:\\.\\d{2})?|[\\£\\€\\¥\\₹]\\s*[\\d,]+(?:\\.\\d{2})?|(?:USD|EUR|GBP|AUD|CAD|MXN)\\s*\\$?\\s*[\\d,]+(?:\\.\\d{2})?|\\b[\\d,]+\\.\\d{2}\\b)/i);
                                     if (mHtml && !/free|shipping|delivery|off|sold|watch/i.test(mHtml[0])) {
@@ -1340,7 +1321,38 @@ class EbayScraper:
                         }
                     });
                     return res;
-                }""")
+                }"""
+
+                # Active Carousel Harvester with Inactivity/Idle Early Exit
+                start_time = time.time()
+                last_new_time = time.time()
+                last_count = 0
+                idle_threshold = 1.5
+                max_scan_duration = 5.0
+                raw_data = []
+
+                scroll_step = 0
+                while (time.time() - start_time) < max_scan_duration:
+                    try:
+                        page.evaluate("window.scrollBy(0, 800);")
+                    except Exception:
+                        pass
+                    time.sleep(0.25)
+
+                    current_items = page.evaluate(extract_ebay_js)
+                    if len(current_items) > last_count:
+                        last_count = len(current_items)
+                        last_new_time = time.time()
+                        raw_data = current_items
+                    elif last_count > 0 and (time.time() - last_new_time) >= idle_threshold:
+                        break
+
+                    scroll_step += 1
+                    if scroll_step >= 10:
+                        break
+
+                if not raw_data:
+                    raw_data = page.evaluate(extract_ebay_js)
 
                 # In-page parallel seller handle, image, and price resolution for candidate IDs
                 candidate_ids = list(dict.fromkeys([itm['id'] for itm in raw_data if itm.get('id') and itm['id'] not in seen_ids]))
@@ -1395,6 +1407,50 @@ class EbayScraper:
                     except Exception:
                         pass
 
+                # Close browser context immediately to release window & system resources
+                try:
+                    context.close()
+                except Exception:
+                    pass
+
+                # Fast parallel perceptual image matching (dHash) after browser closes
+                dhash_results = {}
+                if target_hash and raw_data:
+                    from concurrent.futures import ThreadPoolExecutor
+                    def _hash_ebay_img(itm):
+                        iid_sub = itm['id']
+                        s_info_sub = seller_map.get(iid_sub, {}) if isinstance(seller_map, dict) else {}
+                        h_img = itm.get('img', '') or (s_info_sub.get('img', '') if isinstance(s_info_sub, dict) else '')
+                        if h_img and "ebayimg.com" in h_img:
+                            h_img = re.sub(r's-l\d+\.(jpg|webp|png|jpeg)', r's-l500.\1', h_img)
+                        if h_img and str(h_img).startswith("http"):
+                            try:
+                                req = urllib.request.Request(h_img, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                                with urllib.request.urlopen(req, timeout=1.8) as r:
+                                    c_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
+                                    c_hash = self.compute_dhash(c_img)
+                                    d_val = self.hamming_distance(target_hash, c_hash)
+                                    lbl = "Related Listing"
+                                    if d_val <= 4:
+                                        lbl = "🎯 Exact Photo Match (100%)"
+                                    elif d_val <= 8:
+                                        lbl = "🔍 Near-Exact Photo (~90%)"
+                                    elif d_val <= 14:
+                                        lbl = "🖼 High Visual Similarity (~75%)"
+                                    elif d_val <= 20:
+                                        lbl = "📷 Similar Photo Theme"
+                                    return (iid_sub, (lbl, d_val))
+                            except Exception:
+                                pass
+                        return (iid_sub, ("Related Listing", 99))
+
+                    try:
+                        with ThreadPoolExecutor(max_workers=10) as pool:
+                            for i_id, res_tuple in pool.map(_hash_ebay_img, raw_data):
+                                dhash_results[i_id] = res_tuple
+                    except Exception:
+                        pass
+
                 for itm in raw_data:
                     iid = itm['id']
                     if iid in seen_ids:
@@ -1415,29 +1471,13 @@ class EbayScraper:
                     from exporter import normalize_price_string
                     resolved_price = normalize_price_string(resolved_price)
 
-                    sim_label = "Related Listing"
-                    dist_val = 99
                     hi_img = resolved_img
                     if hi_img and "ebayimg.com" in hi_img:
                         hi_img = re.sub(r's-l\d+\.(jpg|webp|png|jpeg)', r's-l500.\1', hi_img)
 
-                    if target_hash and hi_img and str(hi_img).startswith("http"):
-                        try:
-                            req = urllib.request.Request(hi_img, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                            with urllib.request.urlopen(req, timeout=4) as r:
-                                c_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
-                                c_hash = self.compute_dhash(c_img)
-                                dist_val = self.hamming_distance(target_hash, c_hash)
-                                if dist_val <= 4:
-                                    sim_label = "🎯 Exact Photo Match (100%)"
-                                elif dist_val <= 8:
-                                    sim_label = "🔍 Near-Exact Photo (~90%)"
-                                elif dist_val <= 14:
-                                    sim_label = "🖼 High Visual Similarity (~75%)"
-                                elif dist_val <= 20:
-                                    sim_label = "📷 Similar Photo Theme"
-                        except Exception:
-                            pass
+                    sim_tuple = dhash_results.get(iid, ("Related Listing", 99))
+                    sim_label = sim_tuple[0]
+                    dist_val = sim_tuple[1]
 
                     discovered.append({
                         "item_id": iid,
@@ -1449,10 +1489,6 @@ class EbayScraper:
                         "distance": dist_val,
                         "url": f"https://www.ebay.com/itm/{iid}"
                     })
-                try:
-                    context.close()
-                except Exception:
-                    pass
         finally:
             try:
                 shutil.rmtree(temp_worker_dir, ignore_errors=True)

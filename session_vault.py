@@ -248,22 +248,34 @@ class SessionVault:
                         args=[
                             "--disable-blink-features=AutomationControlled",
                             "--no-sandbox",
-                            "--disable-dev-shm-usage"
+                            "--disable-infobars",
+                            "--disable-dev-shm-usage",
+                            "--no-first-run",
+                            "--no-default-browser-check"
                         ],
+                        ignore_default_args=["--enable-automation"],
                         viewport={"width": 1366, "height": 850}
                     )
                     page = context.pages[0] if context.pages else context.new_page()
-                    page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+                    page.add_init_script("""
+                        delete navigator.__proto__.webdriver;
+                        Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true });
+                        window.chrome = { runtime: {}, app: {}, csi: () => {}, loadTimes: () => {} };
+                    """)
                     
                     try:
                         page.goto(target_url, timeout=45000, wait_until="domcontentloaded")
                     except Exception as ge:
                         logger.warning(f"Navigation note for {cfg['name']}: {ge}")
 
-                    try:
-                        page.wait_for_event("close", timeout=0)
-                    except Exception:
-                        pass
+                    # Keep browser alive until user completes verification and manually closes the window
+                    while True:
+                        try:
+                            if not context.pages or all(pg.is_closed() for pg in context.pages):
+                                break
+                            time.sleep(0.5)
+                        except Exception:
+                            break
 
                     try:
                         cookies = context.cookies()

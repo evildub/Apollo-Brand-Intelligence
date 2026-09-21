@@ -650,6 +650,83 @@ CONTINENTAL_QUOTES = [
 ]
 
 
+def download_image_bytes(url: str, timeout: float = 10.0, session=None) -> Optional[bytes]:
+    """
+    Robust image byte downloader with TLS fingerprint impersonation for protected CDNs (Spreadshirt, Threadless, etc.).
+    """
+    if not url or not str(url).startswith("http"):
+        return None
+    
+    url_str = str(url).strip()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+    }
+    
+    url_low = url_str.lower()
+    if "spreadshirt" in url_low or "spreadshirtmedia" in url_low:
+        headers["Referer"] = "https://www.spreadshirt.com/"
+        headers["Origin"] = "https://www.spreadshirt.com"
+    elif "threadless" in url_low or "maestro." in url_low:
+        headers["Referer"] = "https://www.threadless.com/"
+        headers["Origin"] = "https://www.threadless.com"
+    elif "redbubble" in url_low or "rbxcdn" in url_low:
+        headers["Referer"] = "https://www.redbubble.com/"
+    elif "printerval" in url_low:
+        headers["Referer"] = "https://printerval.com/"
+    elif "zazzle" in url_low or "zcache" in url_low:
+        headers["Referer"] = "https://www.zazzle.com/"
+    elif "teepublic" in url_low:
+        headers["Referer"] = "https://www.teepublic.com/"
+
+    # If it's a known protected CDN (e.g. Spreadshirt Fastly/Varnish WAF), try curl_cffi first
+    is_protected = any(k in url_low for k in ("spreadshirtmedia", "spreadshirt.com", "spreadshirtmedia.net"))
+    if is_protected:
+        try:
+            from curl_cffi import requests as cffi_requests
+            r = cffi_requests.get(url_str, headers=headers, impersonate="edge101", timeout=timeout)
+            if r.status_code == 200 and r.content:
+                return r.content
+        except Exception:
+            pass
+
+    # Standard fast HTTP request using active session or requests
+    try:
+        req_lib = session if session is not None else requests
+        r = req_lib.get(url_str, headers=headers, timeout=timeout)
+        if r.status_code == 200 and r.content:
+            return r.content
+        elif r.status_code in (403, 401, 429, 503):
+            # Retry with curl_cffi on WAF blockage
+            try:
+                from curl_cffi import requests as cffi_requests
+                r_cffi = cffi_requests.get(url_str, headers=headers, impersonate="edge101", timeout=timeout)
+                if r_cffi.status_code == 200 and r_cffi.content:
+                    return r_cffi.content
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Fallback to urllib
+    try:
+        req = urllib.request.Request(url_str, headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = resp.read()
+            if data:
+                return data
+    except Exception:
+        try:
+            from curl_cffi import requests as cffi_requests
+            r_cffi = cffi_requests.get(url_str, headers=headers, impersonate="edge101", timeout=timeout)
+            if r_cffi.status_code == 200 and r_cffi.content:
+                return r_cffi.content
+        except Exception:
+            pass
+
+    return None
+
+
 VERSION = "3.0.0"
 
 
@@ -1044,6 +1121,7 @@ class EbayTool(tk.Tk):
         self.tiktok_login_btn = self._btn(top_right, "🎵 TikTok Connect", self._launch_tiktok_session)
         self.temu_login_btn = self._btn(top_right, "🟠 Temu Connect", self._launch_temu_session)
         self.printerval_login_btn = self._btn(top_right, "👕 Printerval Connect", self._launch_printerval_session)
+        self.threadless_login_btn = self._btn(top_right, "🧵 Threadless Connect", self._launch_threadless_session)
         self.pod_expand_btn = self._btn(top_right, "👕 Expand POD Variants", self._expand_pod_variants, accent=True)
 
         # Wish Infinite Scroll Depth Controls (packed dynamically when Wish is active)
@@ -2417,7 +2495,7 @@ class EbayTool(tk.Tk):
         except Exception:
             pass
 
-    def _show_themed_confirm(self, title: str, message: str, confirm_text: str = "Confirm", cancel_text: str = "Cancel", danger: bool = False, parent=None) -> bool:
+    def _show_themed_confirm(self, title: str, message: str, confirm_text: str = None, cancel_text: str = None, yes_text: str = None, no_text: str = None, danger: bool = False, icon: str = None, parent=None) -> bool:
         """Modal custom confirmation dialog styled matching current Apollo theme."""
         t = self.theme
         root_parent = parent or self
@@ -2428,24 +2506,48 @@ class EbayTool(tk.Tk):
         win.transient(root_parent)
         win.grab_set()
         self._apply_dark_titlebar(win)
+        self._load_app_icon(win)
         
-        self._center_window(win, 500, 240)
+        # Resolve button text: prefer explicit confirm_text / cancel_text, then yes_text / no_text, default to Confirm / Cancel
+        c_text = confirm_text if confirm_text is not None else (yes_text if yes_text is not None else "Confirm")
+        can_text = cancel_text if cancel_text is not None else (no_text if no_text is not None else "Cancel")
 
-        card = tk.Frame(win, bg=t["panel"], padx=20, pady=16, highlightbackground=t["border"], highlightthickness=1)
+        # Resolve icon
+        if icon:
+            icon_str = icon
+        elif danger:
+            icon_str = "🗑️"
+        elif "Restore" in title or "Question" in title:
+            icon_str = "❓"
+        elif "Purge" in title or "Delete" in title:
+            icon_str = "⚠️"
+        else:
+            icon_str = "ℹ️"
+
+        # Calculate dynamic size so text and buttons have ample breathing room
+        msg_lines = message.count("\n") + 1
+        calc_w = 540
+        calc_h = max(280, 220 + (msg_lines * 18))
+        
+        self._center_window(win, calc_w, calc_h)
+
+        card = tk.Frame(win, bg=t["panel"], padx=22, pady=18, highlightbackground=t.get("border", "#334155"), highlightthickness=1)
         card.pack(fill="both", expand=True, padx=10, pady=10)
 
         head_row = tk.Frame(card, bg=t["panel"])
         head_row.pack(fill="x", pady=(0, 8))
-        icon_str = "🗑️" if danger else ("⚠️" if ("Purge" in title or "Delete" in title or "Restore" in title) else "ℹ️")
-        tk.Label(head_row, text=f"{icon_str} {title}", font=FONT_HEAD, bg=t["panel"],
-                 fg=t["danger"] if danger else t["accent"]).pack(side="left")
+        tk.Label(head_row, text=f"{icon_str}  {title}", font=FONT_HEAD, bg=t["panel"],
+                 fg=t["danger"] if danger else t.get("accent", "#38bdf8")).pack(side="left")
 
-        msg_lbl = tk.Label(card, text=message, font=FONT_SM, bg=t["panel"], fg=t["text"],
-                           justify="left", wraplength=440)
-        msg_lbl.pack(fill="x", pady=(0, 16))
+        div = tk.Frame(card, bg=t.get("border", "#334155"), height=1)
+        div.pack(fill="x", pady=(0, 10))
+
+        msg_lbl = tk.Label(card, text=message, font=FONT_NORM, bg=t["panel"], fg=t.get("text", "#ffffff"),
+                           justify="left", wraplength=calc_w - 70)
+        msg_lbl.pack(fill="both", expand=True, pady=(0, 14))
 
         btn_row = tk.Frame(card, bg=t["panel"])
-        btn_row.pack(fill="x", side="bottom")
+        btn_row.pack(fill="x", side="bottom", pady=(6, 2))
 
         result = [False]
 
@@ -2461,17 +2563,21 @@ class EbayTool(tk.Tk):
         win.bind("<Escape>", lambda e: _on_cancel())
         win.bind("<Return>", lambda e: _on_confirm())
 
-        c_bg = t["danger"] if danger else t["accent"]
+        c_bg = t["danger"] if danger else t.get("accent_btn", t.get("accent", "#0284c7"))
         c_fg = "white" if danger or not t.get("btn_accent_fg") else t.get("btn_accent_fg", "white")
-        btn_confirm = tk.Button(btn_row, text=confirm_text, font=FONT_BOLD,
+        btn_confirm = tk.Button(btn_row, text=c_text, font=FONT_BOLD,
                                 bg=c_bg, fg=c_fg,
-                                relief="flat", padx=14, pady=5, cursor="hand2", command=_on_confirm)
+                                activebackground=t.get("accent2", "#38bdf8"),
+                                relief="flat", padx=18, pady=7, cursor="hand2", command=_on_confirm)
         btn_confirm.pack(side="right", padx=(8, 0))
 
-        btn_cancel = tk.Button(btn_row, text=cancel_text, font=FONT_NORM,
-                               bg=t["btn_normal_bg"], fg=t["btn_normal_fg"],
-                               relief="flat", padx=12, pady=5, cursor="hand2", command=_on_cancel)
+        btn_cancel = tk.Button(btn_row, text=can_text, font=FONT_NORM,
+                               bg=t.get("btn_normal_bg", t.get("btn_bg", "#334155")),
+                               fg=t.get("btn_normal_fg", t.get("text", "#ffffff")),
+                               activebackground=t.get("panel", "#1e1e1e"),
+                               relief="flat", padx=16, pady=7, cursor="hand2", command=_on_cancel)
         btn_cancel.pack(side="right")
+        btn_confirm.focus_set()
 
         win.wait_window()
         return result[0]
@@ -2929,8 +3035,12 @@ class EbayTool(tk.Tk):
         if hasattr(self, "threadless_depth_combo"):
             if "Threadless" in market:
                 self.threadless_depth_combo.pack(side="left", padx=(0, 4), after=self.market_combo)
+                if hasattr(self, "threadless_login_btn"):
+                    self.threadless_login_btn.pack(side="left", padx=(0, 4), after=self.threadless_depth_combo)
             else:
                 self.threadless_depth_combo.pack_forget()
+                if hasattr(self, "threadless_login_btn"):
+                    self.threadless_login_btn.pack_forget()
 
         if hasattr(self, "teespring_depth_combo"):
             if "TeeSpring" in market:
@@ -7042,8 +7152,13 @@ class EbayTool(tk.Tk):
         self._apply_dark_titlebar(win)
         self._load_app_icon(win)
 
-        card = tk.Frame(win, bg=t["panel"], padx=20, pady=16, highlightbackground=t.get("border", "#334155"), highlightthickness=1)
-        card.pack(fill="both", expand=True, padx=8, pady=8)
+        msg_lines = message.count("\n") + 1
+        calc_w = 520
+        calc_h = max(260, 200 + (msg_lines * 18))
+        self._center_window(win, calc_w, calc_h)
+
+        card = tk.Frame(win, bg=t["panel"], padx=22, pady=18, highlightbackground=t.get("border", "#334155"), highlightthickness=1)
+        card.pack(fill="both", expand=True, padx=10, pady=10)
 
         # Header row with theme icon and title
         hdr = tk.Frame(card, bg=t["panel"])
@@ -7056,11 +7171,11 @@ class EbayTool(tk.Tk):
         div.pack(fill="x", pady=(0, 10))
 
         # Message body
-        tk.Label(card, text=message, font=FONT_NORM, bg=t["panel"], fg=t.get("text", "#ffffff"), justify="left", wraplength=400).pack(anchor="w", pady=(0, 14))
+        tk.Label(card, text=message, font=FONT_NORM, bg=t["panel"], fg=t.get("text", "#ffffff"), justify="left", wraplength=calc_w - 70).pack(anchor="w", fill="both", expand=True, pady=(0, 14))
 
         # OK Button
         btn_row = tk.Frame(card, bg=t["panel"])
-        btn_row.pack(fill="x")
+        btn_row.pack(fill="x", side="bottom", pady=(6, 2))
         btn = tk.Button(
             btn_row,
             text="OK",
@@ -7069,8 +7184,8 @@ class EbayTool(tk.Tk):
             fg="#ffffff" if not str(t.get("name", "")).startswith("🪙") else "#0A0B0E",
             activebackground=t.get("accent2", "#38bdf8"),
             relief="flat",
-            padx=18,
-            pady=3,
+            padx=20,
+            pady=7,
             cursor="hand2",
             command=win.destroy
         )
@@ -7079,7 +7194,7 @@ class EbayTool(tk.Tk):
         win.bind("<Return>", lambda e: win.destroy())
         win.bind("<Escape>", lambda e: win.destroy())
 
-        self._center_window(win, 460, 210)
+        win.wait_window()
 
     def _show_themed_warning(self, title: str, message: str, icon: str = "⚠", parent=None):
         """Display an Apollo theme-adaptive warning modal dialog."""
@@ -7088,86 +7203,6 @@ class EbayTool(tk.Tk):
     def _show_themed_error(self, title: str, message: str, icon: str = "❌", parent=None):
         """Display an Apollo theme-adaptive error modal dialog."""
         self._show_themed_info(title, message, icon=icon, parent=parent)
-
-    def _show_themed_confirm(self, title: str, message: str, icon: str = "❓", yes_text: str = "Yes", no_text: str = "No", parent=None) -> bool:
-        """Display an Apollo theme-adaptive confirmation dialog returning True for Yes, False for No."""
-        t = self.theme
-        win = tk.Toplevel(parent or self)
-        win.title(title)
-        win.configure(bg=t["bg"])
-        win.resizable(False, False)
-        win.transient(parent or self)
-        win.grab_set()
-        self._apply_dark_titlebar(win)
-        self._load_app_icon(win)
-
-        result = {"confirmed": False}
-
-        card = tk.Frame(win, bg=t["panel"], padx=20, pady=16, highlightbackground=t.get("border", "#334155"), highlightthickness=1)
-        card.pack(fill="both", expand=True, padx=8, pady=8)
-
-        # Header row with theme icon and title
-        hdr = tk.Frame(card, bg=t["panel"])
-        hdr.pack(fill="x", pady=(0, 8))
-
-        tk.Label(hdr, text=icon, font=("Segoe UI", 16), bg=t["panel"], fg=t.get("accent", "#38bdf8")).pack(side="left", padx=(0, 8))
-        tk.Label(hdr, text=title, font=FONT_HEAD, bg=t["panel"], fg=t.get("text", "#ffffff")).pack(side="left")
-
-        div = tk.Frame(card, bg=t.get("border", "#334155"), height=1)
-        div.pack(fill="x", pady=(0, 10))
-
-        # Message body
-        tk.Label(card, text=message, font=FONT_NORM, bg=t["panel"], fg=t.get("text", "#ffffff"), justify="left", wraplength=400).pack(anchor="w", pady=(0, 14))
-
-        # Buttons (Yes / No)
-        btn_row = tk.Frame(card, bg=t["panel"])
-        btn_row.pack(fill="x")
-
-        def _on_yes():
-            result["confirmed"] = True
-            win.destroy()
-
-        def _on_no():
-            result["confirmed"] = False
-            win.destroy()
-
-        no_btn = tk.Button(
-            btn_row,
-            text=no_text,
-            font=FONT_NORM,
-            bg=t.get("btn_normal_bg", t.get("btn_bg", "#334155")),
-            fg=t.get("btn_normal_fg", t.get("text", "#ffffff")),
-            activebackground=t.get("panel", "#1e1e1e"),
-            relief="flat",
-            padx=16,
-            pady=3,
-            cursor="hand2",
-            command=_on_no
-        )
-        no_btn.pack(side="right", padx=(6, 0))
-
-        yes_btn = tk.Button(
-            btn_row,
-            text=yes_text,
-            font=FONT_BOLD,
-            bg=t.get("accent_btn", t.get("accent", "#0284c7")),
-            fg="#ffffff" if not str(t.get("name", "")).startswith("🪙") else "#0A0B0E",
-            activebackground=t.get("accent2", "#38bdf8"),
-            relief="flat",
-            padx=18,
-            pady=3,
-            cursor="hand2",
-            command=_on_yes
-        )
-        yes_btn.pack(side="right")
-        yes_btn.focus_set()
-
-        win.bind("<Return>", lambda e: _on_yes())
-        win.bind("<Escape>", lambda e: _on_no())
-
-        self._center_window(win, 460, 210)
-        win.wait_window()
-        return result["confirmed"]
 
     def _show_themed_askyesnocancel(self, title: str, message: str, icon: str = "❓", parent=None) -> Optional[bool]:
         """Display an Apollo theme-adaptive Yes/No/Cancel dialog returning True (Yes), False (No), or None (Cancel)."""
@@ -7183,8 +7218,13 @@ class EbayTool(tk.Tk):
 
         result = {"choice": None}
 
-        card = tk.Frame(win, bg=t["panel"], padx=20, pady=16, highlightbackground=t.get("border", "#334155"), highlightthickness=1)
-        card.pack(fill="both", expand=True, padx=8, pady=8)
+        msg_lines = message.count("\n") + 1
+        calc_w = 540
+        calc_h = max(280, 220 + (msg_lines * 18))
+        self._center_window(win, calc_w, calc_h)
+
+        card = tk.Frame(win, bg=t["panel"], padx=22, pady=18, highlightbackground=t.get("border", "#334155"), highlightthickness=1)
+        card.pack(fill="both", expand=True, padx=10, pady=10)
 
         # Header row with theme icon and title
         hdr = tk.Frame(card, bg=t["panel"])
@@ -7197,11 +7237,11 @@ class EbayTool(tk.Tk):
         div.pack(fill="x", pady=(0, 10))
 
         # Message body
-        tk.Label(card, text=message, font=FONT_NORM, bg=t["panel"], fg=t.get("text", "#ffffff"), justify="left", wraplength=440).pack(anchor="w", pady=(0, 14))
+        tk.Label(card, text=message, font=FONT_NORM, bg=t["panel"], fg=t.get("text", "#ffffff"), justify="left", wraplength=calc_w - 70).pack(anchor="w", fill="both", expand=True, pady=(0, 14))
 
         # Buttons
         btn_row = tk.Frame(card, bg=t["panel"])
-        btn_row.pack(fill="x")
+        btn_row.pack(fill="x", side="bottom", pady=(6, 2))
 
         def _on_yes():
             result["choice"] = True
@@ -7221,9 +7261,10 @@ class EbayTool(tk.Tk):
             font=FONT_NORM,
             bg=t.get("btn_normal_bg", t.get("btn_bg", "#334155")),
             fg=t.get("btn_normal_fg", t.get("text", "#ffffff")),
+            activebackground=t.get("panel", "#1e1e1e"),
             relief="flat",
-            padx=12,
-            pady=3,
+            padx=14,
+            pady=7,
             cursor="hand2",
             command=_on_cancel
         ).pack(side="right", padx=(6, 0))
@@ -7234,9 +7275,10 @@ class EbayTool(tk.Tk):
             font=FONT_NORM,
             bg=t.get("btn_normal_bg", t.get("btn_bg", "#334155")),
             fg=t.get("btn_normal_fg", t.get("text", "#ffffff")),
+            activebackground=t.get("panel", "#1e1e1e"),
             relief="flat",
-            padx=14,
-            pady=3,
+            padx=16,
+            pady=7,
             cursor="hand2",
             command=_on_no
         ).pack(side="right", padx=(6, 0))
@@ -7250,7 +7292,7 @@ class EbayTool(tk.Tk):
             activebackground=t.get("accent2", "#38bdf8"),
             relief="flat",
             padx=18,
-            pady=3,
+            pady=7,
             cursor="hand2",
             command=_on_yes
         )
@@ -7260,7 +7302,6 @@ class EbayTool(tk.Tk):
         win.bind("<Return>", lambda e: _on_yes())
         win.bind("<Escape>", lambda e: _on_cancel())
 
-        self._center_window(win, 480, 230)
         win.wait_window()
         return result["choice"]
 
@@ -7668,10 +7709,10 @@ class EbayTool(tk.Tk):
             pil_img = self.raw_img_cache.get(img_url)
             if not pil_img and img_url:
                 try:
-                    req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0"})
-                    with urllib.request.urlopen(req, timeout=10) as r:
-                        pil_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
-                    self.raw_img_cache[img_url] = pil_img
+                    data = download_image_bytes(img_url, timeout=10.0, session=self.http_session)
+                    if data:
+                        pil_img = Image.open(io.BytesIO(data)).convert("RGBA")
+                        self.raw_img_cache[img_url] = pil_img
                 except Exception:
                     continue
 
@@ -7710,10 +7751,10 @@ class EbayTool(tk.Tk):
             pil_img = self.raw_img_cache.get(img_url)
             if not pil_img and img_url:
                 try:
-                    req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0"})
-                    with urllib.request.urlopen(req, timeout=10) as r:
-                        pil_img = Image.open(io.BytesIO(r.read())).convert("RGBA")
-                    self.raw_img_cache[img_url] = pil_img
+                    data = download_image_bytes(img_url, timeout=10.0, session=self.http_session)
+                    if data:
+                        pil_img = Image.open(io.BytesIO(data)).convert("RGBA")
+                        self.raw_img_cache[img_url] = pil_img
                 except Exception:
                     continue
 
@@ -8875,10 +8916,9 @@ class EbayTool(tk.Tk):
 
             for attempt in range(2):
                 try:
-                    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-                    resp = self.http_session.get(url, headers=headers, timeout=10.0)
-                    if resp.status_code == 200:
-                        pil_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
+                    data = download_image_bytes(url, timeout=10.0, session=self.http_session)
+                    if data:
+                        pil_img = Image.open(io.BytesIO(data)).convert("RGBA")
                         self.raw_img_cache[url] = pil_img
 
                         # Compute 64-bit pHash for sorting by thumbnail similarity!
@@ -8952,8 +8992,11 @@ class EbayTool(tk.Tk):
 
                         self.after(0, _on_main_thread)
                         break
-                    elif resp.status_code in (429, 503, 504) and attempt < 1:
-                        time.sleep(0.4)
+                    else:
+                        if attempt < 1:
+                            time.sleep(0.3)
+                        else:
+                            self.after(0, lambda u=url: self._pending_thumb_urls.discard(u))
                 except Exception:
                     if attempt < 1:
                         time.sleep(0.35)
@@ -9092,9 +9135,9 @@ class EbayTool(tk.Tk):
 
     def _fetch_and_render_img(self, url, img_lbl, target_win):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-            with urllib.request.urlopen(req, timeout=7) as resp:
-                data = resp.read()
+            data = download_image_bytes(url, timeout=7.0, session=self.http_session)
+            if not data:
+                raise ValueError("Could not download image data")
             pil_img = Image.open(io.BytesIO(data)).convert("RGBA")
             self.raw_img_cache[url] = pil_img
             canvas = self._get_scaled_canvas(pil_img, 180)
@@ -9174,7 +9217,9 @@ class EbayTool(tk.Tk):
             info_str += f"\nQuery: {session.get('brand', '')} - {session.get('query', '')}"
 
         if self._show_themed_confirm("Restore Previous Session",
-                                     f"Apollo detected an unsaved session:\n\n{info_str}\n\nWould you like to restore these listings into the workspace?"):
+                                     f"Apollo detected an unsaved session:\n\n{info_str}\n\nWould you like to restore these listings into the workspace?",
+                                     confirm_text="Yes",
+                                     cancel_text="No"):
             self.results = session["results"]
             self.seen_item_ids = {str(it.get("url", "")).split("?")[0] for it in self.results if it.get("url")}
             for it in self.results:
@@ -9835,6 +9880,13 @@ class EbayTool(tk.Tk):
         threading.Thread(target=lambda: self.printerval_scraper.launch_interactive_auth(window_pos=w_pos), daemon=True).start()
         messagebox.showinfo("Printerval Connect", "A browser window is opening to Printerval.\n\nIf Cloudflare asks to 'Verify you are human' or accept cookies, please complete it.\n\nYour clearance tokens will be permanently saved for all automated background sweeps!")
 
+    def _launch_threadless_session(self):
+        """Open persistent Edge browser session to solve Cloudflare challenge and establish Threadless clearance cookies."""
+        w_pos = self._get_browser_window_pos()
+        self._log("🧵 Opening Threadless anti-bot & Cloudflare clearance window in Microsoft Edge...")
+        threading.Thread(target=lambda: self.threadless_scraper.launch_interactive_auth(window_pos=w_pos), daemon=True).start()
+        messagebox.showinfo("Threadless Connect", "A browser window is opening to Threadless.\n\nIf Cloudflare asks to 'Verify you are human' or accept cookies, please complete it.\n\nYour clearance tokens will be permanently saved for all automated background sweeps!")
+
     # ══════════════════════════════════════════════════════════════════════════
     #  ADHOC BATCH URL & EXCEL LISTING IMPORTER
     # ══════════════════════════════════════════════════════════════════════════
@@ -10307,12 +10359,12 @@ class EbayTool(tk.Tk):
         self._win_registry = win
         win.title("🛡 Enterprise Brand Enforcement & Recidivism Registry")
         win.configure(bg=t["bg"])
-        win.geometry("1180x680")
-        win.minsize(980, 580)
+        win.geometry("1300x740")
+        win.minsize(1040, 580)
         self._apply_dark_titlebar(win)
 
         # Center relative to main window
-        self._center_window(win, 1180, 680)
+        self._center_window(win, 1300, 740)
 
         pad_f = tk.Frame(win, bg=t["bg"], padx=14, pady=12)
         pad_f.pack(fill="both", expand=True)
@@ -10417,16 +10469,16 @@ class EbayTool(tk.Tk):
             "scans": "Scans"
         }
         col_w = {
-            "seller": 140,
-            "status": 120,
-            "brands": 150,
-            "product_types": 140,
-            "listings": 65,
-            "total_val": 120,
-            "locations": 120,
-            "first_seen": 110,
-            "last_scanned": 110,
-            "scans": 50
+            "seller": 180,
+            "status": 140,
+            "brands": 180,
+            "product_types": 160,
+            "listings": 75,
+            "total_val": 140,
+            "locations": 140,
+            "first_seen": 120,
+            "last_scanned": 120,
+            "scans": 60
         }
         for c in cols:
             tree.heading(c, text=col_headers[c])
@@ -10440,9 +10492,12 @@ class EbayTool(tk.Tk):
         hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
         tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
 
-        tree.pack(side="left", fill="both", expand=True)
-        vsb.pack(side="right", fill="y")
-        hsb.pack(side="bottom", fill="x")
+        tree_frame.rowconfigure(0, weight=1)
+        tree_frame.columnconfigure(0, weight=1)
+
+        tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
 
         def _matches_reg_query(seller, status, brands_str, pts_str, locs_str, total_val_str, query_str, col_target):
             if not query_str:
@@ -10791,12 +10846,12 @@ class EbayTool(tk.Tk):
         win = tk.Toplevel(self)
         win.title(f"🔍 Seller Listings Inspector — {seller_name}")
         win.configure(bg=t["bg"])
-        win.geometry("980x540")
-        win.minsize(800, 420)
+        win.geometry("1060x580")
+        win.minsize(860, 440)
         self._apply_dark_titlebar(win)
 
         # Center relative to main window
-        self._center_window(win, 980, 540)
+        self._center_window(win, 1060, 580)
 
         pad_f = tk.Frame(win, bg=t["bg"], padx=12, pady=10)
         pad_f.pack(fill="both", expand=True)
@@ -10815,16 +10870,22 @@ class EbayTool(tk.Tk):
 
         cols = ("brand", "product_type", "title", "item_id", "price", "location", "url")
         tree = ttk.Treeview(tree_frame, columns=cols, show="headings", selectmode="browse")
-        col_w = {"brand": 80, "product_type": 120, "title": 300, "item_id": 110, "price": 80, "location": 110, "url": 150}
+        col_w = {"brand": 100, "product_type": 130, "title": 340, "item_id": 120, "price": 90, "location": 120, "url": 180}
         for c in cols:
             tree.heading(c, text=self.col_labels.get(c, c.title()))
             tree.column(c, width=col_w.get(c, 100))
         self._style_tree(tree)
 
         vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
-        tree.configure(yscrollcommand=vsb.set)
-        tree.pack(side="left", fill="both", expand=True)
-        vsb.pack(side="right", fill="y")
+        hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+        tree_frame.rowconfigure(0, weight=1)
+        tree_frame.columnconfigure(0, weight=1)
+
+        tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
 
         for it in seller_data.get("items", []):
             tree.insert("", "end", values=(
@@ -11643,9 +11704,10 @@ class ConnectedNetworkModal(tk.Toplevel):
                 if hasattr(self.parent, "raw_img_cache") and url in self.parent.raw_img_cache:
                     pimg = self.parent.raw_img_cache[url].copy()
                 else:
-                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                    with urllib.request.urlopen(req, timeout=8) as r:
-                        pimg = Image.open(io.BytesIO(r.read())).convert("RGBA")
+                    data = download_image_bytes(url, timeout=8)
+                    if not data:
+                        raise ValueError("No data")
+                    pimg = Image.open(io.BytesIO(data)).convert("RGBA")
                 
                 pimg.thumbnail((96, 96), Image.Resampling.LANCZOS)
                 canvas = Image.new("RGBA", (96, 96), (0, 0, 0, 0))
@@ -11995,15 +12057,12 @@ class ConnectedNetworkModal(tk.Toplevel):
         self._pending_thumb_iids[url] = [iid]
 
         def _w():
-            referer = "https://www.redbubble.com/" if "redbubble" in url else ("https://printerval.com/" if "printerval" in url else "")
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-            if referer:
-                headers["Referer"] = referer
             for attempt in range(2):
                 try:
-                    req = urllib.request.Request(url, headers=headers)
-                    with urllib.request.urlopen(req, timeout=10) as r:
-                        pimg = Image.open(io.BytesIO(r.read())).convert("RGBA")
+                    data = download_image_bytes(url, timeout=10.0)
+                    if not data:
+                        raise ValueError("No data")
+                    pimg = Image.open(io.BytesIO(data)).convert("RGBA")
                     pimg.thumbnail((size, size), Image.Resampling.LANCZOS)
                     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
                     canvas.paste(pimg, ((size - pimg.width)//2, (size - pimg.height)//2))
@@ -12846,9 +12905,10 @@ class ReverseVisualModal(tk.Toplevel):
                 elif isinstance(img_src, str) and os.path.exists(img_src):
                     pimg = Image.open(img_src).convert("RGBA")
                 elif isinstance(img_src, str) and img_src.startswith("http"):
-                    req = urllib.request.Request(img_src, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                    with urllib.request.urlopen(req, timeout=8) as r:
-                        pimg = Image.open(io.BytesIO(r.read())).convert("RGBA")
+                    data = download_image_bytes(img_src, timeout=8)
+                    if not data:
+                        raise ValueError("No data")
+                    pimg = Image.open(io.BytesIO(data)).convert("RGBA")
                 else:
                     self.after(0, lambda: self.src_img_lbl.configure(text="Photo\nUnavailable"))
                     return
@@ -12994,9 +13054,10 @@ class ReverseVisualModal(tk.Toplevel):
                 if hasattr(self.parent, "raw_img_cache") and url in self.parent.raw_img_cache:
                     pimg = self.parent.raw_img_cache[url].copy()
                 else:
-                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                    with urllib.request.urlopen(req, timeout=5) as r:
-                        pimg = Image.open(io.BytesIO(r.read())).convert("RGBA")
+                    data = download_image_bytes(url, timeout=6)
+                    if not data:
+                        raise ValueError("No data")
+                    pimg = Image.open(io.BytesIO(data)).convert("RGBA")
 
                 pimg.thumbnail((img_size, img_size), Image.Resampling.LANCZOS)
                 canvas = Image.new("RGBA", (img_size, img_size), (0, 0, 0, 0))

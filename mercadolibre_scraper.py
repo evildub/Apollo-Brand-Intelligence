@@ -1453,22 +1453,20 @@ class MercadoLibreScraper:
             page = context.new_page()
             page.goto(item_url, wait_until="domcontentloaded", timeout=25000)
 
-            # Dynamic React Hydration polling: Wait until recommendations carousels render
-            for _ in range(8):
-                try:
-                    has_carousels = page.evaluate("() => !!document.querySelector('.ui-recommendations-card, .poly-card, div.ui-pdp-recommendations, div.ui-recommendations-carousel')")
-                    if has_carousels:
-                        break
-                except Exception:
-                    pass
-                page.wait_for_timeout(500)
+            # Fast active carousel harvesting with dynamic inactivity early exit
+            carousels_data = []
+            last_count = 0
+            last_change_time = time.time()
+            max_scan_duration = 5.0
+            idle_threshold = 1.5
+            start_scan = time.time()
 
-            carousels_data = page.evaluate("""
+            extract_script = """
                 () => {
                     const discovered = [];
                     const seen = new Set();
 
-                    const sections = document.querySelectorAll('section, div.ui-pdp-recommendations, div.ui-recommendations-carousel, div[class*=\"recommendations\"], div[class*=\"carousel\"], div.ui-pdp-other-sellers');
+                    const sections = document.querySelectorAll('section, div.ui-pdp-recommendations, div.ui-recommendations-carousel, div[class*="recommendations"], div[class*="carousel"], div.ui-pdp-other-sellers');
                     for (let sec of sections) {
                         const hEl = sec.querySelector('h2, h3, .ui-recommendations-title, .ui-pdp-container__title');
                         let secTitle = hEl ? hEl.innerText.trim() : '';
@@ -1482,7 +1480,7 @@ class MercadoLibreScraper:
                             secType = '👥 Customers Also Viewed';
                         }
 
-                        const cards = sec.querySelectorAll('.ui-recommendations-card, .poly-card, .ui-search-result, a[href*=\"mercadolibre\"], a[href*=\"mercadolivre\"]');
+                        const cards = sec.querySelectorAll('.ui-recommendations-card, .poly-card, .ui-search-result, a[href*="mercadolibre"], a[href*="mercadolivre"]');
                         for (let card of cards) {
                             const tEl = card.querySelector('.ui-recommendations-card__title, .poly-component__title, h2, h3, p');
                             const pEl = card.querySelector('.andes-money-amount__fraction');
@@ -1508,8 +1506,40 @@ class MercadoLibreScraper:
                     }
                     return discovered;
                 }
-            """)
-            page.close()
+            """
+
+            for step in range(8):
+                if time.time() - start_scan > max_scan_duration:
+                    break
+                try:
+                    page.evaluate(f"window.scrollBy(0, {(step + 1) * 500});")
+                except Exception:
+                    pass
+                time.sleep(0.35)
+
+                try:
+                    current_data = page.evaluate(extract_script)
+                except Exception:
+                    current_data = []
+
+                if len(current_data) > last_count:
+                    last_count = len(current_data)
+                    last_change_time = time.time()
+                    carousels_data = current_data
+                elif last_count > 0 and (time.time() - last_change_time >= idle_threshold):
+                    break
+
+            if not carousels_data:
+                try:
+                    carousels_data = page.evaluate(extract_script)
+                except Exception:
+                    pass
+
+            try:
+                page.close()
+            except Exception:
+                pass
+            self.close()
 
             for d in carousels_data:
                 c_url = d.get("url", "")

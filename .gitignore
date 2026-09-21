@@ -12,9 +12,7 @@ dist/
 
 # Session profiles & Browser state
 Apollo_*_Session/
-data/*_session/
-data/browser_session/
-data/tiktok_session/
+data/
 .playwright/
 
 # Local logs, test files & scratch files

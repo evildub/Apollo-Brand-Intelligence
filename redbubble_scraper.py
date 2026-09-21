@@ -21,6 +21,7 @@ import threading
 import urllib.parse
 import urllib.request
 from typing import List, Dict, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
 from PIL import Image
 
@@ -776,19 +777,16 @@ class RedbubbleScraper:
 
         try:
             page.goto(item_url, wait_until="domcontentloaded", timeout=25000)
-            page.wait_for_timeout(2500)
 
-            # Scroll down to load recommendation carousels
-            page.evaluate("""() => {
-                window.scrollTo(0, document.body.scrollHeight / 2);
-            }""")
-            page.wait_for_timeout(1500)
-            page.evaluate("""() => {
-                window.scrollTo(0, document.body.scrollHeight);
-            }""")
-            page.wait_for_timeout(2000)
+            # Fast active carousel harvesting with inactivity early exit
+            raw_items = []
+            last_count = 0
+            last_change_time = time.time()
+            max_scan_duration = 5.0
+            idle_threshold = 1.5
+            start_scan = time.time()
 
-            raw_items = page.evaluate("""() => {
+            extract_script = """() => {
                 const items = [];
                 const seen = new Set();
                 
@@ -864,18 +862,88 @@ class RedbubbleScraper:
                     });
                 }
                 return items;
-            }""")
+            }"""
+
+            for step in range(8):
+                if time.time() - start_scan > max_scan_duration:
+                    break
+                try:
+                    page.evaluate(f"window.scrollBy(0, {(step + 1) * 600});")
+                except Exception:
+                    pass
+                time.sleep(0.35)
+
+                try:
+                    current_items = page.evaluate(extract_script)
+                except Exception:
+                    current_items = []
+
+                if len(current_items) > last_count:
+                    last_count = len(current_items)
+                    last_change_time = time.time()
+                    raw_items = current_items
+                elif last_count > 0 and (time.time() - last_change_time >= idle_threshold):
+                    break
+
+            if not raw_items:
+                try:
+                    raw_items = page.evaluate(extract_script)
+                except Exception:
+                    pass
+
+            # Close browser context immediately to release resources & close window
+            try:
+                page.close()
+            except Exception:
+                pass
+            if self.headless:
+                self.close()
 
             # Target dHash calculation
             target_hash = None
             if target_img_url:
                 try:
                     req = urllib.request.Request(target_img_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                    with urllib.request.urlopen(req, timeout=5) as r:
+                    with urllib.request.urlopen(req, timeout=3.0) as r:
                         t_pimg = Image.open(io.BytesIO(r.read())).convert("RGB")
                         target_hash = self.compute_dhash(t_pimg)
                 except Exception as e:
                     logger.debug(f"Target Redbubble image dHash calculation skipped: {e}")
+
+            # Parallel dHash calculation for harvested items
+            item_badges = {}
+            if target_hash and raw_items:
+                def _calc_similarity(it):
+                    clean_u = it.get("url", "")
+                    img_u = it.get("image_url", "")
+                    if not img_u:
+                        return clean_u, "👕 POD Print Syndicate / Related Merchandise"
+                    try:
+                        req = urllib.request.Request(img_u, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                        with urllib.request.urlopen(req, timeout=1.8) as r:
+                            cand_pimg = Image.open(io.BytesIO(r.read())).convert("RGB")
+                            c_hash = self.compute_dhash(cand_pimg)
+                            dist = self.hamming_distance(target_hash, c_hash)
+                            sim_pct = max(0, int((1.0 - (dist / 64.0)) * 100))
+                            if dist == 0:
+                                return clean_u, "🎯 Exact Match (dHash: 0, 100%)"
+                            elif dist <= 4:
+                                return clean_u, f"🎯 Near-Exact Photo (dHash: {dist}, {sim_pct}%)"
+                            elif dist <= 12:
+                                return clean_u, f"🖼 Visual Match (dHash: {dist}, {sim_pct}%)"
+                            else:
+                                return clean_u, f"👕 Related Merchandise ({sim_pct}%)"
+                    except Exception:
+                        return clean_u, "👕 POD Print Syndicate / Related Merchandise"
+
+                with ThreadPoolExecutor(max_workers=10) as executor:
+                    futures = [executor.submit(_calc_similarity, it) for it in raw_items]
+                    for f in as_completed(futures):
+                        try:
+                            u, badge = f.result()
+                            item_badges[u] = badge
+                        except Exception:
+                            pass
 
             results = []
             seen_clean_urls = set()
@@ -886,26 +954,7 @@ class RedbubbleScraper:
                 seen_clean_urls.add(clean_u)
 
                 img_u = it.get("image_url", "")
-                sim_badge = "👕 POD Print Syndicate / Related Merchandise"
-
-                if target_hash and img_u:
-                    try:
-                        req = urllib.request.Request(img_u, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                        with urllib.request.urlopen(req, timeout=4) as r:
-                            cand_pimg = Image.open(io.BytesIO(r.read())).convert("RGB")
-                            c_hash = self.compute_dhash(cand_pimg)
-                            dist = self.hamming_distance(target_hash, c_hash)
-                            sim_pct = max(0, int((1.0 - (dist / 64.0)) * 100))
-                            if dist == 0:
-                                sim_badge = f"🎯 Exact Match (dHash: 0, 100%)"
-                            elif dist <= 4:
-                                sim_badge = f"🎯 Near-Exact Photo (dHash: {dist}, {sim_pct}%)"
-                            elif dist <= 12:
-                                sim_badge = f"🖼 Visual Match (dHash: {dist}, {sim_pct}%)"
-                            else:
-                                sim_badge = f"👕 Related Merchandise ({sim_pct}%)"
-                    except Exception:
-                        pass
+                sim_badge = item_badges.get(clean_u, "👕 POD Print Syndicate / Related Merchandise")
 
                 results.append({
                     "brand": "",

@@ -1520,7 +1520,7 @@ class EbayTool(tk.Tk):
         self.brand_profile_combo.pack(side="left", fill="x", expand=True, padx=(0, 4))
         self.brand_profile_combo.bind("<<ComboboxSelected>>", self._on_brand_profile_changed)
 
-        self.btn_brand_mgr = self._btn(prof_row, "🏷️ Manage", self._open_brand_registry_modal, accent=True)
+        self.btn_brand_mgr = self._btn(prof_row, "🏷  Manage", self._open_brand_registry_modal, accent=True)
         self.btn_brand_mgr.pack(side="right")
 
         # Target / Exclude State Selection Toolbar (Row 1)
@@ -1572,19 +1572,6 @@ class EbayTool(tk.Tk):
         self.brand_tree.bind("<Control-Up>", lambda e: self._move_selected_brand(-1))
         self.brand_tree.bind("<Control-Down>", lambda e: self._move_selected_brand(1))
         self.brand_tree.bind("<F2>", lambda e: self._open_brand_registry_modal())
-
-        # Brand Library management buttons (Spacious, unclipped 2-tier layout)
-        btn_row = tk.Frame(frame, bg=t["bg"])
-        btn_row.pack(fill="x", padx=8, pady=2)
-        self.themed_widgets["bg_frames"].append(btn_row)
-
-        self._btn(btn_row, "＋ Parent", self._add_parent_brand).pack(side="left", padx=(0, 3))
-        self._btn(btn_row, "＋ Sub", self._add_sub_brand).pack(side="left", padx=(0, 3))
-        self._btn(btn_row, "🏷️ Brand Manager", self._open_brand_registry_modal, accent=True).pack(side="left", padx=(0, 3))
-        self._btn(btn_row, "▲ Up", lambda: self._move_selected_brand(-1)).pack(side="left", padx=(0, 3))
-        self._btn(btn_row, "▼ Down", lambda: self._move_selected_brand(1)).pack(side="left", padx=(0, 3))
-        self._btn(btn_row, "🗑️ Purge All", self._purge_all_brands, danger=True).pack(side="right", padx=(3, 0))
-        self._btn(btn_row, "🗑 Remove", self._remove_brand, danger=True).pack(side="right")
 
         toggle_brands = self._create_resize_grip(frame, self.brand_tree, widget_type="treeview", min_val=3, max_val=40, default_val=6, max_toggle=22, name="brands")
         toggle_brands_holder.append(toggle_brands)

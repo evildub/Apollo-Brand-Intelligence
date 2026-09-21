@@ -241,8 +241,12 @@ class PrintervalScraper:
         """)
 
         try:
+            # First load homepage to establish base session cookies
             page.goto("https://printerval.com", wait_until="domcontentloaded", timeout=30000)
-            logger.info("Printerval interactive authentication window opened.")
+            page.wait_for_timeout(1500)
+            # Then navigate directly to search endpoint where Cloudflare challenge is triggered
+            page.goto("https://printerval.com/search?q=apparel", wait_until="domcontentloaded", timeout=30000)
+            logger.info("Printerval interactive authentication window opened to search endpoint.")
         except Exception as e:
             logger.warning(f"Interactive auth navigation error: {e}")
 
@@ -392,7 +396,12 @@ class PrintervalScraper:
                 """)
 
                 if not page_items:
-                    _log(f"ℹ [Printerval] No listing cards found on page {page_num}.")
+                    curr_title = page.title()
+                    if "403" in curr_title or "blocked" in curr_title.lower() or "just a moment" in curr_title.lower():
+                        _log(f"🛡️ [Printerval] Cloudflare security challenge detected on search endpoint.")
+                        _log(f"💡 [Printerval] Please click the '👕 Printerval Connect' button in the toolbar to solve the verification once, then restart your scan.")
+                    else:
+                        _log(f"ℹ [Printerval] No listing cards found on page {page_num}.")
                     break
 
                 new_count = 0

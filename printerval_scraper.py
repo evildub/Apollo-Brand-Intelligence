@@ -159,14 +159,32 @@ class PrintervalScraper:
         ]
         return next((p for p in edge_paths if os.path.exists(p)), None)
 
-    def _get_context(self):
-        """Initialize or return existing Playwright context with stealth evasions and persistent profile."""
-        from playwright.sync_api import sync_playwright
-        if self._pw is None:
-            self._pw = sync_playwright().start()
+    def _clean_profile_locks(self):
+        """Clean any stale Chromium singleton lock files and terminate orphaned Edge processes to avoid ProcessSingleton errors."""
+        lock_files = [os.path.join(self.profile_dir, lk) for lk in ("SingletonLock", "SingletonSocket", "SingletonCookie", "lockfile")]
+        has_locks = any(os.path.exists(lf) for lf in lock_files)
+        if has_locks:
+            try:
+                import subprocess
+                subprocess.run(["taskkill", "/F", "/IM", "msedge.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+            except Exception:
+                pass
+            for lock_file in lock_files:
+                if os.path.exists(lock_file):
+                    try:
+                        os.remove(lock_file)
+                    except Exception:
+                        pass
 
+    def _get_context(self, force_visible: bool = False, window_pos: tuple = (100, 100), window_size: tuple = (1100, 800)):
+        """Initialize or return existing persistent Playwright context with stealth evasions."""
+        from playwright.sync_api import sync_playwright
         if self._context is None:
+            self._clean_profile_locks()
+            if self._pw is None:
+                self._pw = sync_playwright().start()
             edge_path = self._find_edge_path()
+
             args = [
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
@@ -174,13 +192,20 @@ class PrintervalScraper:
                 "--disable-dev-shm-usage",
             ]
 
+            # Cloudflare Evasion: Never run headless=True on Cloudflare-protected sites. Position window offscreen when stealth mode is requested.
+            is_headless = False
+            if self.headless and not force_visible:
+                args.extend(["--window-position=-2400,-2400", "--window-size=1366,850"])
+            elif force_visible:
+                args.extend([f"--window-position={window_pos[0]},{window_pos[1]}", f"--window-size={window_size[0]},{window_size[1]}"])
+
             kwargs = {
                 "user_data_dir": self.profile_dir,
-                "headless": self.headless,
+                "headless": is_headless,
                 "args": args,
-                "viewport": {"width": 1366, "height": 850},
-                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                "viewport": {"width": window_size[0] if force_visible else 1366, "height": window_size[1] if force_visible else 850},
                 "locale": "en-US",
+                "ignore_default_args": ["--enable-automation"],
             }
             if edge_path:
                 kwargs["executable_path"] = edge_path
@@ -189,27 +214,63 @@ class PrintervalScraper:
 
             try:
                 self._context = self._pw.chromium.launch_persistent_context(**kwargs)
-            except Exception:
-                kwargs.pop("executable_path", None)
-                kwargs["channel"] = "msedge"
+            except Exception as e:
+                logger.warning(f"Persistent context launch retry after process cleanup: {e}")
+                self._clean_profile_locks()
+                time.sleep(0.6)
                 self._context = self._pw.chromium.launch_persistent_context(**kwargs)
 
         return self._context
+
+    def launch_interactive_auth(self, window_pos: tuple = (100, 100), window_size: tuple = (1100, 800)):
+        """
+        Open a visible browser session for the analyst to solve the initial
+        Cloudflare security check or accept cookies, persisting clearance tokens permanently.
+        """
+        self.close()
+        self._clean_profile_locks()
+        time.sleep(0.5)
+
+        context = self._get_context(force_visible=True, window_pos=window_pos, window_size=window_size)
+        page = context.pages[0] if context.pages else context.new_page()
+
+        page.add_init_script("""
+            delete navigator.__proto__.webdriver;
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true });
+            window.chrome = { runtime: {}, app: {}, csi: () => {}, loadTimes: () => {} };
+        """)
+
+        try:
+            page.goto("https://printerval.com", wait_until="domcontentloaded", timeout=30000)
+            logger.info("Printerval interactive authentication window opened.")
+        except Exception as e:
+            logger.warning(f"Interactive auth navigation error: {e}")
 
     def close(self):
         """Safely close browser context and Playwright instance."""
         try:
             if self._context:
-                self._context.close()
+                try:
+                    self._context.close()
+                except Exception:
+                    pass
                 self._context = None
             if self._browser:
-                self._browser.close()
+                try:
+                    self._browser.close()
+                except Exception:
+                    pass
                 self._browser = None
             if self._pw:
-                self._pw.stop()
+                try:
+                    self._pw.stop()
+                except Exception:
+                    pass
                 self._pw = None
         except Exception as e:
             logger.debug(f"Error closing Printerval browser context: {e}")
+        finally:
+            self._clean_profile_locks()
 
     def resolve_store_info(self, raw_input: str) -> dict:
         """Parse Printerval shop URL, creator name, or Global Search."""

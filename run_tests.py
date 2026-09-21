@@ -1059,7 +1059,13 @@ class TestApolloCoreFeatures(unittest.TestCase):
         self.assertIn("window_pos", ebay_sig.parameters)
         self.assertIn("window_size", ebay_sig.parameters)
 
-        # 7. Coordinate centering logic test
+        # 7. Printerval
+        from printerval_scraper import PrintervalScraper
+        pv_sig = inspect.signature(PrintervalScraper.launch_interactive_auth)
+        self.assertIn("window_pos", pv_sig.parameters)
+        self.assertIn("window_size", pv_sig.parameters)
+
+        # 8. Coordinate centering logic test
         class DummyApp:
             def winfo_rootx(self): return 500
             def winfo_rooty(self): return 200

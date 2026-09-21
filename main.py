@@ -1043,6 +1043,7 @@ class EbayTool(tk.Tk):
         self.tiktok_depth_combo.bind("<<ComboboxSelected>>", lambda e: self._log(f"🎵 TikTok Shop scan depth set to: {self.tiktok_depth_var.get()}"))
         self.tiktok_login_btn = self._btn(top_right, "🎵 TikTok Connect", self._launch_tiktok_session)
         self.temu_login_btn = self._btn(top_right, "🟠 Temu Connect", self._launch_temu_session)
+        self.printerval_login_btn = self._btn(top_right, "👕 Printerval Connect", self._launch_printerval_session)
         self.pod_expand_btn = self._btn(top_right, "👕 Expand POD Variants", self._expand_pod_variants, accent=True)
 
         # Wish Infinite Scroll Depth Controls (packed dynamically when Wish is active)
@@ -2936,6 +2937,12 @@ class EbayTool(tk.Tk):
                 self.teespring_depth_combo.pack(side="left", padx=(0, 4), after=self.market_combo)
             else:
                 self.teespring_depth_combo.pack_forget()
+
+        if hasattr(self, "printerval_login_btn"):
+            if "Printerval" in market:
+                self.printerval_login_btn.pack(side="left", padx=(0, 4), after=self.market_combo)
+            else:
+                self.printerval_login_btn.pack_forget()
 
         if hasattr(self, "scribd_depth_combo") and hasattr(self, "scribd_doc_mode_combo"):
             if "Scribd" in market:
@@ -9820,6 +9827,13 @@ class EbayTool(tk.Tk):
         self._log("🎵 Opening TikTok Shop authentication & anti-bot clearance window in Microsoft Edge...")
         threading.Thread(target=lambda: self.tiktok_scraper.launch_interactive_auth(window_pos=w_pos), daemon=True).start()
         messagebox.showinfo("TikTok Shop Connect", "A browser window is opening to TikTok Shop.\n\nIf prompted by a security check or slider puzzle, solve it once to establish verified session cookies.\n\nApollo will automatically save and use this session for all subsequent scans.")
+
+    def _launch_printerval_session(self):
+        """Open persistent Edge browser session to solve Cloudflare challenge and establish Printerval clearance cookies."""
+        w_pos = self._get_browser_window_pos()
+        self._log("👕 Opening Printerval anti-bot & Cloudflare clearance window in Microsoft Edge...")
+        threading.Thread(target=lambda: self.printerval_scraper.launch_interactive_auth(window_pos=w_pos), daemon=True).start()
+        messagebox.showinfo("Printerval Connect", "A browser window is opening to Printerval.\n\nIf Cloudflare asks to 'Verify you are human' or accept cookies, please complete it.\n\nYour clearance tokens will be permanently saved for all automated background sweeps!")
 
     # ══════════════════════════════════════════════════════════════════════════
     #  ADHOC BATCH URL & EXCEL LISTING IMPORTER

@@ -17,7 +17,7 @@ from PIL import Image, ImageTk
 import ctypes
 
 logger = logging.getLogger("Apollo")
-VERSION = "3.1.0"
+VERSION = "3.2.0"
 
 from scraper import EbayScraper
 from aliexpress_scraper import AliExpressScraper
@@ -52,6 +52,7 @@ from field_guide_modal import FieldGuideModal
 from product_type_modal import ProductTypeModal
 from brand_registry_modal import BrandRegistryModal
 from dossier_manager_modal import DossierManagerModal
+from syndicate_hunter_modal import SyndicateHunterModal
 from tooltip import add_tooltip, HoverTip
 
 # ── Color Palette Definitions ─────────────────────────────────────────────────
@@ -899,6 +900,8 @@ class EbayTool(tk.Tk):
         # Global Keyboard Shortcuts
         self.bind_all("<Control-e>", lambda e: self._export())
         self.bind_all("<Control-E>", lambda e: self._export())
+        self.bind_all("<Control-y>", lambda e: self._open_syndicate_hunter_modal())
+        self.bind_all("<Control-Y>", lambda e: self._open_syndicate_hunter_modal())
         self.bind_all("<F1>", lambda e: self._open_field_guide_modal())
 
         # Listen globally for Konami Code
@@ -1285,6 +1288,9 @@ class EbayTool(tk.Tk):
         
         self.btn_visual = self._btn(top_right, "🖼 Visual Library", self._open_visual_catalog_modal, accent=True)
         self.btn_visual.pack(side="left", padx=(0, 2))
+
+        self.btn_syndicate = self._btn(top_right, "🕸️ Syndicate Hunter", self._open_syndicate_hunter_modal, accent=True)
+        self.btn_syndicate.pack(side="left", padx=(0, 2))
 
         self.btn_registry = self._btn(top_right, "🛡 Registry", self._open_enforcement_registry_window)
         self.btn_registry.pack(side="left", padx=(0, 2))
@@ -7040,6 +7046,7 @@ class EbayTool(tk.Tk):
         menu.add_command(label="🌐 Multi-Locale Expander", command=self._open_multi_locale_expander)
         menu.add_separator()
         menu.add_command(label="🔗 Connected Seller Network Hunter", command=self._open_connected_network_scanner)
+        menu.add_command(label="🕸️ Investigate in Syndicate Hunter (Entity Resolution)", font=("Segoe UI", 9, "bold"), command=self._open_syndicate_hunter_for_selected)
 
         # ── Nested Reverse Visual Search Submenu ──
         vis_menu = tk.Menu(menu, tearoff=0, bg=t["panel"], fg=t["text"],
@@ -8082,6 +8089,37 @@ class EbayTool(tk.Tk):
                 "url": str(values[10]) if len(values) > 10 else (f"https://www.ebay.com/itm/{item_id}" if item_id else ""),
             }
         ConnectedNetworkModal(self, target_item)
+
+    def _open_syndicate_hunter_modal(self, target_seller=None):
+        """Open the Cross-Marketplace Syndicate Hunter & Entity Resolution Hub."""
+        if not self.results:
+            messagebox.showinfo("Syndicate Hunter", "No listings currently in table. Perform a scan or import data first.")
+            return
+        if not target_seller:
+            sel = self.result_tree.focus()
+            if not sel:
+                selected = self.result_tree.selection()
+                if selected:
+                    sel = selected[0]
+            if sel:
+                values = self.result_tree.item(sel)["values"]
+                if len(values) > 5 and str(values[5]).strip() not in ("Unknown", "N/A", ""):
+                    target_seller = str(values[5]).strip()
+        SyndicateHunterModal(self, self.theme, self.results, target_seller=target_seller)
+
+    def _open_syndicate_hunter_for_selected(self):
+        """Open Syndicate Hunter focused on the selected row's seller."""
+        sel = self.result_tree.focus()
+        if not sel:
+            selected = self.result_tree.selection()
+            if selected:
+                sel = selected[0]
+        target_seller = None
+        if sel:
+            values = self.result_tree.item(sel)["values"]
+            if len(values) > 5:
+                target_seller = str(values[5]).strip()
+        self._open_syndicate_hunter_modal(target_seller=target_seller)
 
     def _enrich_seller_threat_intel(self):
         """

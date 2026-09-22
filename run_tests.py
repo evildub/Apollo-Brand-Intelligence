@@ -2104,9 +2104,123 @@ class TestApolloCoreFeatures(unittest.TestCase):
         self.assertIn("Miami Dolphins hoodie", paired_queries)
         self.assertEqual(len(paired_queries), 4)
 
+    def test_63_syndicate_entity_resolution_phash(self):
+        """Test Item 63: Verify visual pHash collision clusters distinct seller handles into a syndicate."""
+        from syndicate_graph import SyndicateGraph
+        engine = SyndicateGraph(phash_threshold=6)
+
+        # Two different sellers with exact same promotional image pHash
+        listings = [
+            {
+                "seller": "auto_parts_prime",
+                "title": "OEM Fuel Injector 12613412 for Silverado",
+                "item_id": "111222333",
+                "price": "$45.00",
+                "location": "Dallas, TX",
+                "phash": "a1b2c3d4e5f60718"
+            },
+            {
+                "seller": "direct_replacement_pros",
+                "title": "OEM Fuel Injector Kit 12613412",
+                "item_id": "444555666",
+                "price": "$46.00",
+                "location": "Houston, TX",
+                "phash": "a1b2c3d4e5f60718"  # Exact matching pHash
+            },
+            {
+                "seller": "unrelated_seller_99",
+                "title": "Authentic Denso Spark Plugs",
+                "item_id": "999888777",
+                "price": "$20.00",
+                "location": "Chicago, IL",
+                "phash": "ffffffff00000000"  # Unrelated pHash
+            }
+        ]
+
+        clusters = engine.analyze_listings(listings)
+        self.assertEqual(len(clusters), 1, "Should discover exactly 1 multi-seller syndicate cluster.")
+        cluster = clusters[0]
+        self.assertIn("auto_parts_prime", cluster.sellers)
+        self.assertIn("direct_replacement_pros", cluster.sellers)
+        self.assertNotIn("unrelated_seller_99", cluster.sellers)
+        self.assertGreaterEqual(cluster.threat_score, 75, "Visual hash match must yield >= 75 Threat Score.")
+        self.assertTrue(any(e.link_type == "VISUAL_HASH" for e in cluster.edges))
+
+    def test_64_syndicate_name_and_hub_clustering(self):
+        """Test Item 64: Verify lexical handle syntax and 3PL fulfillment hub clustering."""
+        from syndicate_graph import SyndicateGraph, normalize_seller_name, normalize_dispatch_hub, calculate_name_similarity
+
+        # Test hub normalization
+        hub_name, is_3pl = normalize_dispatch_hub("Walnut, California, United States")
+        self.assertTrue(is_3pl)
+        self.assertIn("Walnut", hub_name)
+
+        hub_name2, is_3pl2 = normalize_dispatch_hub("Rowland Heights, CA")
+        self.assertTrue(is_3pl2)
+        self.assertIn("Rowland Heights", hub_name2)
+
+        # Test name similarity
+        sim = calculate_name_similarity("oem_parts_direct", "oem-parts-direct-1")
+        self.assertGreaterEqual(sim, 0.85)
+
+        engine = SyndicateGraph()
+        # Three sellers with shared Walnut 3PL hub and name variation
+        listings = [
+            {"seller": "speed_auto_us", "location": "Walnut, CA", "item_id": "1", "price": "$10"},
+            {"seller": "speed-auto-direct", "location": "Walnut, CA", "item_id": "2", "price": "$12"},
+            {"seller": "independent_shop_fl", "location": "Miami, FL", "item_id": "3", "price": "$15"}
+        ]
+        clusters = engine.analyze_listings(listings)
+        self.assertEqual(len(clusters), 1)
+        self.assertIn("speed_auto_us", clusters[0].sellers)
+        self.assertIn("speed-auto-direct", clusters[0].sellers)
+        self.assertNotIn("independent_shop_fl", clusters[0].sellers)
+
+    def test_65_syndicate_graph_scoring_and_export(self):
+        """Test Item 65: Verify multi-factor convergence score (90+) and Genesis export records."""
+        from syndicate_graph import SyndicateGraph
+        engine = SyndicateGraph(phash_threshold=6)
+
+        # Convergence of Visual Collision + Shared 3PL Hub -> Confirmed Syndicate (Score >= 90)
+        listings = [
+            {
+                "seller": "ring_boss_1",
+                "title": "High Output Alternator",
+                "item_id": "1001",
+                "price": "$199",
+                "location": "Walnut, CA",
+                "phash": "12345678abcdef00"
+            },
+            {
+                "seller": "ring_boss_2",
+                "title": "High Output Alternator Heavy Duty",
+                "item_id": "1002",
+                "price": "$195",
+                "location": "Walnut, CA",
+                "phash": "12345678abcdef01"  # Hamming distance = 1 (near-exact)
+            }
+        ]
+
+        clusters = engine.analyze_listings(listings)
+        self.assertEqual(len(clusters), 1)
+        c = clusters[0]
+        self.assertGreaterEqual(c.threat_score, 90, "Multi-vector convergence (pHash + 3PL Hub) must yield >= 90 Threat Score.")
+        self.assertEqual(c.confidence_tier, "🚨 Confirmed Syndicate")
+
+        # Verify Genesis Export Records
+        records = engine.export_genesis_records()
+        self.assertEqual(len(records), 2)
+        for r in records:
+            self.assertEqual(r["Syndicate ID"], c.cluster_id)
+            self.assertEqual(r["Threat Score"], c.threat_score)
+            self.assertEqual(r["Confidence Tier"], "🚨 Confirmed Syndicate")
+            self.assertEqual(r["3PL Hub Flag"], "YES")
+            self.assertIn("Walnut", r["Dispatch Hub"])
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

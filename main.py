@@ -17,6 +17,7 @@ from PIL import Image, ImageTk
 import ctypes
 
 logger = logging.getLogger("Apollo")
+VERSION = "3.1.0"
 
 from scraper import EbayScraper
 from aliexpress_scraper import AliExpressScraper

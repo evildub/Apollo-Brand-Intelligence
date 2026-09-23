@@ -283,6 +283,9 @@ class SyndicateHunterModal(tk.Toplevel):
         self.card_photos.config(text=str(total_visual_collisions))
         self.card_hubs.config(text=str(total_hubs))
 
+        if total_clusters > 0 and hasattr(self.master, "data_store"):
+            self.master.data_store.unlock_achievement("syndicate_buster")
+
         self._refresh_cluster_list()
 
         # If target seller was passed, auto-select their cluster

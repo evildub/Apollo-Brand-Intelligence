@@ -108,15 +108,28 @@ def calculate_name_similarity(name1: str, name2: str) -> float:
     return intersection / union
 
 
+GENERIC_NON_HUBS = {
+    "united states", "us", "usa", "u.s.", "u.s.a.", "united kingdom", "uk", "u.k.",
+    "china", "canada", "ca", "australia", "au", "germany", "de", "france", "fr",
+    "italy", "it", "spain", "es", "mexico", "mx", "brazil", "br", "japan", "jp",
+    "korea", "kr", "taiwan", "tw", "hong kong", "hk", "poland", "pl", "netherlands", "nl",
+    "north america", "europe", "asia", "global", "worldwide", "international", "unknown",
+    "n/a", "none", "all", "default", "null"
+}
+
+
 def normalize_dispatch_hub(location_str: str) -> Tuple[str, bool]:
     """
     Normalize location strings into a standardized Hub identifier.
     Returns (normalized_hub_name, is_known_3pl_hub).
+    Filters out broad country names (e.g. 'United States', 'US') which are not dispatch hubs.
     """
     if not location_str:
         return ("", False)
 
     loc_lower = location_str.strip().lower()
+    if loc_lower in GENERIC_NON_HUBS:
+        return ("", False)
 
     # Check known 3PL hubs first
     for key, standardized in KNOWN_3PL_HUBS.items():
@@ -126,11 +139,27 @@ def normalize_dispatch_hub(location_str: str) -> Tuple[str, bool]:
     # General cleaning: extract city, state, country if possible
     # Examples: "Walnut, California, United States", "Dayton, New Jersey", "Shenzhen, China"
     parts = [p.strip().title() for p in re.split(r"[,/|;]", location_str) if p.strip()]
-    if parts:
-        cleaned_hub = ", ".join(parts[:2])
-        return (cleaned_hub, False)
+    if not parts:
+        return ("", False)
 
-    return (location_str.strip().title(), False)
+    # If only 1 part and it's a generic country, discard
+    if len(parts) == 1 and parts[0].lower() in GENERIC_NON_HUBS:
+        return ("", False)
+
+    # If ending with a country part, remove country part to keep City/State
+    if len(parts) >= 2 and parts[-1].lower() in GENERIC_NON_HUBS:
+        cleaned_parts = parts[:-1]
+    else:
+        cleaned_parts = parts
+
+    if not cleaned_parts or (len(cleaned_parts) == 1 and cleaned_parts[0].lower() in GENERIC_NON_HUBS):
+        return ("", False)
+
+    cleaned_hub = ", ".join(cleaned_parts[:2])
+    if cleaned_hub.lower() in GENERIC_NON_HUBS:
+        return ("", False)
+
+    return (cleaned_hub, False)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -362,10 +391,19 @@ class SyndicateGraph:
                     for j in range(i + 1, len(s_list)):
                         s1, s2 = s_list[i], s_list[j]
                         is_3pl = seller_meta[s1]["is_3pl"] or seller_meta[s2]["is_3pl"]
-                        w = 0.9 if is_3pl else 0.7
-                        ev = f"Co-located dispatch hub: {hub}" + (" (Known 3PL Hub)" if is_3pl else "")
-                        edges_between.append(LinkEdge(s1, s2, "DISPATCH_HUB", w, ev))
-                        union(s1, s2)
+                        if is_3pl:
+                            w = 0.95
+                            ev = f"Co-located high-risk 3PL fulfillment facility: {hub}"
+                            edges_between.append(LinkEdge(s1, s2, "DISPATCH_HUB", w, ev))
+                            union(s1, s2)
+                        else:
+                            # General geographic hubs require corroboration (e.g. handle similarity or shared visual asset)
+                            sim = calculate_name_similarity(s1, s2)
+                            if sim >= 0.55:
+                                w = 0.75
+                                ev = f"Co-located dispatch hub ({hub}) corroborated by handle pattern ({int(sim*100)}%)"
+                                edges_between.append(LinkEdge(s1, s2, "DISPATCH_HUB", w, ev))
+                                union(s1, s2)
 
         # ── Vector 3: Lexical Handle Syntax & Burner Account Patterns ─────────
         for i in range(len(sellers)):

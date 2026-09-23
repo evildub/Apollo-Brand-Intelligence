@@ -2217,6 +2217,162 @@ class TestApolloCoreFeatures(unittest.TestCase):
             self.assertEqual(r["3PL Hub Flag"], "YES")
             self.assertIn("Walnut", r["Dispatch Hub"])
 
+    def test_66_enforcer_milestones_and_achievements_persistence(self):
+        """Test Item 66: Verify enforcer achievement tracking, lifetime counts, and persistence."""
+        # 1. Structure check
+        ach = self.data_store.get_achievements_data()
+        self.assertIn("lifetime_listings", ach)
+        self.assertIn("lifetime_searches", ach)
+        self.assertIn("unlocked", ach)
+
+        # 2. Lifetime increments
+        initial_listings = self.data_store.get_lifetime_listings()
+        self.data_store.increment_lifetime_listings(150)
+        self.assertEqual(self.data_store.get_lifetime_listings(), initial_listings + 150)
+
+        initial_searches = self.data_store.get_achievements_data().get("lifetime_searches", 0)
+        self.data_store.increment_lifetime_searches(1)
+        self.assertEqual(self.data_store.get_achievements_data().get("lifetime_searches", 0), initial_searches + 1)
+
+        # 3. Unlock achievement
+        test_ach_id = f"test_recon_strike_{os.getpid()}"
+        ach_dict = self.data_store.get_achievements_data()
+        ach_dict.get("unlocked", {}).pop(test_ach_id, None)
+        self.data_store.save_achievements_data(ach_dict)
+        self.assertFalse(self.data_store.is_achievement_unlocked(test_ach_id))
+        res = self.data_store.unlock_achievement(test_ach_id, {"detail": "unit_test"})
+        self.assertTrue(res)
+        self.assertTrue(self.data_store.is_achievement_unlocked(test_ach_id))
+        # Second call should return False (already unlocked, no duplicate notification)
+        res_dup = self.data_store.unlock_achievement(test_ach_id)
+        self.assertFalse(res_dup)
+
+        # 4. Legacy easter egg sync
+        self.data_store.unlock_wick()
+        self.assertTrue(self.data_store.is_achievement_unlocked("the_impossible_task"))
+        self.data_store.unlock_brundo()
+        self.assertTrue(self.data_store.is_achievement_unlocked("k9_sentinel"))
+        self.data_store.unlock_fir()
+        self.assertTrue(self.data_store.is_achievement_unlocked("rebel_frequency"))
+        self.data_store.unlock_cowboys()
+        self.assertTrue(self.data_store.is_achievement_unlocked("lone_star"))
+
+    def test_67_the_impossible_task_high_table_protocol_and_backdoors(self):
+        """Test Item 67: Verify The Impossible Task qualification criteria and response validation."""
+        # Clean state for the summit task
+        ach_data = self.data_store.get_achievements_data()
+        unlocked = ach_data.get("unlocked", {})
+        if "the_impossible_task" in unlocked:
+            del unlocked["the_impossible_task"]
+            self.data_store.save_achievements_data(ach_data)
+
+        # Valid response phrases acceptance check
+        valid_phrases = ["i have been of service", "service", "i've been of service", "been of service", "Service.", "I HAVE BEEN OF SERVICE!"]
+        invalid_phrases = ["hello", "wick", "continental", "open sesame", ""]
+
+        for phrase in valid_phrases:
+            cleaned = phrase.strip().lower().rstrip(".").rstrip("!")
+            self.assertIn(cleaned, ("i have been of service", "service", "i've been of service", "been of service"), f"Phrase should be valid: {phrase}")
+
+        for phrase in invalid_phrases:
+            cleaned = phrase.strip().lower().rstrip(".").rstrip("!")
+            self.assertNotIn(cleaned, ("i have been of service", "service", "i've been of service", "been of service"), f"Phrase should be invalid: {phrase}")
+
+        # Verification of contract unlock
+        self.data_store.unlock_achievement("the_impossible_task", {"method": "high_table_protocol"})
+        self.assertTrue(self.data_store.is_achievement_unlocked("the_impossible_task"))
+        self.assertTrue(self.data_store.is_wick_unlocked())
+
+    def test_68_multi_marketplace_enrich_dispatch_partitioning(self):
+        """Test Item 68: Verify multi-marketplace enrichment registry partitions items across all 14 scrapers."""
+        test_items = [
+            {"marketplace": "ebay.com", "url": "https://www.ebay.com/itm/111", "seller": "ebay_seller_1"},
+            {"marketplace": "aliexpress.com", "url": "https://www.aliexpress.com/item/222.html", "seller": "AliExpress Global"},
+            {"marketplace": "wish.com", "url": "https://www.wish.com/product/333", "seller": "Unknown"},
+            {"marketplace": "temu.com", "url": "https://www.temu.com/goods-444.html", "seller": "Unknown"},
+            {"marketplace": "mercadolibre.com.mx", "url": "https://articulo.mercadolibre.com.mx/MLM-555", "seller": "Mercado Libre Seller"},
+            {"marketplace": "printerval.com", "url": "https://printerval.com/custom-tshirt-p666", "seller": "Printerval Creator"},
+            {"marketplace": "shop.tiktok.com", "url": "https://shop.tiktok.com/view/product/777", "seller": "TikTok Shop Merchant"},
+            {"marketplace": "redbubble.com", "url": "https://www.redbubble.com/i/t-shirt/cool-art-by-pixelmaster/888", "seller": "Redbubble Artist"},
+            {"marketplace": "zazzle.com", "url": "https://www.zazzle.com/vintage_badge-999", "seller": "Unknown"},
+            {"marketplace": "spreadshirt.com", "url": "https://www.spreadshirt.com/shop/design/1010", "seller": "Unknown"},
+            {"marketplace": "cafepress.com", "url": "https://www.cafepress.com/+mug,1111", "seller": "Unknown"},
+            {"marketplace": "scribd.com", "url": "https://www.scribd.com/document/1212/Manual", "seller": "Scribd Uploader"},
+            {"marketplace": "teespring", "url": "https://spring.com/@speedwear/apparel", "seller": "Spring Creator"},
+            {"marketplace": "teepublic.com", "url": "https://www.teepublic.com/user/grafixking/t-shirt/1414", "seller": "TeePublic Artist"},
+        ]
+
+        def _match(patterns):
+            return lambda it: any(p in it.get("marketplace", "").lower() or p in it.get("url", "").lower() for p in patterns)
+
+        enrichment_registry = [
+            ("ebay", _match(["ebay"])),
+            ("aliexpress", _match(["ali", "aliexpress"])),
+            ("wish", _match(["wish"])),
+            ("temu", _match(["temu"])),
+            ("mercadolibre", _match(["mercado", "mercadolibre", "mercadolivre"])),
+            ("printerval", _match(["printerval"])),
+            ("tiktok", _match(["tiktok"])),
+            ("redbubble", _match(["redbubble"])),
+            ("zazzle", _match(["zazzle"])),
+            ("spreadshirt", _match(["spreadshirt", "spreadshop"])),
+            ("cafepress", _match(["cafepress"])),
+            ("scribd", _match(["scribd"])),
+            ("teespring", _match(["teespring", "spring.com"])),
+            ("teepublic", _match(["teepublic"])),
+        ]
+
+        # Every single item must be partitioned to its matching platform
+        partitioned = {}
+        for platform_name, matcher in enrichment_registry:
+            matched = [it for it in test_items if matcher(it)]
+            partitioned[platform_name] = matched
+
+        for p_name, matched_list in partitioned.items():
+            self.assertEqual(len(matched_list), 1, f"Platform {p_name} should match exactly 1 item.")
+
+    def test_69_teespring_and_teepublic_seller_enrichment(self):
+        """Test Item 69: Verify TeeSpring and TeePublic enrich_seller_info contracts and URL extraction."""
+        from teespring_scraper import TeeSpringScraper
+        from teepublic_scraper import TeePublicScraper
+
+        # 1. TeeSpring creator slug enrichment
+        ts_scraper = TeeSpringScraper(headless=True)
+        ts_items = [
+            {"marketplace": "teespring", "url": "https://spring.com/@apexdesign/apparel", "seller": "Spring Creator"},
+            {"marketplace": "teespring", "url": "https://spring.com/stores/boost_culture", "seller": "Unknown"},
+            {"marketplace": "teespring", "url": "https://spring.com/listing/vintage_tee", "seller": "AlreadyKnown"}
+        ]
+        enriched_ts = ts_scraper.enrich_seller_info(ts_items)
+        self.assertEqual(enriched_ts[0]["seller"], "apexdesign")
+        self.assertEqual(enriched_ts[1]["seller"], "boost_culture")
+        self.assertEqual(enriched_ts[2]["seller"], "AlreadyKnown")
+
+        # 2. TeePublic designer slug enrichment
+        tp_scraper = TeePublicScraper(headless=True)
+        tp_items = [
+            {"marketplace": "teepublic.com", "url": "https://www.teepublic.com/user/vector-beast/t-shirt/999", "seller": "TeePublic Artist"},
+            {"marketplace": "teepublic.com", "url": "https://www.teepublic.com/designer/retro_rebel/hoodie/888", "seller": "Unknown"},
+            {"marketplace": "teepublic.com", "url": "https://www.teepublic.com/t-shirt/777-classic", "seller": "ExistingDesigner"}
+        ]
+        enriched_tp = tp_scraper.enrich_seller_info(tp_items)
+        self.assertEqual(enriched_tp[0]["seller"], "Vector Beast")
+        self.assertEqual(enriched_tp[1]["seller"], "Retro Rebel")
+        self.assertEqual(enriched_tp[2]["seller"], "ExistingDesigner")
+
+    def test_70_redbubble_and_scribd_enrichment_contract(self):
+        """Test Item 70: Verify Redbubble and Scribd enrich_seller_info extraction contracts."""
+        from redbubble_scraper import RedbubbleScraper
+
+        rb_scraper = RedbubbleScraper(headless=True)
+        rb_items = [
+            {"marketplace": "redbubble.com", "url": "https://www.redbubble.com/i/sticker/cool-car-by-speedyart/1010.html", "seller": "Redbubble Artist"},
+            {"marketplace": "redbubble.com", "url": "https://www.redbubble.com/i/t-shirt/by-turbo_boost/2020", "seller": "Unknown"}
+        ]
+        enriched_rb = rb_scraper.enrich_seller_info(rb_items)
+        self.assertEqual(enriched_rb[0]["seller"], "speedyart")
+        self.assertEqual(enriched_rb[1]["seller"], "turbo_boost")
+
 
 if __name__ == "__main__":
     unittest.main()

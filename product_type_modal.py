@@ -178,7 +178,7 @@ class ProductTypeModal(tk.Toplevel):
 
         tk.Button(
             ind_btn_bar,
-            text="✏️ Rename",
+            text="✏ Rename",
             font=FONT_SM,
             bg=self._t("btn_bg", "#334155"),
             fg=self._t("text", "#f8fafc"),
@@ -255,7 +255,7 @@ class ProductTypeModal(tk.Toplevel):
 
         tk.Button(
             type_btn_bar,
-            text="✏️ Rename",
+            text="✏ Rename",
             font=FONT_SM,
             bg=self._t("btn_bg", "#334155"),
             fg=self._t("text", "#f8fafc"),

@@ -373,3 +373,44 @@ class TeeSpringScraper:
 
         _log(f"🌱 [TeeSpring] Generated +{len(variants)} POD commercial variants.")
         return variants
+
+    def enrich_seller_info(
+        self,
+        items: List[Dict[str, Any]],
+        progress_callback=None,
+        stop_event=None
+    ) -> List[Dict[str, Any]]:
+        """
+        Enrich real creator/store names for TeeSpring / Spring listings.
+        Extracts creator handle from URL slug /@handle or stores path.
+        """
+        if not items:
+            return items
+
+        total = len(items)
+        for idx, it in enumerate(items, 1):
+            if stop_event and stop_event.is_set():
+                break
+
+            current_seller = str(it.get("seller", "")).strip()
+            if not current_seller or any(g in current_seller.lower() for g in ("spring creator", "teespring creator", "unknown", "resolving...")):
+                url = it.get("url", "")
+                m = re.search(r"/(?:@|stores/)([a-zA-Z0-9_-]+)", url)
+                if m:
+                    it["seller"] = m.group(1).strip()
+                elif url:
+                    # Fallback to fetching single item if possible
+                    try:
+                        detail = self.fetch_single_item(url)
+                        if detail and detail.get("seller") and detail["seller"] not in ("Spring Creator", "Unknown"):
+                            it["seller"] = detail["seller"]
+                            if detail.get("price") and not it.get("price"):
+                                it["price"] = detail["price"]
+                    except Exception:
+                        pass
+
+            if progress_callback:
+                progress_callback(idx, total, it)
+
+        return items
+

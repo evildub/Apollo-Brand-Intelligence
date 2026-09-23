@@ -296,6 +296,30 @@ TOOLS_DATA = [
         "shortcut": "Settings ➔ 🏷 Product Type & Industry Taxonomy...",
         "purpose": "Configures industry-specific product categories and auto-tagging keyword rules (Automotive, Apparel, Tools, Home/Living, Pharma/Vet, Electronics).",
         "workflow": "1. Select an Industry Sector on the left.\n2. Add or select a Product Type (e.g. 'Spark Plugs' or 'Hoodies & Sweatshirts').\n3. Edit trigger keywords in the text editor (e.g. 'spark plug, iridium, platinum').\n4. Use the Live Title Sandbox at the bottom to test how listings will be classified in real-time.\n5. Click 'Save & Apply Taxonomy' to persist rules across all scrapers and live ingestion."
+    },
+    {
+        "name": "🕸 Syndicate Hunter & Entity Resolution",
+        "shortcut": "Settings ➔ 🕸 Syndicate Hunter (Ctrl+Y)... / Hotkey: Ctrl+Y",
+        "purpose": "Entity resolution and network mapping engine that identifies syndicate sister accounts sharing dispatch hubs, burner handles, visual clone hashes, or corporate registrations.",
+        "workflow": "1. Select any listing or suspect seller handle.\n2. Press Ctrl+Y or open Syndicate Hunter from Settings.\n3. Explore clustered seller graphs, inspect shared 3PL dispatch hubs, and export coordinated takedown dossiers."
+    },
+    {
+        "name": "🔐 Marketplace Session Vault & API Credentials",
+        "shortcut": "Settings ➔ 🔐 Marketplace Session Vault... / Hotkey: Ctrl+Shift+V",
+        "purpose": "Centralized authentication and API key management console for persistent browser cookies, Cloudflare/DataDome bypass sessions, stored marketplace logins (Mercado Libre, Temu, Vinted), and Enterprise Enforcement API gateways.",
+        "workflow": "1. Open Session Vault from Settings or press Ctrl+Shift+V.\n2. In Tab 1, click 'Connect' to open a stealth browser session or save marketplace logins for automated authentication.\n3. In Tab 2, configure Enterprise Enforcement API endpoints and eBay Developer REST API keys with live connection testing."
+    },
+    {
+        "name": "🏷 Brand Intelligence Registry & Keywords",
+        "shortcut": "Settings ➔ 🏷 Brand Registry & Keywords...",
+        "purpose": "Central repository for monitored client brand names, OEM standard numbers, trademark variations, and negative exclusion filters.",
+        "workflow": "1. Open Brand Registry from Settings.\n2. Add target client brands and associated high-risk keyword queries.\n3. Apollo applies these definitions across all marketplace sweeps and auto-tagging engines."
+    },
+    {
+        "name": "📄 VeRO Seller Disclosure Parser (.pdf / text)",
+        "shortcut": "Settings ➔ 📄 VeRO Seller Disclosure Parser (.pdf / text)...",
+        "purpose": "Extracts merchant details, legal names, addresses, phone numbers, and case references from platform infringement disclosure PDFs.",
+        "workflow": "1. Open VeRO Disclosure Parser from Settings.\n2. Load platform disclosure PDF or paste text.\n3. Apollo extracts structured seller identity records and cross-references them against known repeat offenders in the Registry."
     }
 ]
 

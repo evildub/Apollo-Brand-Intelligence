@@ -745,8 +745,8 @@ class RedbubbleScraper:
             if stop_event and stop_event.is_set():
                 break
             raw_url = it.get("url", "")
-            if not it.get("seller") or it.get("seller") in ("Redbubble Artist", "GLOBAL", "unknown", "Redbubble Creator"):
-                m = re.search(r'/by-([^/]+)/', raw_url)
+            if not it.get("seller") or any(g in str(it.get("seller", "")).lower() for g in ("redbubble artist", "global", "unknown", "redbubble creator")):
+                m = re.search(r'(?:/by-|/people/|-by-)([^/]+?)(?:/|\.html|\.|$)', raw_url, re.IGNORECASE)
                 if m:
                     it["seller"] = m.group(1).strip()
             if progress_callback:

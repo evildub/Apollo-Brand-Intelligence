@@ -181,28 +181,109 @@ class DataStore:
         self._save()
 
     def is_wick_unlocked(self) -> bool:
-        return bool(self.get_setting("unlocked_wick", False))
+        return bool(self.get_setting("unlocked_wick", False)) or self.is_achievement_unlocked("the_impossible_task")
 
     def unlock_wick(self):
         self.set_setting("unlocked_wick", True)
+        self.unlock_achievement("the_impossible_task")
 
     def is_brundo_unlocked(self) -> bool:
-        return bool(self.get_setting("unlocked_brundo", False))
+        return bool(self.get_setting("unlocked_brundo", False)) or self.is_achievement_unlocked("k9_sentinel")
 
     def unlock_brundo(self):
         self.set_setting("unlocked_brundo", True)
+        self.unlock_achievement("k9_sentinel")
 
     def is_fir_unlocked(self) -> bool:
-        return bool(self.get_setting("unlocked_fir", False))
+        return bool(self.get_setting("unlocked_fir", False)) or self.is_achievement_unlocked("rebel_frequency")
 
     def unlock_fir(self):
         self.set_setting("unlocked_fir", True)
+        self.unlock_achievement("rebel_frequency")
 
     def is_cowboys_unlocked(self) -> bool:
-        return bool(self.get_setting("unlocked_cowboys", False))
+        return bool(self.get_setting("unlocked_cowboys", False)) or self.is_achievement_unlocked("lone_star")
 
     def unlock_cowboys(self):
         self.set_setting("unlocked_cowboys", True)
+        self.unlock_achievement("lone_star")
+
+    # ── Achievements & Career Enforcement Milestones ───────────────────────────
+    def get_achievements_data(self) -> dict:
+        """Return achievements dictionary containing lifetime stats and unlocked milestones."""
+        ach = self._data.setdefault("achievements", {
+            "lifetime_listings": 0,
+            "lifetime_searches": 0,
+            "unlocked": {}
+        })
+        if "lifetime_listings" not in ach:
+            ach["lifetime_listings"] = 0
+        if "lifetime_searches" not in ach:
+            ach["lifetime_searches"] = 0
+        if "unlocked" not in ach:
+            ach["unlocked"] = {}
+
+        # Sync with legacy settings
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if self.get_setting("unlocked_wick", False) and "the_impossible_task" not in ach["unlocked"]:
+            ach["unlocked"]["the_impossible_task"] = {"unlocked_at": now_str}
+        if self.get_setting("unlocked_brundo", False) and "k9_sentinel" not in ach["unlocked"]:
+            ach["unlocked"]["k9_sentinel"] = {"unlocked_at": now_str}
+        if self.get_setting("unlocked_fir", False) and "rebel_frequency" not in ach["unlocked"]:
+            ach["unlocked"]["rebel_frequency"] = {"unlocked_at": now_str}
+        if self.get_setting("unlocked_cowboys", False) and "lone_star" not in ach["unlocked"]:
+            ach["unlocked"]["lone_star"] = {"unlocked_at": now_str}
+        return ach
+
+    def get_lifetime_listings(self) -> int:
+        return int(self.get_achievements_data().get("lifetime_listings", 0))
+
+    def increment_lifetime_listings(self, count: int) -> int:
+        if count <= 0:
+            return self.get_lifetime_listings()
+        ach = self.get_achievements_data()
+        ach["lifetime_listings"] = int(ach.get("lifetime_listings", 0)) + int(count)
+        self._save()
+        return ach["lifetime_listings"]
+
+    def increment_lifetime_searches(self, count: int = 1) -> int:
+        ach = self.get_achievements_data()
+        ach["lifetime_searches"] = int(ach.get("lifetime_searches", 0)) + int(count)
+        self._save()
+        return ach["lifetime_searches"]
+
+    def is_achievement_unlocked(self, ach_id: str) -> bool:
+        ach = self.get_achievements_data()
+        return ach_id in ach.get("unlocked", {})
+
+    def save_achievements_data(self, ach_data: dict) -> None:
+        """Save achievements dictionary to disk."""
+        self._data["achievements"] = ach_data
+        self._save()
+
+    def unlock_achievement(self, ach_id: str, metadata: dict = None) -> bool:
+        """Unlock an achievement. Returns True if newly unlocked, False if already unlocked."""
+        ach = self.get_achievements_data()
+        if ach_id in ach.get("unlocked", {}):
+            return False
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        entry = {"unlocked_at": now_str}
+        if metadata and isinstance(metadata, dict):
+            entry.update(metadata)
+        ach["unlocked"][ach_id] = entry
+
+        # Sync with legacy settings if relevant
+        if ach_id == "the_impossible_task":
+            self._data.setdefault("settings", {})["unlocked_wick"] = True
+        elif ach_id == "k9_sentinel":
+            self._data.setdefault("settings", {})["unlocked_brundo"] = True
+        elif ach_id == "rebel_frequency":
+            self._data.setdefault("settings", {})["unlocked_fir"] = True
+        elif ach_id == "lone_star":
+            self._data.setdefault("settings", {})["unlocked_cowboys"] = True
+
+        self._save()
+        return True
 
     # ── Brand Profiles / Multi-Workspace Support ─────────────────────────────
     def get_brand_profiles(self) -> dict:

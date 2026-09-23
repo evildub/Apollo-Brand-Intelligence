@@ -391,3 +391,33 @@ class TeePublicScraper:
                     pass
 
         return all_variants
+
+    def enrich_seller_info(
+        self,
+        items: List[Dict[str, Any]],
+        progress_callback=None,
+        stop_event=None
+    ) -> List[Dict[str, Any]]:
+        """
+        Enrich real designer/artist names for TeePublic listings.
+        Extracts designer name from URL structure or user page references.
+        """
+        if not items:
+            return items
+
+        total = len(items)
+        for idx, it in enumerate(items, 1):
+            if stop_event and stop_event.is_set():
+                break
+
+            current_seller = str(it.get("seller", "")).strip()
+            if not current_seller or any(g in current_seller.lower() for g in ("teepublic artist", "unknown", "resolving...")):
+                url = it.get("url", "")
+                m = re.search(r"/(?:user|designer|stores)/([a-zA-Z0-9_-]+)", url)
+                if m:
+                    it["seller"] = m.group(1).replace("-", " ").replace("_", " ").title()
+
+            if progress_callback:
+                progress_callback(idx, total, it)
+
+        return items

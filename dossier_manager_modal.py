@@ -152,7 +152,7 @@ class DossierManagerModal(tk.Toplevel):
 
         v_lbl_bar = tk.Frame(left_pane, bg=self._t("panel", "#1e1e1e"), padx=8, pady=6)
         v_lbl_bar.pack(fill="x", side="top", pady=(0, 4))
-        tk.Label(v_lbl_bar, text="🗄️ Investigation Vaults", font=FONT_HEADING, bg=self._t("panel", "#1e1e1e"), fg=self._t("text", "#ffffff")).pack(side="left")
+        tk.Label(v_lbl_bar, text="🗄 Investigation Vaults", font=FONT_HEADING, bg=self._t("panel", "#1e1e1e"), fg=self._t("text", "#ffffff")).pack(side="left")
 
         # Treeview for Vaults
         tree_frame = tk.Frame(left_pane, bg=self._t("entry_bg", "#0f172a"))
@@ -178,8 +178,8 @@ class DossierManagerModal(tk.Toplevel):
         v_act_row.pack(fill="x", side="top")
 
         self._btn(v_act_row, "➕ New Vault", self._create_new_vault, accent=True).pack(side="left", padx=(0, 3))
-        self._btn(v_act_row, "✏️ Rename", self._rename_selected_vault).pack(side="left", padx=(0, 3))
-        self._btn(v_act_row, "🗑️ Delete", self._delete_selected_vault, danger=True).pack(side="right")
+        self._btn(v_act_row, "✏ Rename", self._rename_selected_vault).pack(side="left", padx=(0, 3))
+        self._btn(v_act_row, "🗑 Delete", self._delete_selected_vault, danger=True).pack(side="right")
 
         # ── RIGHT PANE: Items Preview & Actions ───────────────────────────────
         right_pane = tk.Frame(body, bg=self._t("panel", "#1e1e1e"), padx=10, pady=10)
@@ -248,7 +248,7 @@ class DossierManagerModal(tk.Toplevel):
         self.items_status = tk.Label(items_bot, text="0 listings in vault", font=FONT_SM, bg=self._t("panel", "#1e1e1e"), fg=self._t("subtext", "#94a3b8"))
         self.items_status.pack(side="left")
 
-        self._btn(items_bot, "🗑️ Clear Vault Items", self._clear_selected_vault_items, danger=True).pack(side="right")
+        self._btn(items_bot, "🗑 Clear Vault Items", self._clear_selected_vault_items, danger=True).pack(side="right")
         self._btn(items_bot, "✕ Remove Selected", self._remove_selected_listings_from_vault, danger=True).pack(side="right", padx=(0, 4))
 
     # ── Footer ────────────────────────────────────────────────────────────────

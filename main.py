@@ -17,7 +17,8 @@ from PIL import Image, ImageTk
 import ctypes
 
 logger = logging.getLogger("Apollo")
-VERSION = "3.2.0"
+APP_VERSION = "3.2.2"
+VERSION = APP_VERSION
 
 from scraper import EbayScraper
 from aliexpress_scraper import AliExpressScraper
@@ -729,13 +730,10 @@ def download_image_bytes(url: str, timeout: float = 10.0, session=None) -> Optio
     return None
 
 
-VERSION = "3.0.0"
-
-
 class EbayTool(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title(f"Apollo v{VERSION}")
+        self.title(f"Apollo Brand Intelligence v{APP_VERSION}")
 
         self.data_store     = DataStore()
         # Scraper background/headless mode (Default: True / Silent Background)
@@ -897,6 +895,7 @@ class EbayTool(tk.Tk):
         self._build_ui()
         self._refresh_brand_tree()
         self._refresh_exclusion_list()
+        self._refresh_inclusion_list()
         # Global Keyboard Shortcuts
         self.bind_all("<Control-e>", lambda e: self._export())
         self.bind_all("<Control-E>", lambda e: self._export())
@@ -1289,9 +1288,6 @@ class EbayTool(tk.Tk):
         self.btn_visual = self._btn(top_right, "🖼 Visual Library", self._open_visual_catalog_modal, accent=True)
         self.btn_visual.pack(side="left", padx=(0, 2))
 
-        self.btn_syndicate = self._btn(top_right, "🕸️ Syndicate Hunter", self._open_syndicate_hunter_modal, accent=True)
-        self.btn_syndicate.pack(side="left", padx=(0, 2))
-
         self.btn_registry = self._btn(top_right, "🛡 Registry", self._open_enforcement_registry_window)
         self.btn_registry.pack(side="left", padx=(0, 2))
 
@@ -1402,11 +1398,11 @@ class EbayTool(tk.Tk):
 
         # 4. Analyst Intelligence Packs & Sharing
         self.settings_menu.add_command(
-            label="📦 Export Analyst Intelligence Pack (.apollo)...",
+            label="📦 Export Intelligence Pack...",
             command=self._export_intel_pack_dialog
         )
         self.settings_menu.add_command(
-            label="📥 Import Analyst Intelligence Pack (.apollo)...",
+            label="📥 Import Intelligence Pack...",
             command=self._import_intel_pack_dialog
         )
 
@@ -1414,23 +1410,27 @@ class EbayTool(tk.Tk):
 
         # 5. Modals & Configuration
         self.settings_menu.add_command(
-            label="📄 VeRO Seller Disclosure Parser (.pdf / text)...",
+            label="📄 VeRO Seller Disclosure Parser...",
             command=self._open_vero_disclosure_modal
         )
         self.settings_menu.add_command(
-            label="🔐 Marketplace Session Vault...",
+            label="🔐 Session Vault & API Keys...",
             command=self._open_session_vault_modal
         )
         self.settings_menu.add_command(
-            label="🏷 Product Type & Industry Taxonomy...",
+            label="🕸 Syndicate Hunter...",
+            command=self._open_syndicate_hunter_modal
+        )
+        self.settings_menu.add_command(
+            label="🏷 Product Types & Taxonomy...",
             command=self._open_product_type_manager
         )
         self.settings_menu.add_command(
-            label="📚 Open Analyst Field Guide (F1)",
+            label="📚 Analyst Field Guide...",
             command=self._open_field_guide_modal
         )
         self.settings_menu.add_command(
-            label="ℹ About Apollo Brand Intelligence...",
+            label="ℹ About Apollo...",
             command=self._show_about_dialog
         )
 
@@ -1950,7 +1950,7 @@ class EbayTool(tk.Tk):
         self.thumb_size_combo.pack(side="left", padx=(0, 6))
         self.thumb_size_combo.bind("<<ComboboxSelected>>", self._on_thumb_size_changed)
 
-        # Primary Action Bar (Executive Clean 4-Button Toolbar): Export, Clear, Threat Intel, Rescrape
+        # Primary Action Bar: Export, Clear, Threat Intel, Rescrape, Re-Scan Visual, Stash, Dossiers
         # (Edit, Network, Copy, Enrich, Multi-Locale, Remove are fully accessible in Right-Click & Hotkeys)
         self.btn_export = self._btn(toolbar, "💾 Export", self._export, accent=True)
         self.btn_export.pack(side="right", padx=(4, 2))
@@ -1963,6 +1963,15 @@ class EbayTool(tk.Tk):
 
         self.btn_rescrape = self._btn(toolbar, "🔄 Rescrape", self._rescrape_selected_listings)
         self.btn_rescrape.pack(side="right", padx=2)
+
+        self.btn_rescan_visual = self._btn(toolbar, "🔄 Re-Scan Visual", self._rescan_visual_matches)
+        self.btn_rescan_visual.pack(side="right", padx=2)
+
+        # Multi-Dossier Staging Vaults (Multi-Wave Investigation Carts)
+        self.btn_stash_dossier = self._btn(toolbar, "📥 Stash to Dossier", self._stash_to_dossier)
+        self.btn_stash_dossier.pack(side="right", padx=2)
+        self.btn_view_dossier = self._btn(toolbar, self._get_dossier_btn_label(), self._view_or_restore_dossier)
+        self.btn_view_dossier.pack(side="right", padx=(2, 6))
 
         # ── 1.5 Live Search Filter Bar ────────────────────────────────────────
         filter_bar = tk.Frame(frame, bg=t["panel"], pady=4, padx=8)
@@ -2013,79 +2022,15 @@ class EbayTool(tk.Tk):
         self.hr_cb.pack(side="left", padx=(2, 2))
         self.themed_widgets["checks"].append(self.hr_cb)
 
-        self.benign_filter_var = tk.StringVar(value="🛡 Hide Benign")
+        self.benign_filter_var = tk.StringVar(value="📁 Show All")
         self.benign_filter_combo = ttk.Combobox(filter_bar, textvariable=self.benign_filter_var,
-                                                values=["🛡 Hide Benign", "📁 Show All", "🟢 Benign Only"],
+                                                values=["📁 Show All", "🛡 Hide Benign", "🟢 Benign Only"],
                                                 width=15, state="readonly", font=FONT_SM)
         self.benign_filter_combo.pack(side="left", padx=(2, 3))
         self.benign_filter_combo.bind("<<ComboboxSelected>>", lambda e: self._repopulate_results_table())
 
         self._btn(filter_bar, "✕ Clear", self._clear_filter).pack(side="left", padx=(0, 4))
         self._btn(filter_bar, "🧹 Dedupe", self._deduplicate_results).pack(side="left", padx=(0, 0))
-
-        # ── 1.6 Bulk Classification & Tagging Toolbar ─────────────────────────
-        tag_bar = tk.Frame(frame, bg=t["panel"], pady=4, padx=8)
-        tag_bar.pack(side="top", fill="x", padx=4, pady=(1, 2))
-        self.themed_widgets["panel_frames"].append(tag_bar)
-
-        self.tag_icon = tk.Label(tag_bar, text="🏷", font=("Segoe UI", 9), bg=t["panel"], fg=t["accent"])
-        self.tag_icon.pack(side="left", padx=(0, 2))
-        self.themed_widgets["section_labels"].append(self.tag_icon)
-        tag_lbl = tk.Label(tag_bar, text="Bulk Tag Selected:", font=("Segoe UI", 9, "bold"),
-                           bg=t["panel"], fg=t["text"])
-        tag_lbl.pack(side="left", padx=(0, 8))
-        self.themed_widgets["text_labels"].append(tag_lbl)
-
-        b_lbl = tk.Label(tag_bar, text="Brand:", font=FONT_SM, bg=t["panel"], fg=t["subtext"])
-        b_lbl.pack(side="left", padx=(0, 3))
-        self.themed_widgets["subtext_labels"].append(b_lbl)
-
-        self.bulk_brand_var = tk.StringVar(value="(No change)")
-        self.bulk_brand_combo = ttk.Combobox(tag_bar, textvariable=self.bulk_brand_var,
-                                             width=16, state="readonly", font=FONT_SM)
-        self.bulk_brand_combo.pack(side="left", padx=(0, 10))
-
-        pt_lbl = tk.Label(tag_bar, text="Product Type:", font=FONT_SM, bg=t["panel"], fg=t["subtext"])
-        pt_lbl.pack(side="left", padx=(0, 3))
-        self.themed_widgets["subtext_labels"].append(pt_lbl)
-
-        self.bulk_product_var = tk.StringVar(value="(Select or type...)")
-        product_categories = [
-            "(Select or type...)",
-            "Accessories",
-            "Air Filters",
-            "Air Intake & Fuel Delivery",
-            "Airbag Components",
-            "Airbag Covers",
-            "Brakes",
-            "Decals",
-            "Diagnostic Systems",
-            "Emblems",
-            "Engines & Components",
-            "Exhausts & Exhaust Parts",
-            "Exterior Lighting",
-            "Exterior Parts",
-            "Grilles",
-            "Ignition Systems",
-            "Interior Parts",
-            "Merchandise",
-            "Oil Filters",
-            "Suspension & Steering",
-            "Transmission & Drivetrain",
-            "Wheel Caps",
-        ]
-        self.bulk_product_combo = ttk.Combobox(tag_bar, textvariable=self.bulk_product_var,
-                                               values=product_categories, width=26, font=FONT_SM)
-        self.bulk_product_combo.pack(side="left", padx=(0, 8))
-
-        self._btn(tag_bar, "⚡ Apply to Selected", self._apply_bulk_tag, accent=True).pack(side="left", padx=(0, 6))
-        self._btn(tag_bar, "🔄 Re-Scan Visual", self._rescan_visual_matches).pack(side="left", padx=(0, 6))
-
-        # Multi-Dossier Staging Vaults (Multi-Wave Investigation Carts)
-        self.btn_stash_dossier = self._btn(tag_bar, "📥 Stash to Dossier", self._stash_to_dossier)
-        self.btn_stash_dossier.pack(side="left", padx=(0, 4))
-        self.btn_view_dossier = self._btn(tag_bar, self._get_dossier_btn_label(), self._view_or_restore_dossier)
-        self.btn_view_dossier.pack(side="left", padx=(0, 4))
 
         # ── 1. Activity Log panel (docked firmly to the bottom) ──────────────
         log_frame = tk.Frame(frame, bg=t["bg"])
@@ -2523,13 +2468,13 @@ class EbayTool(tk.Tk):
         if icon:
             icon_str = icon
         elif danger:
-            icon_str = "🗑️"
+            icon_str = "🗑"
         elif "Restore" in title or "Question" in title:
             icon_str = "❓"
         elif "Purge" in title or "Delete" in title:
-            icon_str = "⚠️"
+            icon_str = "⚠"
         else:
-            icon_str = "ℹ️"
+            icon_str = "ℹ"
 
         # Calculate dynamic size so text and buttons have ample breathing room
         msg_lines = message.count("\n") + 1
@@ -3756,13 +3701,13 @@ class EbayTool(tk.Tk):
         if self._show_themed_confirm(
             "Remove Brand Item",
             f"Are you sure you want to remove {item_desc} and all associated children from your Brand Registry?",
-            confirm_text="🗑️ Remove",
+            confirm_text="🗑 Remove",
             danger=True
         ):
             self.data_store.remove_multiple_brands(names)
             self._refresh_brand_tree()
             self._update_include_preview()
-            self._log(f"🗑️ Removed {item_desc} from Brand Registry.")
+            self._log(f"🗑 Removed {item_desc} from Brand Registry.")
 
     def _purge_all_brands(self):
         """Purge all brand items from the Brand Registry with a themed confirmation modal."""
@@ -3774,14 +3719,14 @@ class EbayTool(tk.Tk):
         if self._show_themed_confirm(
             "Purge Brand Registry",
             f"Are you sure you want to permanently delete ALL {len(brands)} brand(s), sub-brands, and models from the Brand Registry?\n\nThis will reset the Brand Registry to a clean slate (ideal for new analyst setup or loading a fresh Intel Pack).",
-            confirm_text="🗑️ Purge All Brands",
+            confirm_text="🗑 Purge All Brands",
             danger=True
         ):
             self.data_store.purge_all_brands()
             self.brand_states.clear()
             self._refresh_brand_tree()
             self._update_include_preview()
-            self._log("🗑️ Purged all brands from Brand Registry. Ready for new profile/pack import.")
+            self._log("🗑 Purged all brands from Brand Registry. Ready for new profile/pack import.")
             self._status("Brand Registry Purged (Clean Slate)")
 
     def _brand_dialog(self, title, callback):
@@ -3861,7 +3806,7 @@ class EbayTool(tk.Tk):
         card = tk.Frame(win, bg=t["panel"], padx=18, pady=16)
         card.pack(fill="both", expand=True, padx=12, pady=12)
 
-        tk.Label(card, text=f"🏷️ Edit {current_name}", font=FONT_HEAD, bg=t["panel"], fg=t["accent"]).pack(anchor="w")
+        tk.Label(card, text=f"🏷 Edit {current_name}", font=FONT_HEAD, bg=t["panel"], fg=t["accent"]).pack(anchor="w")
         tk.Label(card, text="Configure brand taxonomy, product line models, and mandatory inclusion keywords.",
                  font=FONT_SM, bg=t["panel"], fg=t["subtext"]).pack(anchor="w", pady=(2, 12))
 
@@ -5837,6 +5782,9 @@ class EbayTool(tk.Tk):
             self._log(f"✓ Run complete — {total} listings harvested.")
             self._show_themed_info("Sweep Complete", f"Successfully harvested {total} listings across targets!\n\nClick 'Export' or 'Stash to Dossier' to save.", icon="🎉")
 
+        if total > 0 and hasattr(self, "data_store"):
+            self.data_store.increment_lifetime_listings(total)
+            self.data_store.increment_lifetime_searches()
         self.result_count.set(f"{len(self.results)} listings")
         self._check_enforcement_milestones()
         # Post-sweep thumbnail refresh pulse to guarantee 100% of thumbnails display immediately
@@ -6404,7 +6352,7 @@ class EbayTool(tk.Tk):
                         threat_display = ""
 
                     # Check Benign Filter (Hide Benign vs Show All vs Benign Only)
-                    b_mode = self.benign_filter_var.get() if hasattr(self, "benign_filter_var") else "🛡 Hide Benign"
+                    b_mode = self.benign_filter_var.get() if hasattr(self, "benign_filter_var") else "📁 Show All"
                     is_item_benign = item.get("visual_benign") or str(threat_display).startswith("🟢 Benign")
                     if b_mode == "🟢 Benign Only" and not is_item_benign:
                         continue
@@ -6582,7 +6530,7 @@ class EbayTool(tk.Tk):
                 threat_display = ""
 
             # Check Benign Filter (Hide Benign vs Show All vs Benign Only)
-            b_mode = self.benign_filter_var.get() if hasattr(self, "benign_filter_var") else "🛡 Hide Benign"
+            b_mode = self.benign_filter_var.get() if hasattr(self, "benign_filter_var") else "📁 Show All"
             is_item_benign = item.get("visual_benign") or str(threat_display).startswith("🟢 Benign")
             if b_mode == "🟢 Benign Only" and not is_item_benign:
                 continue
@@ -7046,7 +6994,7 @@ class EbayTool(tk.Tk):
         menu.add_command(label="🌐 Multi-Locale Expander", command=self._open_multi_locale_expander)
         menu.add_separator()
         menu.add_command(label="🔗 Connected Seller Network Hunter", command=self._open_connected_network_scanner)
-        menu.add_command(label="🕸️ Investigate in Syndicate Hunter (Entity Resolution)", font=("Segoe UI", 9, "bold"), command=self._open_syndicate_hunter_for_selected)
+        menu.add_command(label="🕸 Investigate in Syndicate Hunter", command=self._open_syndicate_hunter_for_selected)
 
         # ── Nested Reverse Visual Search Submenu ──
         vis_menu = tk.Menu(menu, tearoff=0, bg=t["panel"], fg=t["text"],
@@ -7111,6 +7059,7 @@ class EbayTool(tk.Tk):
         menu.add_command(label="🟢 Mark Packaging as Known Benign", command=self._mark_selected_as_visual_benign)
         menu.add_command(label="🔴 Mark Photo as Known Counterfeit", command=self._mark_selected_as_visual_counterfeit)
         menu.add_command(label="🏪 Add Seller to Stores Box", command=self._add_selected_result_seller_to_stores)
+        menu.add_command(label="🏪 Enrich Selected Seller Names", command=self._enrich_sellers)
         menu.add_command(label="🌍 Resolve Threat Intel & Origin", command=self._enrich_seller_threat_intel)
         menu.add_command(label="🛡 Whitelist Seller (Authorized Dealer)", command=self._whitelist_selected_result_seller)
         menu.add_separator()
@@ -7118,7 +7067,6 @@ class EbayTool(tk.Tk):
         menu.add_command(label="🌐 Open Listing in Browser", command=lambda: self._open_url(None))
         menu.add_command(label="📋 Copy Selected URLs", command=self._copy_selected_urls)
         menu.add_command(label="📋 Copy All URLs", command=self._copy_all_listing_urls)
-        menu.add_command(label="🏪 Enrich Selected Seller Names", command=self._enrich_sellers)
         menu.add_separator()
         menu.add_command(label="✕ Remove Selected (Del)", command=self._remove_selected_results)
         menu.add_command(label="🗑 Clear All Results", command=self._clear_results)
@@ -7500,6 +7448,9 @@ class EbayTool(tk.Tk):
                         itm["visual_counterfeit"] = True
 
         self._repopulate_results_table()
+        if matched_count > 0 and hasattr(self, "data_store"):
+            if self.data_store.unlock_achievement("visual_hawkeye"):
+                self._log("★ 🏆 ACHIEVEMENT UNLOCKED: 👁 VISUAL HAWKEYE (Matched Listings with Visual pHash) ★")
         self._log(f"🖼 Re-evaluated visual matches across session ({matched_count} listings matched with threshold {thresh}).")
         self._show_themed_info("Re-Scan Complete", f"Re-evaluated {len(self.results)} listings with Sensitivity Threshold ({thresh}).\n\nFound {matched_count} visual packaging match(es)!", icon="🖼")
 
@@ -8178,6 +8129,17 @@ class EbayTool(tk.Tk):
                     else:
                         uncached.append(s)
 
+                # Seed cache with known origins already present on multi-marketplace items
+                for it in target_items:
+                    s = str(it.get("seller", "")).replace("🛡", "").replace("(Authorized)", "").strip()
+                    if s and s in uncached:
+                        orig = it.get("seller_origin") or it.get("location")
+                        if orig and orig != "Unknown" and not any(g in str(orig).lower() for g in ("global", "resolving", "unknown")):
+                            self.data_store.set_seller_intel(s, str(orig).strip())
+                            cached_intel[s] = {"country": str(orig).strip(), "member_since": ""}
+                            if s in uncached:
+                                uncached.remove(s)
+
                 # Resolve uncached in parallel via high-speed batch resolver
                 if uncached and not self.stop_event.is_set():
                     resolved_map = self.scraper.batch_resolve_seller_countries(uncached)
@@ -8303,16 +8265,32 @@ class EbayTool(tk.Tk):
         if not messagebox.askyesno("Enrich Sellers", f"Enrich real merchant/store names for {len(target_items)} listing(s)?\n\nThis will look up the specific seller/store ID for each listing."):
             return
 
+        # Define modular marketplace enrichment registry: (matcher_fn, scraper_attr, method_name)
+        def _match(patterns):
+            return lambda it: any(p in it.get("marketplace", "").lower() or p in it.get("url", "").lower() for p in patterns)
+
+        enrichment_registry = [
+            (_match(["ebay"]), "scraper", "enrich_ebay_seller_info"),
+            (_match(["ali", "aliexpress"]), "aliexpress_scraper", "enrich_seller_info"),
+            (_match(["wish"]), "wish_scraper", "enrich_seller_info"),
+            (_match(["temu"]), "temu_scraper", "enrich_seller_info"),
+            (_match(["mercado", "mercadolibre", "mercadolivre"]), "mercadolibre_scraper", "enrich_seller_info"),
+            (_match(["printerval"]), "printerval_scraper", "enrich_seller_info"),
+            (_match(["tiktok"]), "tiktok_scraper", "enrich_seller_info"),
+            (_match(["redbubble"]), "redbubble_scraper", "enrich_seller_info"),
+            (_match(["zazzle"]), "zazzle_scraper", "enrich_seller_info"),
+            (_match(["spreadshirt", "spreadshop"]), "spreadshirt_scraper", "enrich_seller_info"),
+            (_match(["cafepress"]), "cafepress_scraper", "enrich_seller_info"),
+            (_match(["scribd"]), "scribd_scraper", "enrich_seller_info"),
+            (_match(["teespring", "spring.com"]), "teespring_scraper", "enrich_seller_info"),
+            (_match(["teepublic"]), "teepublic_scraper", "enrich_seller_info"),
+        ]
+
         is_headless = self.headless_var.get()
-        self.scraper.headless = is_headless
-        self.aliexpress_scraper.headless = is_headless
-        self.wish_scraper.headless = is_headless
-        self.temu_scraper.headless = is_headless
-        self.printerval_scraper.headless = is_headless
-        self.mercadolibre_scraper.headless = is_headless
-        self.zazzle_scraper.headless = is_headless
-        self.spreadshirt_scraper.headless = is_headless
-        self.cafepress_scraper.headless = is_headless
+        for _, s_attr, _ in enrichment_registry:
+            s_inst = getattr(self, s_attr, None)
+            if s_inst and hasattr(s_inst, "headless"):
+                s_inst.headless = is_headless
 
         self._log(f"🏪 Starting Seller Name Enrichment for {len(target_items)} item(s)...")
         self._status(f"🏪 Enriching {len(target_items)} sellers...")
@@ -8400,87 +8378,28 @@ class EbayTool(tk.Tk):
                 self.after(0, lambda: self._repopulate_results_table())
 
             try:
-                # Group items by platform
-                ebay_items = [it for it in target_items if "ebay" in it.get("marketplace", "").lower() or "ebay.com" in it.get("url", "").lower()]
-                ali_items = [it for it in target_items if "ali" in it.get("marketplace", "").lower() or "aliexpress" in it.get("url", "").lower()]
-                wish_items = [it for it in target_items if "wish" in it.get("marketplace", "").lower() or "wish" in it.get("url", "").lower()]
-                temu_items = [it for it in target_items if "temu" in it.get("marketplace", "").lower() or "temu" in it.get("url", "").lower()]
-                meli_items = [it for it in target_items if "mercado" in it.get("marketplace", "").lower() or "mercadolibre" in it.get("marketplace", "").lower() or "mercadolivre" in it.get("marketplace", "").lower() or "mercadolibre" in it.get("url", "").lower() or "mercadolivre" in it.get("url", "").lower()]
-                printerval_items = [it for it in target_items if "printerval" in it.get("marketplace", "").lower() or "printerval" in it.get("url", "").lower()]
-                tiktok_items = [it for it in target_items if "tiktok" in it.get("marketplace", "").lower() or "tiktok" in it.get("url", "").lower()]
-                zazzle_items = [it for it in target_items if "zazzle" in it.get("marketplace", "").lower() or "zazzle.com" in it.get("url", "").lower()]
-                spreadshirt_items = [it for it in target_items if "spreadshirt" in it.get("marketplace", "").lower() or "spreadshirt.com" in it.get("url", "").lower()]
-                cafepress_items = [it for it in target_items if "cafepress" in it.get("marketplace", "").lower() or "cafepress.com" in it.get("url", "").lower()]
+                for matcher, s_attr, m_name in enrichment_registry:
+                    if self.stop_event.is_set():
+                        break
+                    mkt_items = [it for it in target_items if matcher(it)]
+                    if not mkt_items:
+                        continue
+                    s_inst = getattr(self, s_attr, None)
+                    if not s_inst:
+                        continue
+                    m_fn = getattr(s_inst, m_name, None)
+                    if not m_fn or not callable(m_fn):
+                        continue
 
-                if ebay_items and not self.stop_event.is_set():
-                    self.scraper.enrich_ebay_seller_info(
-                        ebay_items,
-                        progress_callback=_on_prog,
-                        stop_event=self.stop_event
-                    )
-
-                if ali_items and not self.stop_event.is_set():
-                    self.aliexpress_scraper.enrich_seller_info(
-                        ali_items,
-                        progress_callback=_on_prog,
-                        stop_event=self.stop_event
-                    )
-
-                if wish_items and not self.stop_event.is_set():
-                    self.wish_scraper.enrich_seller_info(
-                        wish_items,
-                        progress_callback=_on_prog,
-                        stop_event=self.stop_event
-                    )
-
-                if temu_items and not self.stop_event.is_set():
-                    self.temu_scraper.enrich_seller_info(
-                        temu_items,
-                        progress_callback=_on_prog,
-                        stop_event=self.stop_event
-                    )
-
-                if meli_items and not self.stop_event.is_set():
-                    self.mercadolibre_scraper.enrich_seller_info(
-                        meli_items,
-                        progress_callback=_on_prog,
-                        stop_event=self.stop_event
-                    )
-
-                if printerval_items and not self.stop_event.is_set():
-                    self.printerval_scraper.enrich_seller_info(
-                        printerval_items,
-                        progress_callback=_on_prog,
-                        stop_event=self.stop_event
-                    )
-
-                if tiktok_items and not self.stop_event.is_set():
-                    self.tiktok_scraper.enrich_seller_info(
-                        tiktok_items,
-                        progress_callback=_on_prog,
-                        stop_event=self.stop_event
-                    )
-
-                if zazzle_items and not self.stop_event.is_set():
-                    self.zazzle_scraper.enrich_seller_info(
-                        zazzle_items,
-                        progress_callback=_on_prog,
-                        stop_event=self.stop_event
-                    )
-
-                if spreadshirt_items and not self.stop_event.is_set():
-                    self.spreadshirt_scraper.enrich_seller_info(
-                        spreadshirt_items,
-                        progress_callback=_on_prog,
-                        stop_event=self.stop_event
-                    )
-
-                if cafepress_items and not self.stop_event.is_set():
-                    self.cafepress_scraper.enrich_seller_info(
-                        cafepress_items,
-                        progress_callback=_on_prog,
-                        stop_event=self.stop_event
-                    )
+                    try:
+                        m_fn(
+                            mkt_items,
+                            progress_callback=_on_prog,
+                            stop_event=self.stop_event
+                        )
+                    except Exception as ex:
+                        logger.error(f"Error enriching {s_attr}: {ex}")
+                        self.after(0, lambda e=ex, a=s_attr: self._log(f"⚠ Warning: {a} enrichment error: {e}", error=True))
 
             finally:
                 if hasattr(self, "progress"):
@@ -9267,8 +9186,8 @@ class EbayTool(tk.Tk):
                     mkt = str(it.get("marketplace", "")).strip()
                     self.seen_item_ids.add(f"{mkt}_{vid}" if mkt else vid)
             self._repopulate_results_table()
-            self._log(f"🛡️ Successfully restored {len(self.results):,} listings from previous session.")
-            self._status(f"🛡️ Session recovered ({len(self.results):,} listings restored)")
+            self._log(f"🛡 Successfully restored {len(self.results):,} listings from previous session.")
+            self._status(f"🛡 Session recovered ({len(self.results):,} listings restored)")
         else:
             self.data_store.clear_active_session()
 
@@ -9302,9 +9221,6 @@ class EbayTool(tk.Tk):
                 self.word_buffer = self.word_buffer[-30:]
             if any(w in self.word_buffer for w in ("cowboys", "dallas", "americasteam", "dak")):
                 self._trigger_cowboys_easter_egg()
-                self.word_buffer = ""
-            elif any(w in self.word_buffer for w in ("wick", "continental", "johnwick")):
-                self._trigger_wick_easter_egg()
                 self.word_buffer = ""
             elif any(w in self.word_buffer for w in ("brundo", "goodboy", "lab", "k9")):
                 self._trigger_brundo_easter_egg()
@@ -9542,7 +9458,7 @@ class EbayTool(tk.Tk):
             ("🏆 5 SUPER BOWL RINGS", "SB V, VI, XII, XXVII, XXVIII", "#FFB81C"),
             ("🌟 8 NFC CHAMPIONSHIPS", "America's Historic Franchise", "#0072CE"),
             ("🏈 #1 NFL FRANCHISE", "World's Most Valuable ($10B+)", "#FFFFFF"),
-            ("🛡️ DOOMSDAY DEFENSE", "100% Trademark Conviction", "#10B981"),
+            ("🛡 DOOMSDAY DEFENSE", "100% Trademark Conviction", "#10B981"),
         ]
         for i, (title, sub, color) in enumerate(stats):
             r, c = divmod(i, 2)
@@ -9672,31 +9588,130 @@ class EbayTool(tk.Tk):
         self._status(quote)
 
     def _check_enforcement_milestones(self):
-        """Check and log high-volume enterprise enforcement milestones."""
-        total_res = len(self.results)
-        milestones = [
-            (50, "🎯 RECON SCOUT", "50 Suspicious Listings Identified!"),
-            (100, "⚡ FIRST STRIKE", "100 Counterfeit Listings Harvested!"),
-            (250, "🔍 IP SENTINEL", "250 Infringing Products Logged and Cataloged!"),
-            (500, "🛡 ENFORCEMENT BATTALION", "500 Counterfeits Seized across Store Fronts!"),
-            (1000, "⚔ BRAND DEFENDER", "1,000 Infringements Purged from the Marketplace!"),
-            (2000, "🏆 ELITE BRAND ENFORCER", "2,000 Counterfeits Logged! (Monthly Target Reached!)"),
-            (5000, "🚀 FLEET COMMANDER", "5,000 Counterfeit Assets Harvested! Master Enforcer!"),
-            (10000, "👑 TITAN OF INDUSTRY", "10,000 Infringements Seized! Supreme Anti-Counterfeit Authority!"),
-        ]
-        if not hasattr(self, "achieved_milestones"):
-            self.achieved_milestones = set()
+        """Check and log persistent high-volume enterprise enforcement milestones & tactical achievements."""
+        if not hasattr(self, "data_store"):
+            return
 
-        for threshold, badge, desc in milestones:
-            if total_res >= threshold and threshold not in self.achieved_milestones:
-                self.achieved_milestones.add(threshold)
-                self._log("=" * 75)
-                self._log(f"★ ─────────────────────────────────────────────────────────────────────────")
-                self._log(f"★ 🏆 MILESTONE ACHIEVED: {badge} ({threshold:,} Listings) ★")
-                self._log(f"★ {desc}")
-                self._log(f"★ ─────────────────────────────────────────────────────────────────────────")
-                self._log("=" * 75)
-                self._status(f"🏆 MILESTONE: {badge} ({threshold:,} Listings)")
+        # Ensure current session listings are reflected in lifetime total
+        cur_session = len(self.results)
+        if cur_session > self.data_store.get_lifetime_listings():
+            self.data_store.increment_lifetime_listings(cur_session - self.data_store.get_lifetime_listings())
+
+        lifetime_total = self.data_store.get_lifetime_listings()
+        volume_milestones = [
+            ("first_strike", 500, "🎯 FIRST STRIKE", "500 Suspicious Listings Cataloged!"),
+            ("centurion_vanguard", 1000, "⚡ CENTURION VANGUARD", "1,000 Counterfeit Listings Identified!"),
+            ("ip_sentinel", 2500, "🔍 IP SENTINEL", "2,500 Infringing Products Logged and Cataloged!"),
+            ("enforcement_battalion", 5000, "🛡 ENFORCEMENT BATTALION", "5,000 Counterfeits Seized across Store Fronts!"),
+            ("brand_defender", 10000, "⚔ BRAND DEFENDER", "10,000 Infringements Purged from the Marketplace!"),
+            ("fleet_commander", 25000, "🏆 FLEET COMMANDER", "25,000 Counterfeit Assets Harvested! Master Enforcer!"),
+            ("titan_of_industry", 50000, "🚀 TITAN OF INDUSTRY", "50,000 Infringements Seized! Supreme Anti-Counterfeit Authority!"),
+            ("sovereign_guardian", 100000, "👑 SOVEREIGN GUARDIAN", "100,000 Listings Swept! Full Brand Dominance Achieved!"),
+        ]
+
+        for ach_id, threshold, badge, desc in volume_milestones:
+            if lifetime_total >= threshold:
+                unlocked = self.data_store.unlock_achievement(ach_id)
+                if unlocked:
+                    try:
+                        winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+                    except Exception:
+                        pass
+                    self._log("=" * 75)
+                    self._log(f"★ ─────────────────────────────────────────────────────────────────────────")
+                    self._log(f"★ 🏆 MILESTONE ACHIEVED: {badge} ({threshold:,} Listings) ★")
+                    self._log(f"★ {desc}")
+                    self._log(f"★ ─────────────────────────────────────────────────────────────────────────")
+                    self._log("=" * 75)
+                    self._status(f"🏆 MILESTONE: {badge} ({threshold:,} Listings)")
+
+        # Tactical: Omni-Channel & Pan-Market
+        if self.results:
+            mkts = {self._get_item_marketplace(it) for it in self.results if self._get_item_marketplace(it)}
+            if len(mkts) >= 3:
+                if self.data_store.unlock_achievement("omni_channel"):
+                    self._log("★ 🏆 ACHIEVEMENT UNLOCKED: 🌐 OMNI-CHANNEL INQUISITOR (Harvested from 3+ Marketplaces) ★")
+            if len(mkts) >= 6:
+                if self.data_store.unlock_achievement("pan_market"):
+                    self._log("★ 🏆 ACHIEVEMENT UNLOCKED: 🚢 PAN-MARKET ARMADA (Harvested from 6+ Marketplaces) ★")
+
+        # Tactical: Dossier Quartermaster
+        try:
+            if len(self.data_store.get_dossier_names()) >= 3:
+                if self.data_store.unlock_achievement("dossier_quartermaster"):
+                    self._log("★ 🏆 ACHIEVEMENT UNLOCKED: 📁 DOSSIER QUARTERMASTER (Staged across 3+ Dossier Vaults) ★")
+        except Exception:
+            pass
+
+    def _prompt_high_table_protocol(self, bypass_100k=False, parent_win=None):
+        """Prompt High Table sealed response for The Impossible Task (Continental Summit)."""
+        lifetime_total = self.data_store.get_lifetime_listings() if hasattr(self, "data_store") else 0
+        if not bypass_100k and lifetime_total < 100000:
+            messagebox.showwarning(
+                "Protocol Sealed",
+                f"Objective I is not yet complete.\n\n"
+                f"You have cataloged {lifetime_total:,} / 100,000 lifetime listings.\n"
+                f"The High Table contract cannot be presented until 100,000 listings are recorded.",
+                parent=parent_win or self
+            )
+            return
+
+        # High Table Prompt Modal
+        win = tk.Toplevel(parent_win or self)
+        win.title("🪙 The Continental — High Table Protocol")
+        win.configure(bg="#0D0E12")
+        win.resizable(False, False)
+        win.transient(parent_win or self)
+        win.grab_set()
+        self._apply_dark_titlebar(win)
+        self._center_window(win, 480, 270)
+
+        card = tk.Frame(win, bg="#12141A", padx=22, pady=18, highlightbackground="#D4AF37", highlightthickness=2)
+        card.pack(fill="both", expand=True, padx=10, pady=10)
+
+        tk.Label(card, text="🪙 THE CONTINENTAL", font=("Segoe UI", 14, "bold"), bg="#12141A", fg="#D4AF37").pack(anchor="center")
+        tk.Label(card, text="HIGH TABLE SANCTIONED  •  SEALED PROTOCOL", font=("Segoe UI", 8, "bold"), bg="#12141A", fg="#8C93A3").pack(anchor="center", pady=(2, 8))
+
+        tk.Label(card, text='"A response is required."', font=("Georgia", 11, "italic"), bg="#12141A", fg="#E2E4EC").pack(anchor="center", pady=(4, 10))
+
+        ent = tk.Entry(card, font=("Segoe UI", 10), bg="#0A0B0E", fg="#D4AF37", insertbackground="#D4AF37",
+                       relief="flat", width=32, justify="center")
+        ent.pack(anchor="center", ipady=4, pady=(0, 10))
+        ent.focus_set()
+
+        err_lbl = tk.Label(card, text="", font=FONT_SM, bg="#12141A", fg="#FF5555")
+        err_lbl.pack(anchor="center", pady=(0, 8))
+
+        def _verify():
+            val = ent.get().strip().lower().rstrip(".").rstrip("!")
+            if val in ("i have been of service", "service", "i've been of service", "been of service"):
+                win.destroy()
+                if hasattr(self, "data_store"):
+                    self.data_store.unlock_achievement("the_impossible_task")
+                    self.data_store.unlock_wick()
+                self._trigger_wick_easter_egg()
+            else:
+                err_lbl.config(text="❌ Access Denied. Business may not be conducted.")
+                try:
+                    winsound.MessageBeep(winsound.MB_ICONHAND)
+                except Exception:
+                    pass
+
+        btn_row = tk.Frame(card, bg="#12141A")
+        btn_row.pack(anchor="center")
+
+        btn_submit = tk.Button(btn_row, text="🪙 Submit Protocol", font=("Segoe UI", 9, "bold"),
+                               bg="#D4AF37", fg="#0A0B0E", relief="flat", padx=14, pady=4,
+                               command=_verify, cursor="hand2")
+        btn_submit.pack(side="left", padx=4)
+
+        btn_cancel = tk.Button(btn_row, text="Cancel", font=FONT_SM,
+                               bg="#1E222A", fg="#8C93A3", relief="flat", padx=10, pady=4,
+                               command=win.destroy, cursor="hand2")
+        btn_cancel.pack(side="left", padx=4)
+
+        ent.bind("<Return>", lambda e: _verify())
+        win.bind("<Escape>", lambda e: win.destroy())
 
     # ══════════════════════════════════════════════════════════════════════════
     #  EXPORT
@@ -10952,20 +10967,233 @@ class EbayTool(tk.Tk):
                  font=FONT_SM, bg=t["bg"], fg=t["subtext"]).pack(side="left")
         self._btn(btn_row, "✕ Close", win.destroy, accent=True).pack(side="right")
 
+    def _build_milestones_tab(self, parent, top_win):
+        """Construct interactive 🏆 Enforcer Milestones & Badges trophy showcase."""
+        t = self.theme
+        ach_data = self.data_store.get_achievements_data() if hasattr(self, "data_store") else {"lifetime_listings": 0, "lifetime_searches": 0, "unlocked": {}}
+        lifetime_total = self.data_store.get_lifetime_listings() if hasattr(self, "data_store") else 0
+        lifetime_searches = ach_data.get("lifetime_searches", 0)
+        unlocked_map = ach_data.get("unlocked", {})
+
+        total_badge_count = 21
+        unlocked_count = len(unlocked_map)
+        pct = int((unlocked_count / total_badge_count) * 100) if total_badge_count else 0
+
+        # Top KPI Summary Banner
+        kpi_bar = tk.Frame(parent, bg=t["panel"], padx=6, pady=6, highlightbackground=t.get("border", "#333"), highlightthickness=1)
+        kpi_bar.pack(fill="x", pady=(0, 10))
+
+        def _kpi(p, val, label, col):
+            f = tk.Frame(p, bg=t["entry_bg"], padx=10, pady=6, highlightbackground=t.get("border", "#333"), highlightthickness=1)
+            f.pack(side="left", fill="both", expand=True, padx=3)
+            tk.Label(f, text=val, font=("Segoe UI", 12, "bold"), bg=t["entry_bg"], fg=col).pack(anchor="center")
+            tk.Label(f, text=label, font=("Segoe UI", 7, "bold"), bg=t["entry_bg"], fg=t["subtext"]).pack(anchor="center", pady=(1, 0))
+
+        _kpi(kpi_bar, f"{lifetime_total:,}", "LIFETIME LISTINGS CATALOGED", t["accent"])
+        _kpi(kpi_bar, f"{lifetime_searches:,}", "INVESTIGATIVE SWEEPS RUN", t.get("success", "#10b981"))
+        _kpi(kpi_bar, f"{unlocked_count} / {total_badge_count} ({pct}%)", "TROPHIES & BADGES UNLOCKED", t.get("warning", "#f59e0b"))
+
+        # Scrollable container for milestones
+        canvas = tk.Canvas(parent, bg=t["panel"], highlightthickness=0)
+        self._milestones_canvas = canvas
+        vsb = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        scroll_frame = tk.Frame(canvas, bg=t["panel"])
+
+        def _on_m_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            inner_w = max(680, event.width - 20)
+            canvas.itemconfig(c_win_id, width=inner_w)
+
+        c_win_id = canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        canvas.bind("<Configure>", _on_m_configure)
+        scroll_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.configure(yscrollcommand=vsb.set)
+
+        def _on_m_wheel(event):
+            try:
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            except Exception:
+                pass
+
+        def _bind_m_wheel_rec(w):
+            w.bind("<MouseWheel>", _on_m_wheel, add="+")
+            for ch in w.winfo_children():
+                _bind_m_wheel_rec(ch)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
+
+        # ── 1. The Summit: The Impossible Task ────────────────────────────────
+        tk.Label(scroll_frame, text="👑 THE SUMMIT (ULTIMATE ENFORCEMENT ACHIEVEMENT)",
+                 font=("Segoe UI", 9, "bold"), bg=t["panel"], fg=t["accent"]).pack(anchor="w", pady=(0, 4))
+
+        summit_card = tk.Frame(scroll_frame, bg="#12141A", padx=16, pady=12,
+                               highlightbackground="#D4AF37", highlightthickness=2)
+        summit_card.pack(fill="x", pady=(0, 12))
+
+        s_title_row = tk.Frame(summit_card, bg="#12141A")
+        s_title_row.pack(fill="x")
+        s_icon_box = tk.Frame(s_title_row, bg="#12141A", width=32, height=28)
+        s_icon_box.pack(side="left", padx=(0, 10))
+        s_icon_box.pack_propagate(False)
+        tk.Label(s_icon_box, text="🪙", font=("Segoe UI", 16), bg="#12141A", fg="#D4AF37").place(relx=0.5, rely=0.5, anchor="center")
+        s_text_box = tk.Frame(s_title_row, bg="#12141A")
+        s_text_box.pack(side="left", fill="x", expand=True)
+        tk.Label(s_text_box, text="THE IMPOSSIBLE TASK", font=("Segoe UI", 11, "bold"), bg="#12141A", fg="#D4AF37").pack(anchor="w")
+        tk.Label(s_text_box, text='"Fortis Fortuna Adiuvat — What was done to lay the foundation."',
+                 font=("Georgia", 9, "italic"), bg="#12141A", fg="#A0A5B5").pack(anchor="w", pady=(1, 0))
+
+        is_summit_done = "the_impossible_task" in unlocked_map
+        is_obj1_done = lifetime_total >= 100000
+
+        obj_box = tk.Frame(summit_card, bg="#0A0B0E", padx=12, pady=10, highlightbackground="#2E3342", highlightthickness=1)
+        obj_box.pack(fill="x", pady=(10, 0))
+
+        # Objective I
+        o1_row = tk.Frame(obj_box, bg="#0A0B0E")
+        o1_row.pack(fill="x", pady=(0, 6))
+        o1_icon = "✓" if (is_obj1_done or is_summit_done) else "○"
+        o1_col = "#4EBA6F" if (is_obj1_done or is_summit_done) else "#8C93A3"
+        tk.Label(o1_row, text=f"[{o1_icon}]", font=("Consolas", 10, "bold"), bg="#0A0B0E", fg=o1_col).pack(side="left", padx=(0, 6))
+        tk.Label(o1_row, text="Objective I: Lifetime Harvest Volume (100,000 Listings)", font=("Segoe UI", 9, "bold"), bg="#0A0B0E", fg="#F2F4F8").pack(side="left")
+        o1_prog = "100,000 / 100,000 (100%)" if (is_obj1_done or is_summit_done) else f"{lifetime_total:,} / 100,000 ({int(min(lifetime_total, 100000)/1000)}%)"
+        tk.Label(o1_row, text=o1_prog, font=FONT_SM, bg="#0A0B0E", fg="#D4AF37" if (is_obj1_done or is_summit_done) else "#8C93A3").pack(side="right")
+
+        # Objective II
+        o2_row = tk.Frame(obj_box, bg="#0A0B0E")
+        o2_row.pack(fill="x")
+        o2_icon = "✓" if is_summit_done else "○"
+        o2_col = "#4EBA6F" if is_summit_done else "#8C93A3"
+        tk.Label(o2_row, text=f"[{o2_icon}]", font=("Consolas", 10, "bold"), bg="#0A0B0E", fg=o2_col).pack(side="left", padx=(0, 6))
+        tk.Label(o2_row, text="Objective II: Sealed High Table Protocol", font=("Segoe UI", 9, "bold"), bg="#0A0B0E", fg="#F2F4F8").pack(side="left")
+
+        if is_summit_done:
+            u_at = unlocked_map.get("the_impossible_task", {}).get("unlocked_at", "")
+            tk.Label(o2_row, text=f"✓ Contract Sealed ({u_at})", font=FONT_SM, bg="#0A0B0E", fg="#D4AF37").pack(side="right")
+        else:
+            btn_coin = tk.Button(o2_row, text="🪙 Present Coin", font=("Segoe UI", 8, "bold"),
+                                 bg="#D4AF37" if is_obj1_done else "#1E222A",
+                                 fg="#0A0B0E" if is_obj1_done else "#8C93A3",
+                                 relief="flat", padx=10, pady=2, cursor="hand2",
+                                 command=lambda: self._prompt_high_table_protocol(bypass_100k=False, parent_win=top_win))
+            btn_coin.pack(side="right")
+
+        # Creator Backdoor (Option 2): Ctrl + Click on summit_card triggers prompt directly
+        def _backdoor_trigger(e):
+            self._prompt_high_table_protocol(bypass_100k=True, parent_win=top_win)
+
+        summit_card.bind("<Control-Button-1>", _backdoor_trigger)
+        for w in (s_title_row, s_icon_box, s_text_box, obj_box, o1_row, o2_row):
+            w.bind("<Control-Button-1>", _backdoor_trigger)
+
+        # ── 2. Career Enforcement Milestones (10x Scaled) ────────────────────
+        tk.Label(scroll_frame, text="📈 CAREER ENFORCEMENT VOLUME (10X)",
+                 font=("Segoe UI", 9, "bold"), bg=t["panel"], fg=t["accent"]).pack(anchor="w", pady=(10, 4))
+
+        vol_data = [
+            ("first_strike", 500, "🎯", "First Strike", "500 Suspicious Listings Cataloged"),
+            ("centurion_vanguard", 1000, "⚡", "Centurion Vanguard", "1,000 Counterfeit Listings Identified"),
+            ("ip_sentinel", 2500, "🔍", "IP Sentinel", "2,500 Infringing Products Logged and Cataloged"),
+            ("enforcement_battalion", 5000, "🛡", "Enforcement Battalion", "5,000 Counterfeits Seized across Digital Fronts"),
+            ("brand_defender", 10000, "⚔", "Brand Defender", "10,000 Infringements Purged from the Marketplace"),
+            ("fleet_commander", 25000, "🏆", "Fleet Commander", "25,000 Counterfeit Assets Harvested! Master Enforcer"),
+            ("titan_of_industry", 50000, "🚀", "Titan of Industry", "50,000 Infringements Suppressed at Enterprise Scale"),
+            ("sovereign_guardian", 100000, "👑", "Sovereign Guardian", "100,000 Listings Swept! Full Brand Dominance Achieved"),
+        ]
+
+        def _render_card(parent_f, ach_id, icon, title, lore, is_unlocked, u_time, prog_text=""):
+            cd = tk.Frame(parent_f, bg=t["entry_bg"], padx=12, pady=8,
+                          highlightbackground=t["accent"] if is_unlocked else t.get("border", "#333"),
+                          highlightthickness=1)
+            cd.pack(fill="x", pady=2)
+            row = tk.Frame(cd, bg=t["entry_bg"])
+            row.pack(fill="x")
+
+            clean_icon = icon.replace("\ufe0f", "")
+            icon_box = tk.Frame(row, bg=t["entry_bg"], width=32, height=26)
+            icon_box.pack(side="left", padx=(0, 10))
+            icon_box.pack_propagate(False)
+            tk.Label(icon_box, text=clean_icon, font=("Segoe UI", 12), bg=t["entry_bg"],
+                     fg=t["accent"] if is_unlocked else t["subtext"]).place(relx=0.5, rely=0.5, anchor="center")
+
+            tb = tk.Frame(row, bg=t["entry_bg"])
+            tb.pack(side="left", fill="x", expand=True)
+            tk.Label(tb, text=title, font=("Segoe UI", 9, "bold"), bg=t["entry_bg"],
+                     fg=t["text"] if is_unlocked else t["subtext"]).pack(anchor="w")
+            tk.Label(tb, text=lore, font=("Segoe UI", 8), bg=t["entry_bg"], fg=t["subtext"]).pack(anchor="w")
+
+            if is_unlocked:
+                st_text = f"✓ Unlocked ({u_time[:10]})" if u_time else "✓ Unlocked"
+                tk.Label(row, text=st_text, font=("Segoe UI", 8, "bold"), bg=t["entry_bg"],
+                         fg=t.get("success", "#10b981")).pack(side="right")
+            else:
+                tk.Label(row, text=prog_text, font=FONT_SM, bg=t["entry_bg"], fg=t["subtext"]).pack(side="right")
+
+        for ach_id, thresh, icon, title, lore in vol_data:
+            is_u = ach_id in unlocked_map
+            u_t = unlocked_map.get(ach_id, {}).get("unlocked_at", "")
+            pct_vol = int((min(lifetime_total, thresh) / thresh) * 100)
+            p_txt = f"{min(lifetime_total, thresh):,} / {thresh:,} ({pct_vol}%)"
+            _render_card(scroll_frame, ach_id, icon, title, lore, is_u, u_t, p_txt)
+
+        # ── 3. Tactical & Forensic Operations ────────────────────────────────
+        tk.Label(scroll_frame, text="🕵 TACTICAL & FORENSIC OPERATIONS",
+                 font=("Segoe UI", 9, "bold"), bg=t["panel"], fg=t["accent"]).pack(anchor="w", pady=(10, 4))
+
+        tactical_data = [
+            ("omni_channel", "🌐", "Omni-Channel Inquisitor", "Harvest listings from 3+ distinct platforms in a single sweep"),
+            ("pan_market", "🚢", "Pan-Market Armada", "Harvest listings spanning 6+ distinct digital platforms"),
+            ("syndicate_buster", "🕸", "Syndicate Buster", "Unmask a connected multi-seller syndicate network"),
+            ("visual_hawkeye", "👁", "Visual Hawkeye", "Match listings using perceptual image hash clustering"),
+            ("dossier_quartermaster", "📁", "Dossier Quartermaster", "Stage listings across 3+ active Dossier Vaults"),
+        ]
+
+        for ach_id, icon, title, lore in tactical_data:
+            is_u = ach_id in unlocked_map
+            u_t = unlocked_map.get(ach_id, {}).get("unlocked_at", "")
+            p_txt = "Ready for deployment" if not is_u else ""
+            _render_card(scroll_frame, ach_id, icon, title, lore, is_u, u_t, p_txt)
+
+        # ── 4. Classified Operations ─────────────────────────────────────────
+        c_ids = ("unicorn_hunter", "retro_code", "sacred_vow", "k9_sentinel", "rebel_frequency", "lone_star", "quarter_mile")
+        disc_count = sum(1 for cid in c_ids if cid in unlocked_map)
+        tk.Label(scroll_frame, text=f"🔒 CLASSIFIED OPERATIONS ({disc_count} / 7 DISCOVERED)",
+                 font=("Segoe UI", 9, "bold"), bg=t["panel"], fg=t["accent"]).pack(anchor="w", pady=(10, 4))
+
+        classified_data = [
+            ("unicorn_hunter", "🐎", "Unicorn Hunter", "1967 Shelby GT500 Eleanor (427ci Big-Block Nitrous Engaged)", "427ci Big-Block Ford V8"),
+            ("retro_code", "🎮", "The 30-Life Code", "Supercharged Retro Synthwave 80s Arcade Silicon Protocol", "Silicon cartridge protocol"),
+            ("sacred_vow", "🕺", "Sacred Vow", "Never gonna give your brands up • Rick Astley Trademark Guardian", "Trademark fidelity vow"),
+            ("k9_sentinel", "🐾", "K9 Sentinel", "Agent Brundo the Faithful Chocolate Lab Recon Partner", "K9 Recon scent protocol"),
+            ("rebel_frequency", "⚡", "Rebel Frequency", "Popular Monster • Falling in Reverse High-Heat Symphony", "High-frequency takedowns"),
+            ("lone_star", "⭐", "The Lone Star", "America's Team • Autumn Legacy in Silver and Blue", "Silver & blue gridiron legacy"),
+            ("quarter_mile", "🏎", "Quarter Mile", "Living life a quarter-mile at a time • Dom Toretto Protocol", "Quarter-mile acceleration"),
+        ]
+
+        for ach_id, icon, title, lore, hint in classified_data:
+            is_u = ach_id in unlocked_map
+            u_t = unlocked_map.get(ach_id, {}).get("unlocked_at", "")
+            if is_u:
+                _render_card(scroll_frame, ach_id, icon, title, lore, True, u_t, "")
+            else:
+                _render_card(scroll_frame, ach_id, "🔒", "[CLASSIFIED OPERATION]", f"[REDACTED — {hint}]", False, "", "Awaiting discovery")
+
+        _bind_m_wheel_rec(parent)
+
     def _show_about_dialog(self):
         """Show About, Apollo Ethos & Architecture, and Intellectual Property Disclaimer dialog."""
         t = self.theme
         win = tk.Toplevel(self)
         win.title("About ☀ Apollo Brand Intelligence")
         win.configure(bg=t["bg"])
-        win.geometry("880x700")
-        win.minsize(820, 620)
+        win.geometry("880x800")
+        win.minsize(820, 720)
         win.transient(self)
         win.grab_set()
 
         self._apply_dark_titlebar(win)
         self._load_app_icon(win)
-        self._center_window(win, 880, 700)
+        self._center_window(win, 880, 800)
 
         # Easter egg key listener (Dom, Eleanor, Wick, Brundo)
         about_word_buf = [""]
@@ -10977,9 +11205,6 @@ class EbayTool(tk.Tk):
                     about_word_buf[0] = ""
                 elif any(w in about_word_buf[0] for w in ("eleanor", "gobabygo", "shelby")):
                     self._trigger_eleanor_easter_egg()
-                    about_word_buf[0] = ""
-                elif any(w in about_word_buf[0] for w in ("wick", "continental", "johnwick")):
-                    self._trigger_wick_easter_egg()
                     about_word_buf[0] = ""
                 elif any(w in about_word_buf[0] for w in ("brundo", "goodboy", "lab", "k9")):
                     self._trigger_brundo_easter_egg()
@@ -11120,8 +11345,8 @@ class EbayTool(tk.Tk):
             d_lbl.grid(row=r_i + 1, column=2, sticky="new", pady=4)
             d_lbl.bind("<MouseWheel>", _on_mousewheel)
 
-        # 9 Pillars
-        p_hdr = tk.Label(ethos_scroll_frame, text="⚔ The 9 Pillars of Apollo Intelligence:",
+        # 6 Core Tactical Pillars
+        p_hdr = tk.Label(ethos_scroll_frame, text="⚔ The 6 Core Tactical Pillars:",
                          font=("Segoe UI", 10, "bold"), bg=t["panel"], fg=t["accent"])
         p_hdr.pack(anchor="w", padx=4, pady=(4, 6))
         p_hdr.bind("<MouseWheel>", _on_mousewheel)
@@ -11131,15 +11356,12 @@ class EbayTool(tk.Tk):
         pillars_grid.bind("<MouseWheel>", _on_mousewheel)
 
         pillars = [
-            ("1. Vigilance", "Comprehensive cross-marketplace seller surveillance (eBay, Ali, Wish, Temu, MeLi)"),
-            ("2. Stealth", "Resilient session management and anti-bot mitigation"),
-            ("3. Precision", "Multi-layer keyword & brand exclusion shielding to minimize noise"),
-            ("4. Traceability", "Unmasking domestic 3PL drop-shippers and cross-border supply chains"),
-            ("5. Tenacity", "Tracking repeat offender storefronts across rebrands and re-listings"),
-            ("6. Integrity", "Standardized, audit-ready compliance reporting for client review"),
-            ("7. Velocity", "Rapid multi-brand batch harvesting across complex seller networks"),
-            ("8. Impact", "Quantifiable client revenue protection and enforcement ROI metrics"),
-            ("9. Global Scope", "16-country international domain expansion for global takedown parity"),
+            ("1. Multi-Platform Recon", "19 parallel e-commerce & POD marketplace discovery engines."),
+            ("2. Visual Threat Intel", "64-bit DCT pHash mathematical fingerprinting & reverse visual dredge."),
+            ("3. Syndicate Hunter", "Forensic cross-account entity resolution across photos, 3PL hubs & handles."),
+            ("4. Search Hygiene", "Multi-layer negative keyword shielding & automated brand-query pairing."),
+            ("5. Document Intelligence", "OEM engineering specs, confidential standards & technical service bulletins."),
+            ("6. Air-Gapped Security", "100% local profile execution, zero cloud telemetry & audit-ready dossiers."),
         ]
 
         for i, (p_title, p_desc) in enumerate(pillars):
@@ -11158,9 +11380,24 @@ class EbayTool(tk.Tk):
             l2.pack(anchor="w")
             l2.bind("<MouseWheel>", _on_mousewheel)
 
-        # ── TAB 2: Author, IP & Legal Attribution ────────────────────────────
+        # ── TAB 2: Enforcer Milestones & Badges ──────────────────────────────
+        tab_milestones = tk.Frame(nb, bg=t["panel"], padx=16, pady=12)
+        nb.add(tab_milestones, text="🏆 Enforcer Milestones & Badges")
+        self._build_milestones_tab(tab_milestones, win)
+
+        # ── TAB 3: Author, IP & Legal Attribution ────────────────────────────
         tab_legal = tk.Frame(nb, bg=t["panel"], padx=20, pady=18)
         nb.add(tab_legal, text="⚖ Author & Legal Attribution")
+
+        def _on_tab_switched(event):
+            try:
+                win.update_idletasks()
+                ethos_canvas.configure(scrollregion=ethos_canvas.bbox("all"))
+                if hasattr(self, "_milestones_canvas") and self._milestones_canvas:
+                    self._milestones_canvas.configure(scrollregion=self._milestones_canvas.bbox("all"))
+            except Exception:
+                pass
+        nb.bind("<<NotebookTabChanged>>", _on_tab_switched)
 
         # Creator / Credits section
         info_frame = tk.Frame(tab_legal, bg=t["entry_bg"], padx=16, pady=14)
@@ -11173,11 +11410,17 @@ class EbayTool(tk.Tk):
             lbl_l.grid(row=r_idx, column=0, sticky="nw", padx=(0, 14), pady=3)
             lbl_v = tk.Label(parent, text=val, font=FONT_SM, bg=t["entry_bg"], fg=t["accent"] if "Jerry Seidenstucker" in val else t["text"], anchor="w", justify="left")
             lbl_v.grid(row=r_idx, column=1, sticky="nw", pady=3)
+            if "Jerry Seidenstucker" in val:
+                def _on_creator_seal(event):
+                    # Creator's Seal Backdoor: Shift+Click on Creator's name triggers High Table Protocol
+                    self._prompt_high_table_protocol(bypass_100k=True, parent_win=win)
+                lbl_v.bind("<Shift-Button-1>", _on_creator_seal)
+                lbl_v.config(cursor="hand2")
 
         _row(info_frame, 0, "Creator & Lead Architect:", "Jerry Seidenstucker (Personal Project)")
         _row(info_frame, 1, "AI Pair Programmer & Engine:", "Aether (Aeth) • Antigravity / Google DeepMind")
         _row(info_frame, 2, "Intellectual Property:", "© 2026 Jerry Seidenstucker. All Rights Reserved.")
-        _row(info_frame, 3, "Architecture Version:", "Apollo v3.0.0 Enterprise Tactical Suite")
+        _row(info_frame, 3, "Architecture Version:", f"Apollo v{APP_VERSION} Enterprise Tactical Suite")
         _row(info_frame, 4, "License Mode:", "Proprietary / Authorized Internal Evaluation")
 
         # Legal & Ownership Notice box

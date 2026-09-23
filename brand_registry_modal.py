@@ -390,7 +390,7 @@ class BrandRegistryModal(tk.Toplevel):
         self._btn(act_row2, "▼ Move Down", lambda: self._move_brand(1), padx=6, pady=2, font=FONT_SM).pack(side="left", padx=(0, 4))
 
         self._btn(act_row2, "🗑 Remove Selected", self._remove_selected_nodes, danger=True, padx=8, pady=2, font=FONT_SM).pack(side="right")
-        self._btn(act_row2, "⚠️ Purge Profile", self._purge_active_profile, danger=True, padx=6, pady=2, font=FONT_SM).pack(side="right", padx=(0, 4))
+        self._btn(act_row2, "⚠ Purge Profile", self._purge_active_profile, danger=True, padx=6, pady=2, font=FONT_SM).pack(side="right", padx=(0, 4))
 
         # ── RIGHT PANE: Brand Detail Editor ───────────────────────────────────
         right_pane = tk.Frame(body, bg=self._t("panel", "#1e1e1e"), padx=14, pady=12)
@@ -436,7 +436,7 @@ class BrandRegistryModal(tk.Toplevel):
         self.res_mode_var = tk.StringVar(value="parent")
         
         self.rb_parent = tk.Radiobutton(
-            self.res_mode_frame, text="🏛️ Parent ('Toyota')",
+            self.res_mode_frame, text="🏛 Parent ('Toyota')",
             variable=self.res_mode_var, value="parent", font=FONT_SM,
             bg=self._t("panel", "#1e1e1e"), fg=self._t("text", "#ffffff"),
             selectcolor=self._t("entry_bg", "#0f172a"), activebackground=self._t("panel", "#1e1e1e")
@@ -444,7 +444,7 @@ class BrandRegistryModal(tk.Toplevel):
         self.rb_parent.pack(side="left", padx=(0, 6))
 
         self.rb_sub = tk.Radiobutton(
-            self.res_mode_frame, text="🏷️ Sub-Brand / Team ('Dallas Cowboys')",
+            self.res_mode_frame, text="🏷 Sub-Brand / Team ('Dallas Cowboys')",
             variable=self.res_mode_var, value="sub_brand", font=FONT_SM,
             bg=self._t("panel", "#1e1e1e"), fg=self._t("text", "#ffffff"),
             selectcolor=self._t("entry_bg", "#0f172a"), activebackground=self._t("panel", "#1e1e1e")
@@ -616,9 +616,9 @@ class BrandRegistryModal(tk.Toplevel):
             if mode == "parent":
                 p_out = f"Parent ({override or b_name})"
             elif mode == "sub_brand":
-                p_out = "🏷️ Sub-Brand / Team"
+                p_out = "🏷 Sub-Brand / Team"
             else:
-                p_out = f"✏️ {override or b_name}"
+                p_out = f"✏ {override or b_name}"
 
             parent_id = self.brand_tree.insert(
                 "", "end", text=f"🏢 {b_name}",
@@ -630,9 +630,9 @@ class BrandRegistryModal(tk.Toplevel):
             for sub_name, sub_models in subs.items():
                 s_override = sub_overrides.get(sub_name, "")
                 if s_override:
-                    s_out = f"✏️ {s_override}"
+                    s_out = f"✏ {s_override}"
                 elif mode == "sub_brand":
-                    s_out = f"🏷️ {sub_name}"
+                    s_out = f"🏷 {sub_name}"
                 else:
                     s_out = f"Inherit ({override or b_name})"
 
@@ -768,7 +768,7 @@ class BrandRegistryModal(tk.Toplevel):
         inclusions = self.data_store.get_brand_inclusions(brand_name)
         cfg = self.data_store.get_brand_result_config(brand_name)
         mode = cfg.get("mode", "parent")
-        res_label = f"Parent ('{brand_name}')" if mode == "parent" else ("🏷️ Matched Sub-Brand / Team" if mode == "sub_brand" else f"✏️ Custom ('{cfg.get('override', '')}')")
+        res_label = f"Parent ('{brand_name}')" if mode == "parent" else ("🏷 Matched Sub-Brand / Team" if mode == "sub_brand" else f"✏ Custom ('{cfg.get('override', '')}')")
         prev_str = f"Search Terms ({len(terms)}): {', '.join(terms)}\nMandatory Inclusions: {', '.join(inclusions) if inclusions else 'None'}\nResult Output Brand: {res_label}"
         self.preview_text.config(state="normal")
         self.preview_text.delete("1.0", "end")

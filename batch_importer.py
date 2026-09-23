@@ -522,7 +522,7 @@ def _fetch_ebay_item(url: str, headless: bool = True) -> dict:
     title = ""
     seller = ""
     price = "$0.00"
-    location = "United States"
+    location = ""
     image_url = ""
 
     # Attempt fast HTTP fetch first
@@ -613,9 +613,54 @@ def _fetch_ebay_item(url: str, headless: bool = True) -> dict:
             price = normalize_price_string(p_el.text.strip()) or "$0.00"
 
         # Location
-        loc_el = soup.select_one("div.ux-labels-values--location span.ux-textspans--SECONDARY, div.ux-labels-values--location")
-        if loc_el:
-            location = loc_el.text.replace("Located in:", "").strip()
+        # 1. Inspect JSON-LD metadata for structured PostalAddress / locality
+        for s_script in soup.select("script[type='application/ld+json']"):
+            if location: break
+            try:
+                js_data = json.loads(s_script.string or "")
+                if isinstance(js_data, dict):
+                    addr = None
+                    if "itemLocation" in js_data and isinstance(js_data["itemLocation"], dict):
+                        addr = js_data["itemLocation"].get("address")
+                    elif "offers" in js_data and isinstance(js_data["offers"], dict):
+                        avail = js_data["offers"].get("availableAtOrFrom")
+                        if isinstance(avail, dict):
+                            addr = avail.get("address")
+                    if addr and isinstance(addr, dict):
+                        loc_parts = []
+                        if addr.get("addressLocality"):
+                            loc_parts.append(str(addr["addressLocality"]).strip())
+                        if addr.get("addressRegion"):
+                            loc_parts.append(str(addr["addressRegion"]).strip())
+                        if addr.get("postalCode"):
+                            loc_parts.append(str(addr["postalCode"]).strip())
+                        if addr.get("addressCountry"):
+                            c_val = str(addr["addressCountry"]).strip()
+                            if c_val not in ("US", "USA", "United States") or not loc_parts:
+                                loc_parts.append(c_val)
+                        if loc_parts:
+                            location = ", ".join(loc_parts)
+                            break
+            except Exception:
+                pass
+
+        # 2. Modern eBay Item Location DOM elements
+        if not location:
+            loc_el = soup.select_one(
+                "div.ux-labels-values--itemLocation span.ux-textspans--SECONDARY, "
+                "div.ux-labels-values--itemLocation div.ux-labels-values__values-content, "
+                "div[data-testid='x-item-location'] span.ux-textspans, "
+                "div.ux-labels-values--location span.ux-textspans--SECONDARY, "
+                "div.ux-labels-values--location"
+            )
+            if loc_el:
+                location = loc_el.text.replace("Located in:", "").replace("Item location:", "").strip()
+
+        # 3. Text regex fallback
+        if not location:
+            m_loc = re.search(r'(?:Item location|Located in):\s*</[^>]+>\s*<[^>]+>([^<]+)<', html, re.I)
+            if m_loc:
+                location = m_loc.group(1).strip()
 
         # Image
         img_el = soup.select_one("img.ux-image-filmstrip-carousel-item, div.ux-image-carousel-item img, img#icImg")
@@ -697,9 +742,9 @@ def _fetch_ebay_item(url: str, headless: bool = True) -> dict:
                     img = page.query_selector("img.ux-image-filmstrip-carousel-item, div.ux-image-carousel-item img, img#icImg, img[data-testid='x-item-image']")
                     if img: image_url = img.get_attribute("src") or img.get_attribute("data-src") or ""
 
-                if location in ("United States", ""):
-                    loc = page.query_selector("div.ux-labels-values--location span.ux-textspans--SECONDARY, div.ux-labels-values--location")
-                    if loc: location = loc.inner_text().replace("Located in:", "").strip()
+                if not location or location in ("United States", "US"):
+                    loc = page.query_selector("div.ux-labels-values--itemLocation span.ux-textspans--SECONDARY, div.ux-labels-values--itemLocation div.ux-labels-values__values-content, div[data-testid='x-item-location'] span.ux-textspans, div.ux-labels-values--location")
+                    if loc: location = loc.inner_text().replace("Located in:", "").replace("Item location:", "").strip()
                 context.close()
             import shutil
             shutil.rmtree(temp_dir, ignore_errors=True)

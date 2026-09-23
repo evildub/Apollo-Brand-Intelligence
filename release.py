@@ -39,7 +39,7 @@ def get_current_version():
     if os.path.exists(main_path):
         with open(main_path, "r", encoding="utf-8", errors="ignore") as f:
             for line in f:
-                m = re.search(r'VERSION\s*=\s*["\']([0-9\.]+)["\']', line)
+                m = re.search(r'(?:APP_)?VERSION\s*=\s*["\']([0-9\.]+)["\']', line)
                 if m:
                     return m.group(1)
     return "3.0.0"

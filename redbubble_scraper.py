@@ -450,10 +450,49 @@ class RedbubbleScraper:
 
                     # ── Strategy 1: Next.js __NEXT_DATA__ JSON ────────────────────
                     next_data = soup.find("script", id="__NEXT_DATA__")
+                    props = {}
                     if next_data:
                         try:
                             data = json.loads(next_data.text)
                             props = data.get("props", {}).get("pageProps", {})
+                        except Exception:
+                            props = {}
+
+                    # Extract & attribute real artist if currently generic/missing
+                    generic_names = {"redbubble artist", "artist", "unknown", "creator", "redbubble", "unknown artist"}
+                    is_generic_seller = not seller or str(seller).strip().lower() in generic_names or str(seller).strip().lower().startswith("unknown")
+                    if is_generic_seller:
+                        # 1. From URL slug: /i/<ptype>/<title>-by-<artist>/<id>
+                        m_by = re.search(r"-by-([a-zA-Z0-9_\-]+)", raw_url)
+                        if m_by:
+                            cand = m_by.group(1).replace("-", " ").strip()
+                            if cand and cand.lower() not in generic_names:
+                                seller = cand.title()
+                        # 2. From __NEXT_DATA__ props
+                        if (not seller or str(seller).strip().lower() in generic_names) and props:
+                            try:
+                                art_cand = (
+                                    props.get("work", {}).get("artist", {}).get("username") or
+                                    props.get("work", {}).get("artist", {}).get("name") or
+                                    props.get("artist", {}).get("username") or
+                                    props.get("artist", {}).get("name")
+                                )
+                                if art_cand and str(art_cand).strip().lower() not in generic_names:
+                                    seller = str(art_cand).strip()
+                            except Exception:
+                                pass
+                        # 3. From HTML link: a[href*="/people/"]
+                        if not seller or str(seller).strip().lower() in generic_names:
+                            people_a = soup.find("a", href=re.compile(r"^/people/([^/?#]+)"))
+                            if people_a:
+                                art_cand = people_a.text.strip() or (re.search(r"^/people/([^/?#]+)", people_a.get("href", "")).group(1) if re.search(r"^/people/([^/?#]+)", people_a.get("href", "")) else "")
+                                if art_cand and str(art_cand).strip().lower() not in generic_names:
+                                    seller = str(art_cand).strip()
+
+                    parent["seller"] = seller
+
+                    if props:
+                        try:
                             inv_items = (
                                 props.get("defaultInventoryItems") or
                                 props.get("inventoryItems") or

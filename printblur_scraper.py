@@ -1,11 +1,13 @@
 """
-Printerval Scraper Module for Apollo Brand Intelligence Suite.
+Printblur Scraper Module for Apollo Brand Intelligence Suite.
 Specialized in automated retrieval of Print-on-Demand (POD) merchandise,
-apparel, stickers, and custom creator products on Printerval (printerval.com).
+apparel, and custom creator products on Printblur (printblur.com).
 
 Features:
 - Playwright + Native Microsoft Edge Stealth automation.
+- Cloudflare WAF evasion with persistent authenticated session cookies.
 - Structured product card extraction (Title, Price, Creator, Product ID, Image).
+- Full POD Variant Expansion (harvesting 50-90+ real product variants per artwork).
 - High-reliability Seller/Artist Enrichment engine with persistent local disk caching.
 - Per-item fault isolation preventing single-item failures from interrupting batch runs.
 """
@@ -23,7 +25,7 @@ import urllib.request
 from typing import List, Dict, Optional
 from PIL import Image
 
-logger = logging.getLogger("Apollo.PrintervalScraper")
+logger = logging.getLogger("Apollo.PrintblurScraper")
 
 POD_GENERIC_STOPWORDS = {
     "the", "and", "for", "with", "shirt", "hoodie", "gift", "gifts", "tshirt", "t-shirt",
@@ -37,7 +39,7 @@ POD_GENERIC_STOPWORDS = {
 }
 
 
-class PrintervalScraper:
+class PrintblurScraper:
     def __init__(self, headless: bool = True):
         self.headless = headless
         self._pw = None
@@ -45,10 +47,10 @@ class PrintervalScraper:
         self._context = None
         self.profile_dir = os.path.join(
             os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
-            "Apollo_Printerval_Session"
+            "Apollo_Printblur_Session"
         )
         os.makedirs(self.profile_dir, exist_ok=True)
-        self.cache_file = os.path.join(self.profile_dir, "printerval_seller_cache.json")
+        self.cache_file = os.path.join(self.profile_dir, "printblur_seller_cache.json")
 
     def _is_valid_pod_variant(self, parent_title: str, variant_title: str, variant_slug: str, brand: str = "", keyword: str = "") -> bool:
         """Validate that candidate variant represents the same underlying POD artwork/design."""
@@ -57,7 +59,6 @@ class PrintervalScraper:
 
         var_text = f"{variant_title.lower()} {variant_slug.lower()}"
 
-        # If brand was searched for or exists in parent title, variant must not omit or conflict with it
         target_b = (brand or keyword or "").lower().strip()
         if target_b and target_b not in ("adhoc request", "full store sweep", ""):
             if target_b in parent_title.lower() and target_b not in var_text:
@@ -73,18 +74,14 @@ class PrintervalScraper:
         match_ratio = len(matched) / len(core_parent_tokens)
 
         if len(core_parent_tokens) == 1:
-            return len(matched) >= 1
+            return match_ratio >= 1.0
         elif len(core_parent_tokens) == 2:
-            return len(matched) >= 1
+            return match_ratio >= 0.50
         else:
-            return len(matched) >= 2 or match_ratio >= 0.5
+            return match_ratio >= 0.40
 
     def _synthesize_variant_title(self, parent_title: str, slug: str, card_title: str = "") -> str:
-        """
-        Synthesize the full, accurate listing title for a Printerval variant using the URL slug,
-        parent title, and card text, preventing partial/truncated category-only titles like 'Baby Blankets'.
-        """
-        # If card_title is already a full product title with design name (e.g. >= 4 words and contains parent tokens)
+        """Format variant title preserving parent casing and design name."""
         if card_title and len(card_title.split()) >= 4:
             p_toks = set(re.findall(r'[a-zA-Z0-9]{3,}', parent_title.lower())) if parent_title else set()
             c_toks = set(re.findall(r'[a-zA-Z0-9]{3,}', card_title.lower()))
@@ -139,42 +136,40 @@ class PrintervalScraper:
                 with open(self.cache_file, "r", encoding="utf-8") as f:
                     return json.load(f)
             except Exception:
-                pass
+                return {}
         return {}
 
     def _save_cache(self, cache: dict):
-        """Save persistent seller cache."""
+        """Save persistent cache atomically."""
         try:
-            with open(self.cache_file, "w", encoding="utf-8") as f:
+            temp_file = self.cache_file + ".tmp"
+            with open(temp_file, "w", encoding="utf-8") as f:
                 json.dump(cache, f, indent=2)
-        except Exception:
-            pass
+            os.replace(temp_file, self.cache_file)
+        except Exception as e:
+            logger.warning(f"Could not save Printblur cache: {e}")
 
     def _find_edge_path(self) -> Optional[str]:
-        """Locate native Microsoft Edge executable on Windows."""
-        edge_paths = [
+        """Locate native Microsoft Edge binary on Windows."""
+        for path in [
             r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
             r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-            os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe"),
-        ]
-        return next((p for p in edge_paths if os.path.exists(p)), None)
+            os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe")
+        ]:
+            if os.path.isfile(path):
+                return path
+        return None
 
     def _clean_profile_locks(self):
-        """Clean any stale Chromium singleton lock files and terminate orphaned Edge processes to avoid ProcessSingleton errors."""
-        lock_files = [os.path.join(self.profile_dir, lk) for lk in ("SingletonLock", "SingletonSocket", "SingletonCookie", "lockfile")]
-        has_locks = any(os.path.exists(lf) for lf in lock_files)
-        if has_locks:
-            try:
-                import subprocess
-                subprocess.run(["taskkill", "/F", "/IM", "msedge.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
-            except Exception:
-                pass
-            for lock_file in lock_files:
-                if os.path.exists(lock_file):
-                    try:
-                        os.remove(lock_file)
-                    except Exception:
-                        pass
+        """Clean singleton lock files from persistent profile."""
+        lock_files = ["SingletonLock", "SingletonSocket", "SingletonCookie", "lockfile"]
+        for lf in lock_files:
+            fp = os.path.join(self.profile_dir, lf)
+            if os.path.exists(fp):
+                try:
+                    os.remove(fp)
+                except Exception:
+                    pass
 
     def _get_context(self, p=None, force_visible: bool = False, window_pos: tuple = (100, 100), window_size: tuple = (1100, 800)):
         """Initialize and return a persistent Playwright context with stealth evasions."""
@@ -192,7 +187,6 @@ class PrintervalScraper:
             "--disable-dev-shm-usage",
         ]
 
-        # Cloudflare Evasion: Never run headless=True on Cloudflare-protected sites. Position window offscreen when stealth mode is requested.
         is_headless = False
         if self.headless and not force_visible:
             args.extend(["--window-position=-2400,-2400", "--window-size=1366,850"])
@@ -222,7 +216,7 @@ class PrintervalScraper:
                 context = p.chromium.launch_persistent_context(**kwargs)
             except Exception:
                 import tempfile
-                temp_profile = tempfile.mkdtemp(prefix="pv_edge_session_")
+                temp_profile = tempfile.mkdtemp(prefix="pb_edge_session_")
                 kwargs["user_data_dir"] = temp_profile
                 context = p.chromium.launch_persistent_context(**kwargs)
 
@@ -242,28 +236,15 @@ class PrintervalScraper:
                 context = self._get_context(p, force_visible=True, window_pos=window_pos, window_size=window_size)
                 page = context.pages[0] if context.pages else context.new_page()
 
-                page.add_init_script("""
-                    delete navigator.__proto__.webdriver;
-                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true });
-                    window.chrome = { runtime: {}, app: {}, csi: () => {}, loadTimes: () => {} };
-                """)
+                logger.info("Opening interactive Printblur session for Cloudflare clearance...")
+                page.goto("https://printblur.com", wait_until="domcontentloaded", timeout=45000)
 
-                try:
-                    # First load homepage to establish base session cookies
-                    page.goto("https://printerval.com", wait_until="domcontentloaded", timeout=30000)
-                    page.wait_for_timeout(1500)
-                    # Then navigate directly to search endpoint where Cloudflare challenge is triggered
-                    page.goto("https://printerval.com/search/?q=apparel", wait_until="domcontentloaded", timeout=30000)
-                    logger.info("Printerval interactive authentication window opened to search endpoint.")
-                except Exception as e:
-                    logger.warning(f"Interactive auth navigation error: {e}")
-
-                # Keep browser alive until user manually closes the window
+                # Keep window alive until analyst closes it
                 while True:
                     try:
-                        if not context.pages or all(pg.is_closed() for pg in context.pages):
+                        if page.is_closed() or not context.pages:
                             break
-                        time.sleep(1)
+                        time.sleep(1.0)
                     except Exception:
                         break
 
@@ -272,53 +253,20 @@ class PrintervalScraper:
                 except Exception:
                     pass
         except Exception as e:
-            logger.warning(f"Interactive auth session error: {e}")
+            logger.error(f"Error during interactive Printblur auth session: {e}")
         finally:
             self._clean_profile_locks()
 
-    def close(self):
-        """Safely clean profile locks."""
-        self._clean_profile_locks()
-
-    def resolve_store_info(self, raw_input: str) -> dict:
-        """Parse Printerval shop URL, creator name, or Global Search."""
-        raw = raw_input.strip() if raw_input else ""
-        if not raw or any(g in raw.lower() for g in ("global", "marketplace", "all", "wholesale", "catalog")):
-            return {
-                "store_name": "Printerval Global Catalog",
-                "original": "https://printerval.com"
-            }
-
-        # Check for shop URL (e.g. printerval.com/shop/creatorname)
-        m = re.search(r'/shop/([a-zA-Z0-9_\-]+)', raw)
-        if m:
-            creator = m.group(1)
-            return {
-                "store_name": f"Printerval Shop ({creator})",
-                "original": raw
-            }
-
-        clean_name = raw.split("/")[-1].replace("?.*", "").strip()
-        return {
-            "store_name": f"Printerval Shop ({clean_name})",
-            "original": f"https://printerval.com/shop/{clean_name}"
-        }
-
-    def search(self, query: str, max_items: int = 50, condition: str = "all", log_callback=None) -> List[Dict]:
+    def search(self, query: str,
+               max_items: int = 50,
+               max_pages: int = 5,
+               progress_callback=None,
+               stop_event: threading.Event = None,
+               log_callback=None) -> List[Dict]:
         """
-        Execute search on Printerval using stealth automation.
-        
-        Args:
-            query: Keyword string (e.g., 'Toyota TRD')
-            max_items: Maximum listings to return
-            condition: 'all', 'new', or 'used'
-            log_callback: Optional callable for live UI logging
-            
-        Returns:
-            List of normalized listing dicts.
+        Execute automated keyword search across Printblur.com with stealth pagination.
+        Harvests all matching listing cards (title, price, image, item_id, url, marketplace).
         """
-        from playwright.sync_api import sync_playwright
-
         def _log(msg):
             if log_callback:
                 try: log_callback(msg)
@@ -327,10 +275,12 @@ class PrintervalScraper:
 
         results = []
         seen_ids = set()
-        page_num = 1
+        clean_query = query.strip()
+        encoded_query = urllib.parse.quote_plus(clean_query)
 
-        encoded_q = urllib.parse.quote(query.strip())
-        _log(f"👕 [Printerval] Initiating stealth search for '{query}'...")
+        _log(f"👕 [Printblur] Initializing search for '{clean_query}' (up to {max_items} items, max {max_pages} pages)...")
+
+        from playwright.sync_api import sync_playwright
 
         try:
             with sync_playwright() as p:
@@ -343,74 +293,87 @@ class PrintervalScraper:
                 """)
 
                 try:
-                    max_pages = max(10, min(30, (max_items + 39) // 40))
-                    while len(results) < max_items and page_num <= max_pages:
-                        target_url = f"https://printerval.com/search/?q={encoded_q}&page_id={page_num}"
+                    page_num = 1
+                    while page_num <= max_pages and len(results) < max_items:
+                        if stop_event and stop_event.is_set():
+                            _log("⏹ [Printblur] Search stopped by user.")
+                            break
 
-                        _log(f"🌐 [Printerval] Loading page {page_num}...")
+                        # Printblur supports &interest= and &page_id=
+                        search_url = f"https://printblur.com/search?interest={encoded_query}&page_id={page_num}"
+                        _log(f"🔍 [Printblur] Fetching page {page_num}: {search_url}")
+
                         try:
-                            page.goto(target_url, wait_until="domcontentloaded", timeout=22000)
+                            resp = page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
                             page.wait_for_timeout(2500)
-                        except Exception as ex:
-                            _log(f"⚠ Page load timeout on Printerval: {ex}")
+                        except Exception as nav_err:
+                            _log(f"⚠ [Printblur] Page load warning (page {page_num}): {nav_err}")
 
                         # Extract product cards
-                        page_items = page.evaluate("""
-                            () => {
-                                const items = [];
-                                const seen = new Set();
-                                const links = document.querySelectorAll('a[href*="-p"]');
-                                
-                                for (let link of links) {
-                                    const href = link.href || '';
-                                    const m = href.match(/-p(\\d+)/);
-                                    if (!m) continue;
-                                    const pId = m[1];
-                                    const cleanUrl = href.split('?')[0];
-                                    if (seen.has(cleanUrl)) continue;
-                                    seen.add(cleanUrl);
+                        page_items = page.evaluate("""() => {
+                            const items = [];
+                            const seenHrefs = new Set();
 
-                                    let parent = link.closest('.product-item, .item, [class*="product-card"], div[data-product-id]') || link.parentElement || link;
-                                    let titleEl = parent.querySelector('[class*="title"], h3, h2, span.title') || link;
-                                    let priceEl = parent.querySelector('[class*="price"], .product-price, span[class*="price"]');
-                                    let sellerEl = parent.querySelector('[class*="author"], [class*="artist"], [class*="store"], [class*="seller"]');
+                            const cards = document.querySelectorAll(
+                                '.product-item-box, .product-item, .item-product, div.item, [class*="product-item"]'
+                            );
 
-                                    let title = (titleEl ? (titleEl.innerText || '') : '').trim();
-                                    if (!title || title.length < 3 || title.startsWith('$')) {
-                                        const slug = cleanUrl.split('/').pop().split('-p')[0].replace(/-/g, ' ').trim();
-                                        title = slug ? slug.charAt(0).toUpperCase() + slug.slice(1) : `Printerval Product #${pId}`;
-                                    }
-                                    let price = (priceEl ? (priceEl.innerText || '') : '').trim();
-                                    let seller = (sellerEl ? (sellerEl.innerText || '') : '').trim();
+                            for (const card of cards) {
+                                const linkEl = card.querySelector('a.product-link, a[href*="-p"]');
+                                if (!linkEl) continue;
 
-                                    let img = '';
-                                    const allImgs = Array.from(parent.querySelectorAll('img')).map(i => i.currentSrc || i.src || i.getAttribute('data-src') || i.getAttribute('data-original') || '');
-                                    for (let im of allImgs) {
-                                        if (im && !im.includes('.svg') && !im.includes('heart') && !im.includes('1x1') && (im.includes('cdn.printerval.com') || im.startsWith('http'))) {
-                                            img = im;
-                                            break;
-                                        }
-                                    }
+                                const href = linkEl.href || '';
+                                if (!href || seenHrefs.has(href)) continue;
+                                seenHrefs.add(href);
 
-                                    items.push({
-                                        title: title,
-                                        url: cleanUrl,
-                                        price: price || '$19.95',
-                                        seller: seller || 'Printerval Creator',
-                                        image_url: img
-                                    });
+                                const cleanUrl = href.split('?')[0];
+                                const mId = cleanUrl.match(/-p(\\d+)/);
+                                const pId = mId ? mId[1] : '';
+
+                                // Title
+                                let title = (linkEl.getAttribute('title') || '').trim();
+                                if (!title) {
+                                    const titleEl = card.querySelector('[class*="title"], h3, h2, h4, span.title, p');
+                                    if (titleEl) title = (titleEl.innerText || '').trim();
                                 }
-                                return items;
+                                if (!title && pId) {
+                                    const slug = cleanUrl.split('/').pop().split('-p')[0].replace(/-/g, ' ').trim();
+                                    title = slug ? slug.charAt(0).toUpperCase() + slug.slice(1) : `Printblur Product #${pId}`;
+                                }
+
+                                // Price
+                                let price = '';
+                                const priceEl = card.querySelector('[class*="price"], .product-price-current, span');
+                                if (priceEl) {
+                                    const mP = (priceEl.innerText || '').match(/\\$\\s*[\\d,]+(?:\\.\\d+)?/);
+                                    if (mP) price = mP[0];
+                                }
+
+                                // Image
+                                let img = '';
+                                const imgEl = card.querySelector('img.product-item-image, img');
+                                if (imgEl) {
+                                    img = imgEl.currentSrc || imgEl.src || imgEl.getAttribute('data-src') || '';
+                                }
+
+                                items.push({
+                                    title: title,
+                                    url: cleanUrl,
+                                    price: price || '$24.95',
+                                    seller: 'Printblur Creator',
+                                    image_url: img
+                                });
                             }
-                        """)
+                            return items;
+                        }""")
 
                         if not page_items:
                             curr_title = page.title()
                             if "403" in curr_title or "blocked" in curr_title.lower() or "just a moment" in curr_title.lower():
-                                _log(f"🛡️ [Printerval] Cloudflare security challenge detected on search endpoint.")
-                                _log(f"💡 [Printerval] Please click the '👕 Printerval Connect' button in the toolbar to solve the verification once, then restart your scan.")
+                                _log("🛡️ [Printblur] Cloudflare challenge detected.")
+                                _log("💡 [Printblur] Please click '👕 Printblur Connect' in toolbar to authenticate once.")
                             else:
-                                _log(f"ℹ [Printerval] No listing cards found on page {page_num}.")
+                                _log(f"ℹ [Printblur] No product cards found on page {page_num}.")
                             break
 
                         new_count = 0
@@ -427,13 +390,10 @@ class PrintervalScraper:
 
                             title = raw_it.get("title", "")
                             if not title or title.startswith("$") or len(title) < 3:
-                                # Derive title from url slug
                                 slug_part = u.split("/")[-1].split("-p")[0].replace("-", " ").title()
-                                title = slug_part if slug_part else f"Printerval Product #{item_id}"
+                                title = slug_part if slug_part else f"Printblur Product #{item_id}"
 
-                            price = raw_it.get("price", "")
-                            if not price or not price.startswith("$"):
-                                price = "$19.95"
+                            price = raw_it.get("price", "") or "$24.95"
 
                             results.append({
                                 "brand": "",
@@ -441,11 +401,11 @@ class PrintervalScraper:
                                 "title": title,
                                 "item_id": item_id,
                                 "price": price,
-                                "seller": raw_it.get("seller") or "Printerval Creator",
+                                "seller": raw_it.get("seller") or "Printblur Creator",
                                 "location": "United States",
                                 "image_url": raw_it.get("image_url", ""),
                                 "url": u,
-                                "marketplace": "printerval.com",
+                                "marketplace": "printblur.com",
                                 "condition": "New",
                                 "keyword": query
                             })
@@ -454,7 +414,7 @@ class PrintervalScraper:
                             if len(results) >= max_items:
                                 break
 
-                        _log(f"📦 [Printerval] Harvested {new_count} listings from page {page_num} ({len(results)}/{max_items} total).")
+                        _log(f"📦 [Printblur] Harvested {new_count} listings from page {page_num} ({len(results)}/{max_items} total).")
 
                         if len(results) >= max_items or new_count == 0:
                             break
@@ -463,18 +423,16 @@ class PrintervalScraper:
                         time.sleep(1.5)
 
                 finally:
-                    try:
-                        context.close()
-                    except Exception:
-                        pass
+                    try: context.close()
+                    except Exception: pass
 
         except Exception as e:
-            _log(f"❌ Error during Printerval scraping: {e}")
-            logger.exception("Printerval search failure")
+            _log(f"❌ Error during Printblur scraping: {e}")
+            logger.exception("Printblur search failure")
         finally:
             self._clean_profile_locks()
 
-        _log(f"✅ [Printerval] Search complete: Retrieved {len(results)} listings.")
+        _log(f"✅ [Printblur] Search complete: Retrieved {len(results)} listings.")
         return results
 
     def enrich_seller_info(self, items: List[Dict],
@@ -482,7 +440,7 @@ class PrintervalScraper:
                            stop_event: threading.Event = None,
                            chunk_size: int = 15) -> List[Dict]:
         """
-        Enrich real creator / artist / shop names and exact pricing for Printerval items.
+        Enrich real creator / artist / shop names and exact pricing for Printblur items.
         Uses persistent disk cache to resolve previously seen items in 0ms.
         """
         if not items:
@@ -490,9 +448,9 @@ class PrintervalScraper:
 
         cache = self._load_cache()
         items_to_fetch = []
+        generic_placeholders = ("creator", "unknown", "printblur creator", "printblur")
 
         # Pass 1: Resolve from local cache
-        generic_placeholders = ("creator", "unknown", "printerval creator", "printerval")
         for idx, it in enumerate(items):
             item_id = str(it.get("item_id", "")).strip()
             cached = cache.get(item_id) if item_id else None
@@ -502,7 +460,7 @@ class PrintervalScraper:
                 it["seller"] = cached_seller
                 if cached.get("price"):
                     it["price"] = cached.get("price")
-                if cached.get("title") and (not it.get("title") or it.get("title").startswith("Printerval")):
+                if cached.get("title") and (not it.get("title") or it.get("title").startswith("Printblur")):
                     it["title"] = cached.get("title")
                 if cached.get("image_url") and not it.get("image_url"):
                     it["image_url"] = cached.get("image_url")
@@ -522,7 +480,7 @@ class PrintervalScraper:
                 page = context.pages[0] if context.pages else context.new_page()
 
                 try:
-                    # Abort heavy static assets (images, fonts, stylesheets, media) for ultra-fast seller metadata resolution
+                    # Abort heavy static assets for rapid metadata extraction
                     page.route("**/*.{png,jpg,jpeg,gif,webp,svg,ico,woff,woff2,ttf,eot,css,mp4,webm,avi,mov}", lambda route: route.abort())
                 except Exception:
                     pass
@@ -539,177 +497,69 @@ class PrintervalScraper:
 
                         item_id = str(it.get("item_id", "")).strip()
                         raw_url = it.get("url", "")
-                        url = raw_url if raw_url.startswith("http") else f"https://printerval.com/product-p{item_id}"
+                        url = raw_url if raw_url.startswith("http") else f"https://printblur.com/product-p{item_id}"
 
                         try:
                             page.goto(url, wait_until="domcontentloaded", timeout=15000)
                             page.wait_for_timeout(400)
 
-                            # Extract exact creator, price, and canonical title
                             res = page.evaluate("""() => {
                                 let seller = '';
                                 let price = '';
                                 let title = '';
 
-                                // 0. High-accuracy Document Title extraction (e.g. "Product Title sold by <Artist> | SKU ...")
-                                if (document.title) {
+                                // 0. Direct JS variables (window.product.seller_name)
+                                try {
+                                    if (window.product && window.product.seller_name) {
+                                        const cand = String(window.product.seller_name).trim();
+                                        if (cand && !cand.toLowerCase().includes('printblur')) seller = cand;
+                                    }
+                                    if (window.product && window.product.price) {
+                                        price = '$' + String(window.product.price).replace('$', '').trim();
+                                    }
+                                } catch(e) {}
+
+                                // 1. Document title
+                                if (!seller && document.title) {
                                     const tm = document.title.match(/sold\\s+by\\s+([^|\\n]+)/i);
                                     if (tm && tm[1]) {
                                         const cand = tm[1].trim();
-                                        if (cand && !cand.toLowerCase().includes('printerval') && cand.length > 1) {
+                                        if (cand && !cand.toLowerCase().includes('printblur') && cand.length > 1) {
                                             seller = cand;
                                         }
                                     }
                                 }
 
-                                // 1. Direct Storefront link extraction (e.g. <a href="https://printerval.com/shops/artist-name">Artist Name</a>)
-                                if (!seller) {
-                                    const shopA = document.querySelector('a[href*="/shops/"], a[href*="/shop/"]');
-                                    if (shopA) {
-                                        let t = (shopA.innerText || '').trim();
-                                        if (t && !t.toLowerCase().includes('printerval') && t.length > 1) {
-                                            seller = t;
-                                        } else if (shopA.href && (shopA.href.includes('/shops/') || shopA.href.includes('/shop/'))) {
-                                            const parts = shopA.href.split(/[/]shops?[/]([^/?#]+)/);
-                                            if (parts && parts.length > 1) {
-                                                const slug = parts[1].replace(/[-_]/g, ' ').trim();
-                                                if (slug && !slug.toLowerCase().includes('printerval')) {
-                                                    seller = slug.charAt(0).toUpperCase() + slug.slice(1);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // 2. Direct JS variables (window.product, sellerNameProductDescription, etc.)
-                                if (!seller) {
-                                    try {
-                                        if (window.product && window.product.seller_name) {
-                                            const cand = String(window.product.seller_name).trim();
-                                            if (cand && !cand.toLowerCase().includes('printerval')) seller = cand;
-                                        }
-                                    } catch(e) {}
-                                }
-
-                                if (!seller) {
-                                    try {
-                                        if (typeof sellerNameProductDescription !== 'undefined' && sellerNameProductDescription) {
-                                            const cand = String(sellerNameProductDescription).trim();
-                                            if (cand && !cand.toLowerCase().includes('printerval')) seller = cand;
-                                        }
-                                    } catch(e) {}
-                                }
-
-                                // 3. Script tag parsing for var product or var sellerNameProductDescription
-                                if (!seller) {
-                                    const scripts = document.querySelectorAll('script');
-                                    for (let s of scripts) {
-                                        const txt = s.innerText || '';
-                                        const m = txt.match(/["']seller_name["']\\s*:\\s*["']([^"']+)["']/i) || 
-                                                  txt.match(/var\\s+sellerNameProductDescription\\s*=\\s*["']([^"']+)["']/i);
-                                        if (m && m[1]) {
-                                            const cand = m[1].trim();
-                                            if (cand && !cand.toLowerCase().includes('printerval') && cand.length > 1) {
-                                                seller = cand;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // 4. Author / Creator element
-                                if (!seller) {
-                                    const authorEls = document.querySelectorAll(
-                                        '.design-pod-seller, span.author, .author, .other-product-heading-author, .other-product-heading-author-info, [class*="shop-name"], a[href*="/designer/"]'
-                                    );
-                                    for (let el of authorEls) {
-                                        let raw = el ? (el.innerText || '') : '';
-                                        let txt = raw.trim()
-                                            .replace(/^Designed\\s+(?:and\\s+sold\\s+)?by\\s*/i, '')
-                                            .replace(/More\\s+/i, '')
-                                            .replace(/'s\\s+products.*/i, '')
-                                            .trim();
-                                        if (txt && txt.length > 1 && !txt.toLowerCase().includes('printerval')) {
-                                            seller = txt.split('\\n')[0].trim();
-                                            break;
-                                        }
-                                    }
-                                }
-
-                                // 3. Fallback via regex across full body text
+                                // 2. Body text match
                                 if (!seller && document.body) {
                                     const fullText = document.body.innerText || '';
-                                    const m = fullText.match(/(?:Designed|Sold|Created)\\s+(?:and\\s+sold\\s+)?by\\s*\\n?\\s*([^\\n\\r]+)/i);
+                                    const m = fullText.match(/(?:sold|designed|created)\\s+by\\s*\\n?\\s*([^\\n\\r]+)/i);
                                     if (m && m[1]) {
-                                        let candidate = m[1].trim();
-                                        if (candidate && !candidate.toLowerCase().includes('printerval')) {
-                                            seller = candidate;
+                                        const cand = m[1].trim();
+                                        if (cand && !cand.toLowerCase().includes('printblur')) {
+                                            seller = cand;
                                         }
                                     }
                                 }
 
-                                // 4. Fallback for "More <Artist>'s products"
-                                if (!seller && document.body) {
-                                    const fullText = document.body.innerText || '';
-                                    const m2 = fullText.match(/More\\s+([^\\n\\r']+)'s\\s+products/i);
-                                    if (m2 && m2[1]) {
-                                        seller = m2[1].trim();
-                                    }
-                                }
-
-                                // Canonical Title from H1
+                                // 3. H1 Title
                                 const h1 = document.querySelector('h1');
                                 if (h1 && h1.innerText) title = h1.innerText.trim();
 
-                                // Price from JSON-LD or DOM
-                                const scripts = document.querySelectorAll('script[type="application/ld+json"]');
-                                for (let s of scripts) {
-                                    try {
-                                        const j = JSON.parse(s.innerText || '{}');
-                                        if (j['@type'] === 'Product' && j.offers && j.offers.price) {
-                                            price = '$' + j.offers.price;
-                                            break;
-                                        }
-                                    } catch(e) {}
-                                }
-
+                                // 4. Price fallback
                                 if (!price) {
-                                    const priceEl = document.querySelector('.product-price-current, .pdp-price, .price, [class*="product-price"]');
+                                    const priceEl = document.querySelector('.product-price-current, .price, [class*="product-price"]');
                                     if (priceEl && priceEl.innerText) {
                                         const mP = priceEl.innerText.match(/\\$\\s*[\\d,]+(?:\\.\\d+)?/);
                                         if (mP) price = mP[0];
                                     }
                                 }
 
-                                // 4. Extract High-Resolution Product Image
+                                // 5. Image
                                 let img = '';
                                 const og = document.querySelector('meta[property="og:image"], meta[name="og:image"]');
                                 if (og && og.content && og.content.startsWith('http')) {
                                     img = og.content;
-                                }
-                                if (!img) {
-                                    for (let s of scripts) {
-                                        try {
-                                            const j = JSON.parse(s.innerText || '{}');
-                                            if (j['image']) {
-                                                if (Array.isArray(j['image']) && j['image'].length > 0) {
-                                                    img = j['image'][0];
-                                                } else if (typeof j['image'] === 'string') {
-                                                    img = j['image'];
-                                                }
-                                                if (img) break;
-                                            }
-                                        } catch(e) {}
-                                    }
-                                }
-                                if (!img) {
-                                    const domImgs = Array.from(document.querySelectorAll('img')).map(i => i.src || i.getAttribute('data-src') || '');
-                                    for (let di of domImgs) {
-                                        if (di && di.includes('cdn.printerval.com') && !di.includes('.svg')) {
-                                            img = di;
-                                            break;
-                                        }
-                                    }
                                 }
 
                                 return { seller: seller, price: price, title: title, image_url: img };
@@ -719,13 +569,12 @@ class PrintervalScraper:
                                 it["seller"] = res["seller"]
                             if res.get("price"):
                                 it["price"] = res["price"]
-                            if res.get("title") and (not it.get("title") or it.get("title").startswith("Printerval") or len(it.get("title", "")) < len(res.get("title", ""))):
+                            if res.get("title") and (not it.get("title") or it.get("title").startswith("Printblur") or len(it.get("title", "")) < len(res.get("title", ""))):
                                 it["title"] = res["title"]
-                            if res.get("image_url") and (not it.get("image_url") or "unsafe/540" in it.get("image_url", "")):
+                            if res.get("image_url") and not it.get("image_url"):
                                 it["image_url"] = res["image_url"]
 
-                            # Cache result
-                            if item_id:
+                            if item_id and it.get("seller") and not any(g in str(it.get("seller")).lower() for g in generic_placeholders):
                                 cache[item_id] = {
                                     "seller": it.get("seller"),
                                     "price": it.get("price"),
@@ -734,7 +583,7 @@ class PrintervalScraper:
                                 }
 
                         except Exception as item_err:
-                            logger.debug(f"Error enriching item {item_id} ({url}): {item_err}")
+                            logger.debug(f"Error enriching Printblur item {item_id}: {item_err}")
 
                         processed_in_chunk += 1
                         if progress_callback:
@@ -743,13 +592,11 @@ class PrintervalScraper:
                         time.sleep(random.uniform(0.1, 0.25))
 
                 finally:
-                    try:
-                        context.close()
-                    except Exception:
-                        pass
+                    try: context.close()
+                    except Exception: pass
 
         except Exception as e:
-            logger.error(f"Error during Printerval seller enrichment batch: {e}")
+            logger.error(f"Error during Printblur seller enrichment: {e}")
         finally:
             self._save_cache(cache)
             self._clean_profile_locks()
@@ -762,19 +609,9 @@ class PrintervalScraper:
                                stop_event: threading.Event = None,
                                log_callback=None) -> List[Dict]:
         """
-        Dredge and harvest all Print-on-Demand (POD) design variants for given Printerval listings.
-        Each parent design listing can expand into 40-50+ real product listings
-        (Hoodies, Mugs, Stickers, Onesies, Tank Tops, House Flags, Baseball Caps, Blankets, Bags, etc.).
-        
-        Args:
-            items: List of parent design listing dicts to expand.
-            existing_item_ids: Optional set of already known item IDs to prevent duplicates.
-            progress_callback: Optional callable(current, total, new_variants_found, item)
-            stop_event: Optional threading.Event to abort early.
-            log_callback: Optional live logger callable.
-            
-        Returns:
-            List of newly discovered variant listing dicts.
+        Dredge and harvest all Print-on-Demand (POD) design variants for given Printblur listings.
+        Each parent design listing can expand into 50-90+ real product listings
+        (Hoodies, Mugs, Blankets, Pillows, Posters, Bags, 3D Apparel, etc.).
         """
         def _log(msg):
             if log_callback:
@@ -788,8 +625,7 @@ class PrintervalScraper:
         known_ids = set(existing_item_ids or set())
         for it in items:
             iid = str(it.get("item_id", "")).strip()
-            if iid:
-                known_ids.add(iid)
+            if iid: known_ids.add(iid)
 
         cache = self._load_cache()
         handled_parent_ids = set()
@@ -810,119 +646,57 @@ class PrintervalScraper:
                     total_parents = len(items)
                     for idx, parent in enumerate(items):
                         if stop_event and stop_event.is_set():
-                            _log("⏹ [Printerval] Variant expansion cancelled by user.")
+                            _log("⏹ [Printblur] Variant expansion cancelled by user.")
                             break
 
                         parent_id = str(parent.get("item_id", "")).strip()
                         parent_title = parent.get("title", "")
                         if parent_id and parent_id in handled_parent_ids:
-                            _log(f"⚡ [Printerval] Skipping [{idx+1}/{total_parents}]: '{parent_title[:35]}...' (already enriched & expanded as a variant of earlier design).")
+                            _log(f"⚡ [Printblur] Skipping [{idx+1}/{total_parents}]: '{parent_title[:35]}...' (already enriched & expanded).")
                             continue
 
                         raw_url = parent.get("url", "")
-                        url = raw_url if raw_url.startswith("http") else f"https://printerval.com/product-p{parent_id}"
-                        seller = parent.get("seller") or "Printerval Creator"
+                        url = raw_url if raw_url.startswith("http") else f"https://printblur.com/product-p{parent_id}"
+                        seller = parent.get("seller") or "Printblur Creator"
                         brand = parent.get("brand", "")
                         keyword = parent.get("keyword", "")
 
-                        _log(f"👕 [Printerval] Expanding variants for [{idx+1}/{total_parents}]: '{parent_title[:35]}...'")
+                        _log(f"👕 [Printblur] Expanding variants for [{idx+1}/{total_parents}]: '{parent_title[:35]}...'")
 
                         try:
                             page.goto(url, wait_until="domcontentloaded", timeout=25000)
                             page.wait_for_timeout(2000)
 
-                            # Live creator/seller extraction directly from page source (0ms extra cost)
+                            # Live creator/seller extraction directly from page
                             live_seller = page.evaluate("""() => {
                                 let s = '';
+                                try {
+                                    if (window.product && window.product.seller_name) {
+                                        const cand = String(window.product.seller_name).trim();
+                                        if (cand && !cand.toLowerCase().includes('printblur')) s = cand;
+                                    }
+                                } catch(e) {}
 
-                                // 0. High-accuracy Document Title extraction (e.g. "Product sold by <Artist> | SKU ...")
-                                if (document.title) {
+                                if (!s && document.title) {
                                     const tm = document.title.match(/sold\\s+by\\s+([^|\\n]+)/i);
                                     if (tm && tm[1]) {
                                         const cand = tm[1].trim();
-                                        if (cand && !cand.toLowerCase().includes('printerval') && cand.length > 1) {
-                                            s = cand;
-                                        }
+                                        if (cand && !cand.toLowerCase().includes('printblur') && cand.length > 1) s = cand;
                                     }
                                 }
 
-                                // 1. Direct Storefront link extraction (e.g. <a href="https://printerval.com/shops/artist-name">Artist Name</a>)
-                                if (!s) {
-                                    const shopA = document.querySelector('a[href*="/shops/"], a[href*="/shop/"]');
-                                    if (shopA) {
-                                        let t = (shopA.innerText || '').trim();
-                                        if (t && !t.toLowerCase().includes('printerval') && t.length > 1) {
-                                            s = t;
-                                        } else if (shopA.href && (shopA.href.includes('/shops/') || shopA.href.includes('/shop/'))) {
-                                            const parts = shopA.href.split(/[/]shops?[/]([^/?#]+)/);
-                                            if (parts && parts.length > 1) {
-                                                const slug = parts[1].replace(/[-_]/g, ' ').trim();
-                                                if (slug && !slug.toLowerCase().includes('printerval')) {
-                                                    s = slug.charAt(0).toUpperCase() + slug.slice(1);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // 2. Direct JS variables
-                                if (!s) {
-                                    try {
-                                        if (window.product && window.product.seller_name) {
-                                            const cand = String(window.product.seller_name).trim();
-                                            if (cand && !cand.toLowerCase().includes('printerval')) s = cand;
-                                        }
-                                    } catch(e) {}
-                                }
-
-                                if (!s) {
-                                    try {
-                                        if (typeof sellerNameProductDescription !== 'undefined' && sellerNameProductDescription) {
-                                            const cand = String(sellerNameProductDescription).trim();
-                                            if (cand && !cand.toLowerCase().includes('printerval')) s = cand;
-                                        }
-                                    } catch(e) {}
-                                }
-
-                                // 3. Script tag parsing
-                                if (!s) {
-                                    const scripts = document.querySelectorAll('script');
-                                    for (let sc of scripts) {
-                                        const txt = sc.innerText || '';
-                                        const m = txt.match(/["']seller_name["']\\s*:\\s*["']([^"']+)["']/i) || 
-                                                  txt.match(/var\\s+sellerNameProductDescription\\s*=\\s*["']([^"']+)["']/i);
-                                        if (m && m[1]) {
-                                            const cand = m[1].trim();
-                                            if (cand && !cand.toLowerCase().includes('printerval') && cand.length > 1) {
-                                                s = cand;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // 4. Author / Creator element
-                                if (!s) {
-                                    const authorEls = document.querySelectorAll(
-                                        '.design-pod-seller, span.author, .author, .other-product-heading-author, .other-product-heading-author-info, [class*="shop-name"], a[href*="/designer/"]'
-                                    );
-                                    for (let el of authorEls) {
-                                        let raw = el ? (el.innerText || '') : '';
-                                        let txt = raw.trim()
-                                            .replace(/^Designed\\s+(?:and\\s+sold\\s+)?by\\s*/i, '')
-                                            .replace(/More\\s+/i, '')
-                                            .replace(/'s\\s+products.*/i, '')
-                                            .trim();
-                                        if (txt && txt.length > 1 && !txt.toLowerCase().includes('printerval')) {
-                                            s = txt.split('\\n')[0].trim();
-                                            break;
-                                        }
+                                if (!s && document.body) {
+                                    const fullText = document.body.innerText || '';
+                                    const m = fullText.match(/(?:sold|designed|created)\\s+by\\s*\\n?\\s*([^\\n\\r]+)/i);
+                                    if (m && m[1]) {
+                                        const cand = m[1].trim();
+                                        if (cand && !cand.toLowerCase().includes('printblur')) s = cand;
                                     }
                                 }
                                 return s;
                             }""")
 
-                            if isinstance(live_seller, str) and live_seller.strip() and not live_seller.strip().lower().startswith("printerval"):
+                            if isinstance(live_seller, str) and live_seller.strip() and not live_seller.strip().lower().startswith("printblur"):
                                 seller = live_seller.strip()
                                 parent["seller"] = seller
                                 if parent_id:
@@ -939,90 +713,56 @@ class PrintervalScraper:
                                 if (btn) {
                                     btn.scrollIntoView({behavior: 'smooth', block: 'center'});
                                     btn.click();
-                                } else {
-                                    const spans = Array.from(document.querySelectorAll('a, span, button, div'));
-                                    for (let s of spans) {
-                                        if ((s.innerText || '').trim().toLowerCase() === 'see all items') {
-                                            s.scrollIntoView({behavior: 'smooth', block: 'center'});
-                                            s.click();
-                                            break;
-                                        }
-                                    }
                                 }
                             }""")
                             page.wait_for_timeout(2000)
 
-                            # Extract all variant links and metadata strictly from variant containers
+                            # Extract variant products from drawer
                             extracted_variants = page.evaluate("""(parentId) => {
                                 const items = [];
                                 const seen = new Set();
-                                
                                 const selectors = [
                                     'a[data-source-box="also-available"]',
                                     '.js-also-available-product a',
                                     '#modal-also-available a[href*="-p"]',
                                     '.modal-also-available a[href*="-p"]',
                                     '.tab-more-also-available-product a[href*="-p"]',
-                                    '.tab-more-also-available-product-wrapper a[href*="-p"]',
                                     '.box-also-available a[href*="-p"]',
                                     'a.js-also-available-product'
                                 ];
-                                
+
                                 const allElements = document.querySelectorAll(selectors.join(', '));
                                 for (let a of allElements) {
                                     const rawHref = a.href || '';
                                     const m = rawHref.match(/-p(\\d+)/);
                                     if (!m) continue;
-                                    
+
                                     const vId = m[1];
                                     if (vId === parentId || seen.has(vId)) continue;
                                     seen.add(vId);
-                                    
+
                                     const cleanUrl = rawHref.split('?')[0];
                                     const parentEl = a.closest('div.item, div.product-item, div.available-product-item, div.js-also-available-product, div') || a;
-                                    
-                                    // Text / Title
+
                                     let title = '';
                                     const titleEl = a.querySelector('[class*="title"], h3, h2, h4, span.title, p') || a;
                                     if (titleEl) {
                                         title = (titleEl.innerText || titleEl.getAttribute('title') || '').trim();
                                     }
-                                    
-                                    // Price
+
                                     let price = '';
                                     const priceEl = parentEl.querySelector('[class*="price"], .product-price-current, span');
                                     if (priceEl) {
                                         const mP = (priceEl.innerText || '').match(/\\$\\s*[\\d,]+(?:\\.\\d+)?/);
                                         if (mP) price = mP[0];
                                     }
-                                    
-                                    // High-Res Image Extraction (prioritize picture > source to avoid 1x1 placeholder pngs)
+
                                     let img = '';
-                                    const picture = a.querySelector('picture') || (parentEl ? parentEl.querySelector('picture') : null);
-                                    if (picture) {
-                                        const source = picture.querySelector('source');
-                                        if (source && source.srcset) {
-                                            const urls = source.srcset.match(/https?:\\/\\/[^\\s"']+/g);
-                                            if (urls && urls.length > 0) {
-                                                img = urls[urls.length - 1].replace(/\\s+\\d+[wx]$/, '').trim();
-                                            }
-                                        }
+                                    const imgEl = a.querySelector('img') || (parentEl ? parentEl.querySelector('img') : null);
+                                    if (imgEl) {
+                                        img = imgEl.currentSrc || imgEl.src || imgEl.getAttribute('data-src') || '';
                                     }
-                                    if (!img) {
-                                        const imgEl = a.querySelector('img') || (parentEl ? parentEl.querySelector('img') : null);
-                                        if (imgEl) {
-                                            if (imgEl.currentSrc && imgEl.currentSrc.startsWith('http') && !imgEl.currentSrc.includes('1x1.png') && !imgEl.currentSrc.includes('data:')) {
-                                                img = imgEl.currentSrc;
-                                            } else if (imgEl.src && imgEl.src.startsWith('http') && !imgEl.src.includes('1x1.png') && !imgEl.src.includes('data:')) {
-                                                img = imgEl.src;
-                                            } else if (imgEl.getAttribute('data-src') && imgEl.getAttribute('data-src').startsWith('http')) {
-                                                img = imgEl.getAttribute('data-src');
-                                            } else if (imgEl.getAttribute('data-original') && imgEl.getAttribute('data-original').startsWith('http')) {
-                                                img = imgEl.getAttribute('data-original');
-                                            }
-                                        }
-                                    }
-                                    
+
                                     items.push({
                                         item_id: vId,
                                         url: cleanUrl,
@@ -1034,14 +774,12 @@ class PrintervalScraper:
                                 return items;
                             }""", parent_id)
 
-                            new_for_this_parent = 0
+                            is_valid_seller = bool(seller and not any(g in str(seller).lower() for g in ("creator", "unknown", "printblur creator", "printblur")))
 
-                            # 1. Cross-link matching parent items in queue (e.g. Sweatshirt matching T-shirt design)
-                            is_valid_seller = bool(seller and not any(g in str(seller).lower() for g in ("creator", "unknown", "printerval creator", "printerval")))
+                            # Cross-link matching parent items in queue
                             for v in extracted_variants:
                                 v_id = str(v.get("item_id", "")).strip()
-                                if not v_id:
-                                    continue
+                                if not v_id: continue
                                 if is_valid_seller and v_id not in cache:
                                     cache[v_id] = {
                                         "seller": seller,
@@ -1056,9 +794,9 @@ class PrintervalScraper:
                                         if other_id and other_id == v_id:
                                             other["seller"] = seller
                                             handled_parent_ids.add(other_id)
-                                            _log(f"⚡ [Printerval] Parent [{other_idx+1}/{total_parents}] '{other.get('title', '')[:30]}' matches variant of current design. Auto-enriched as '{seller}' & queued to skip redundant load.")
+                                            _log(f"⚡ [Printblur] Parent [{other_idx+1}/{total_parents}] '{other.get('title', '')[:30]}' matches variant. Auto-enriched as '{seller}'.")
 
-                            # 2. Add brand-new variants to session results
+                            # Add new variants
                             for v in extracted_variants:
                                 v_id = str(v.get("item_id", "")).strip()
                                 if not v_id or v_id in known_ids:
@@ -1066,70 +804,64 @@ class PrintervalScraper:
 
                                 u = v.get("url", "")
                                 slug = u.split("/")[-1].split("-p")[0]
-
                                 card_raw = v.get("title", "").replace("\n", " ").strip()
                                 card_clean = re.sub(r'\$\s*[\d,]+(?:\.\d+)?', '', card_raw).strip()
 
-                                # Derive clean product type from slug
                                 type_part = slug.split("-")[-1].title() if "-" in slug else "Merchandise"
-                                if len(type_part) <= 2:
-                                    type_part = "Merchandise"
+                                if len(type_part) <= 2: type_part = "Merchandise"
 
-                                # Synthesize full, clean listing title preserving parent design casing and full name
                                 v_title = self._synthesize_variant_title(parent_title, slug, card_clean)
-
-                                # Token & Brand relevance validation: ensure variant matches the specific POD artwork/design
                                 if not self._is_valid_pod_variant(parent_title, v_title, slug, brand=brand, keyword=keyword):
                                     continue
 
                                 known_ids.add(v_id)
-
-                                price = v.get("price") or parent.get("price") or "$19.95"
-                                variant_id = v_id if v_id else (re.search(r'-p(\d+)', u).group(1) if re.search(r'-p(\d+)', u) else f"{parent_id}_{slug}")
+                                price = v.get("price") or parent.get("price") or "$24.95"
                                 v_img = v.get("image_url", "") or parent.get("image_url", "")
+
                                 variant_item = {
                                     "brand": brand,
                                     "product_type": type_part,
                                     "title": v_title,
-                                    "item_id": variant_id,
+                                    "item_id": v_id,
                                     "price": price,
                                     "seller": seller,
                                     "location": "United States",
                                     "image_url": v_img,
                                     "thumbnail": v_img,
                                     "url": u,
-                                    "marketplace": "printerval.com",
+                                    "marketplace": "printblur.com",
                                     "condition": "New",
                                     "keyword": keyword
                                 }
                                 expanded_results.append(variant_item)
-                                new_for_this_parent += 1
-
-                            _log(f"  ✓ Harvested +{new_for_this_parent} POD product variants for '{parent.get('title', '')[:30]}...' (Total new: {len(expanded_results)})")
 
                             if progress_callback:
                                 progress_callback(idx + 1, total_parents, len(expanded_results), parent)
 
-                        except Exception as ex:
-                            _log(f"⚠ [Printerval] Error expanding variants for {url}: {ex}")
-
-                        time.sleep(random.uniform(0.6, 1.2))
+                        except Exception as parent_err:
+                            _log(f"⚠ [Printblur] Error expanding [{idx+1}/{total_parents}]: {parent_err}")
 
                 finally:
-                    try:
-                        context.close()
-                    except Exception:
-                        pass
+                    try: context.close()
+                    except Exception: pass
 
         except Exception as e:
-            _log(f"❌ [Printerval] Error during variant expansion batch: {e}")
-            logger.exception("Printerval variant expansion failure")
+            _log(f"❌ Error during Printblur variant expansion: {e}")
         finally:
             self._save_cache(cache)
             self._clean_profile_locks()
 
-        _log(f"✅ [Printerval] Variant dredge complete: Added {len(expanded_results)} new POD listing URLs.")
+        _log(f"✅ [Printblur] Variant expansion complete: Created +{len(expanded_results)} product variant listings.")
         return expanded_results
+
+    def resolve_store_info(self, store_input: str) -> Dict[str, str]:
+        """Resolve store slug or link into clean store metadata."""
+        clean = store_input.strip()
+        m = re.search(r'printblur\.com/shops/([^/?#]+)', clean, re.IGNORECASE)
+        if m:
+            slug = m.group(1).replace("-", " ").title()
+            return {"store_name": slug, "store_url": clean}
+        return {"store_name": clean, "store_url": f"https://printblur.com/shops/{urllib.parse.quote(clean.lower().replace(' ', '-'))}"}
 
     # ── Perceptual Hash (dHash) & Connected Network Discovery ────────────────
     def compute_dhash(self, pil_img) -> int:
@@ -1151,19 +883,19 @@ class PrintervalScraper:
 
     def find_connected_network(self, item_id: str, item_url: str = "", target_img_url: str = "") -> List[Dict]:
         """
-        On-Demand Visual Syndicate & Connected Seller Hunter for Printerval.
+        On-Demand Visual Syndicate & Connected Seller Hunter for Printblur.
         Scans product page recommendation carousels:
-        - "You may also like" / "You might love these"
+        - "You may also like" / "Similar Products"
         - "Frequently bought together"
-        - "Customers also viewed" / Viewed products list
+        - "Customers also viewed" / Viewed products
         - "Related merchandise"
-        - "Seller's other products"
+        - "Creator's other designs" / Storefront recommendations
         Performs perceptual image matching (dHash) against target_img_url.
         Uses active inactivity polling (closes as soon as no new items appear for 1.5s)
         and concurrent multithreaded image dHash calculation.
         """
         if not item_url and item_id:
-            item_url = f"https://printerval.com/product-p{item_id}"
+            item_url = f"https://printblur.com/product-p{item_id}"
         if not item_id and item_url:
             m = re.search(r'-p(\d+)', item_url)
             if m:
@@ -1212,7 +944,7 @@ class PrintervalScraper:
                                     const urls = src.srcset.match(/https?:\\/\\/[^\\s"']+/g);
                                     if (urls && urls.length > 0) return urls[urls.length - 1].replace(/\\s+\\d+[wx]$/, '').trim();
                                 }
-                                const img = document.querySelector('img[src*="cdn.printerval.com"]');
+                                const img = document.querySelector('img[src*="printblur.com"], img[src*="cdn"]');
                                 return img ? (img.currentSrc || img.src || '') : '';
                             }""")
                             if t_src and str(t_src).startswith("http"):
@@ -1227,8 +959,8 @@ class PrintervalScraper:
                     start_time = time.time()
                     last_new_time = time.time()
                     last_count = 0
-                    idle_threshold = 1.5  # Inactivity threshold: close if no new items found for 1.5s
-                    max_scan_duration = 5.0  # Max total scan duration
+                    idle_threshold = 1.5
+                    max_scan_duration = 5.0
 
                     extract_js = """() => {
                         const discovered = [];
@@ -1243,6 +975,7 @@ class PrintervalScraper:
                             'div[class*="carousel"]',
                             'div[class*="swiper"]',
                             'div[class*="similar"]',
+                            'div[class*="related"]',
                             'section'
                         ];
 
@@ -1261,7 +994,7 @@ class PrintervalScraper:
                                 } else if (secTitle.toLowerCase().includes('related') || secClass.includes('related-items')) {
                                     secType = '🔗 Related Merchandise';
                                 } else if (secTitle.toLowerCase().includes('more') && secTitle.toLowerCase().includes('products')) {
-                                    secType = '🏪 Seller\\'s Other Products';
+                                    secType = '🏪 Creator\\'s Other Products';
                                 }
 
                                 const cards = sec.querySelectorAll('.product-item, .item, [class*="product-card"], a[href*="-p"], .swiper-slide');
@@ -1277,13 +1010,12 @@ class PrintervalScraper:
 
                                     const tEl = card.querySelector('[class*="title"], h3, h2, span.title') || link;
                                     const pEl = card.querySelector('[class*="price"], .product-price, span[class*="price"]');
-                                    const sEl = card.querySelector('[class*="author"], [class*="artist"], [class*="store"], [class*="seller"], [class*="shop"]');
+                                    const sEl = card.querySelector('[class*="author"], [class*="artist"], [class*="store"], [class*="seller"], [class*="shop"], [class*="creator"]');
 
                                     let title = tEl ? (tEl.innerText || '').trim() : '';
                                     let price = pEl ? (pEl.innerText || '').trim() : '';
                                     let seller = sEl ? (sEl.innerText || '').trim() : '';
 
-                                    // Extract image with complete data-srcset / data-original / lazy-load support
                                     let img = '';
                                     const sourceEls = card.querySelectorAll('picture source, source');
                                     for (let s of sourceEls) {
@@ -1346,7 +1078,6 @@ class PrintervalScraper:
                             last_new_time = time.time()
                             carousels_data = current_items
                         elif last_count > 0 and (time.time() - last_new_time) >= idle_threshold:
-                            # Inactivity threshold reached -> break early
                             break
 
                         scroll_count += 1
@@ -1357,14 +1088,13 @@ class PrintervalScraper:
                         carousels_data = page.evaluate(extract_js)
 
                 finally:
-                    # Close browser context immediately
                     try:
                         context.close()
                     except Exception:
                         pass
 
         except Exception as e:
-            logger.debug(f"Error finding connected network for Printerval item {item_url}: {e}")
+            logger.debug(f"Error finding connected network for Printblur item {item_url}: {e}")
         finally:
             self._clean_profile_locks()
 
@@ -1412,18 +1142,18 @@ class PrintervalScraper:
 
             raw_price = itm.get("price_raw", "")
             m_price = re.search(r'\$\s*[\d,]+(?:\.\d+)?', raw_price)
-            price_disp = m_price.group(0) if m_price else "$19.95"
+            price_disp = m_price.group(0) if m_price else "$24.95"
 
             seller_name = itm.get("seller") or ""
             if not seller_name and c_id in cache:
                 seller_name = cache[c_id].get("seller", "")
             if not seller_name:
-                seller_name = "Printerval Creator"
+                seller_name = "Printblur Creator"
 
             title = itm.get("title", "")
             if not title or title.startswith("$") or len(title) < 3:
                 slug_part = u.split("/")[-1].split("-p")[0].replace("-", " ").title()
-                title = slug_part if slug_part else f"Printerval Product #{c_id}"
+                title = slug_part if slug_part else f"Printblur Product #{c_id}"
 
             img_url = itm.get("image_url", "")
             sim_label = hash_results.get(u) or itm.get("network_type", "👥 You Might Also Like")
@@ -1439,11 +1169,10 @@ class PrintervalScraper:
                 "seller_origin": "United States",
                 "image_url": img_url,
                 "url": u,
-                "marketplace": "printerval.com",
+                "marketplace": "printblur.com",
                 "condition": itm.get("network_type", "You Might Also Like"),
                 "similarity": sim_label,
                 "match_type": itm.get("network_type", "You Might Also Like")
             })
 
         return results
-

@@ -198,7 +198,12 @@ class VisualHarvester:
             cand["similarity"] = match_label
             cand["match_type"] = match_label
             cand["threat_badge"] = badge_label
-            cand["threat_score"] = max(cand.get("threat_score", 0), 95 if dist <= 12 else (75 if dist <= 18 else 30))
+            raw_ts = cand.get("threat_score", 0)
+            try:
+                base_score = int(float(raw_ts)) if raw_ts not in (None, "", "None", "UNKNOWN", "Unknown") else 0
+            except (ValueError, TypeError):
+                base_score = 0
+            cand["threat_score"] = max(base_score, 95 if dist <= 12 else (75 if dist <= 18 else 30))
             cand["visual_counterfeit"] = True if dist <= 12 else False
             cand["distance"] = dist
             cand["sim_pct"] = sim_pct

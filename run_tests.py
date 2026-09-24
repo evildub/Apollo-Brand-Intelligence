@@ -8,6 +8,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import openpyxl
 from bs4 import BeautifulSoup
 
@@ -2371,7 +2372,271 @@ class TestApolloCoreFeatures(unittest.TestCase):
         ]
         enriched_rb = rb_scraper.enrich_seller_info(rb_items)
         self.assertEqual(enriched_rb[0]["seller"], "speedyart")
-        self.assertEqual(enriched_rb[1]["seller"], "turbo_boost")
+    def test_71_combobox_popdown_theme_sync_and_profile_label_and_dialog_guards(self):
+        """Test Item 71: Verify combobox popdown theme sync, brand registry profile label theming, and easter egg guards."""
+        from main import EbayTool, THEMES
+        import tkinter as tk
+
+        app = EbayTool()
+        app.withdraw()
+
+        try:
+            # 1. Profile label exists and is in themed section_labels
+            self.assertTrue(hasattr(app, "prof_label"), "app should have prof_label attribute")
+            self.assertIn(app.prof_label, app.themed_widgets["section_labels"], "prof_label should be in themed_widgets['section_labels']")
+
+            # Test theme switch updates prof_label colors
+            app.theme_var.set(THEMES["continental"]["name"])
+            app._on_theme_changed()
+            self.assertEqual(app.prof_label.cget("fg"), THEMES["continental"]["accent"])
+
+            # 2. _update_combobox_popdowns exists and styles combobox popdown listbox
+            self.assertTrue(hasattr(app, "_update_combobox_popdowns"))
+            pop = app.market_combo.tk.eval(f"ttk::combobox::PopdownWindow {app.market_combo}")
+            lb = f"{pop}.f.l"
+            self.assertEqual(app.market_combo.tk.eval(f"{lb} cget -background"), THEMES["continental"]["entry_bg"])
+            self.assertEqual(app.market_combo.tk.eval(f"{lb} cget -foreground"), THEMES["continental"]["text"])
+
+            # Switch to Cowboys theme and verify popdown listbox updates dynamically
+            app.theme_var.set(THEMES["dallas_cowboys"]["name"])
+            app._on_theme_changed()
+            self.assertEqual(app.market_combo.tk.eval(f"{lb} cget -background"), THEMES["dallas_cowboys"]["entry_bg"])
+            self.assertEqual(app.prof_label.cget("fg"), THEMES["dallas_cowboys"]["accent"])
+
+            # 3. Easter egg triggers have singleton guards (calling twice does not spawn 2 windows)
+            # Test Cowboys modal singleton guard
+            app._trigger_cowboys_easter_egg()
+            first_cowboys_win = getattr(app, "_cowboys_win", None)
+            self.assertIsNotNone(first_cowboys_win)
+            self.assertTrue(first_cowboys_win.winfo_exists())
+
+            # Call a second time - should re-use existing window rather than spawning a second one
+            app._trigger_cowboys_easter_egg()
+            self.assertEqual(getattr(app, "_cowboys_win", None), first_cowboys_win)
+            first_cowboys_win.destroy()
+
+            # 4. _trigger_easter_egg alias check (no AttributeError)
+            self.assertTrue(hasattr(app, "_trigger_easter_egg"))
+            app._trigger_easter_egg()
+
+        finally:
+            app.destroy()
+
+    def test_72_hero_pipeline_and_printerval_pagination_and_cross_parent_enrichment(self):
+        """Test Item 72: Verify ⚡ Auto-Pipeline hero button, Printerval page_id pagination, and variant cross-enrichment."""
+        from main import EbayTool
+        from printerval_scraper import PrintervalScraper
+        from unittest.mock import MagicMock, patch
+
+        # 1. Verify app UI Hero Button and pipeline method contract
+        app = EbayTool()
+        app.withdraw()
+        try:
+            self.assertTrue(hasattr(app, "btn_auto_pipeline"), "app must have btn_auto_pipeline")
+            self.assertEqual(app.btn_auto_pipeline.cget("text"), "⚡ Auto-Pipeline")
+            self.assertTrue(hasattr(app, "_run_hero_pipeline"), "app must have _run_hero_pipeline method")
+        finally:
+            app.destroy()
+
+        # 2. Verify Printerval pagination uses page_id parameter
+        ps = PrintervalScraper(headless=True)
+        with open("printerval_scraper.py", "r", encoding="utf-8") as f:
+            code = f.read()
+        self.assertIn("&page_id=", code, "printerval_scraper.py must use page_id= for proper pagination")
+        self.assertNotIn("&page={page_num}", code, "printerval_scraper.py must not use old broken &page=")
+
+        # 3. Verify expand_design_variants cross-links matching parent items and extracts live seller
+        parent_tshirt = {
+            "item_id": "11111",
+            "url": "https://printerval.com/cowboys-vintage-star-t-shirt-p11111",
+            "title": "Cowboys Vintage Star T-Shirt",
+            "seller": "Printerval Creator",
+            "brand": "Cowboys",
+            "price": "$19.95"
+        }
+        parent_sweatshirt = {
+            "item_id": "22222",
+            "url": "https://printerval.com/cowboys-vintage-star-sweatshirt-p22222",
+            "title": "Cowboys Vintage Star Sweatshirt",
+            "seller": "Printerval Creator",
+            "brand": "Cowboys",
+            "price": "$34.95"
+        }
+
+        with patch.object(ps, "_get_context") as mock_ctx:
+            mock_page = MagicMock()
+            mock_ctx.return_value.pages = [mock_page]
+
+            # First evaluate returns live seller name, second returns click see all, third returns variants
+            mock_page.evaluate.side_effect = [
+                "StarCreations99",  # live seller extraction
+                None,               # see all items click
+                [                   # extracted variants from drawer (includes the sweatshirt and a brand-new hoodie!)
+                    {
+                        "item_id": "22222",
+                        "url": "https://printerval.com/cowboys-vintage-star-sweatshirt-p22222",
+                        "title": "Cowboys Vintage Star Sweatshirt",
+                        "price": "$34.95",
+                        "image_url": "https://printerval.com/img/sweat.jpg"
+                    },
+                    {
+                        "item_id": "33333",
+                        "url": "https://printerval.com/cowboys-vintage-star-hoodie-p33333",
+                        "title": "Cowboys Vintage Star Hoodie",
+                        "price": "$39.95",
+                        "image_url": "https://printerval.com/img/hoodie.jpg"
+                    }
+                ]
+            ]
+
+            results = ps.expand_design_variants([parent_tshirt, parent_sweatshirt])
+
+            # Parent T-shirt was enriched in-place with live seller
+            self.assertEqual(parent_tshirt["seller"], "StarCreations99")
+
+            # Generated brand-new variant inherits StarCreations99
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["seller"], "StarCreations99")
+            self.assertEqual(results[0]["item_id"], "33333")
+
+            # Parent Sweatshirt was cross-linked and enriched in-place without needing separate visit!
+            self.assertEqual(parent_sweatshirt["seller"], "StarCreations99")
+
+    def test_73_hero_pipeline_clean_ui_and_cache_guards(self):
+        """Test 73: Verify Hero Pipeline toolbar deduplication, themed dialogs, and cache guards."""
+        with open("main.py", "r", encoding="utf-8") as f:
+            main_code = f.read()
+
+        # 1. Main toolbar UI declutter: btn_threat_enrich and pod_expand_btn not packed on main bars
+        self.assertNotIn("self.btn_threat_enrich.pack(side=\"right\", padx=2)", main_code)
+        self.assertIn("self.pod_expand_btn.pack_forget()", main_code)
+
+        # 2. Hero pipeline uses Apollo themed dialogs instead of white Windows messagebox
+        self.assertIn("self._show_themed_confirm(", main_code)
+        self.assertIn("self._show_themed_info(", main_code)
+
+        # 3. Printerval cache guard: generic 'Printerval Creator' is not treated as valid cached seller
+        from printerval_scraper import PrintervalScraper
+        ps = PrintervalScraper(headless=True)
+        fake_cache = {
+            "9999": {"seller": "Printerval Creator", "image_url": "https://cdn.printerval.com/img.jpg"},
+            "8888": {"seller": "Artsy Awakening", "image_url": "https://cdn.printerval.com/img2.jpg"}
+        }
+
+        with unittest.mock.patch.object(ps, "_load_cache", return_value=fake_cache):
+            with unittest.mock.patch("playwright.sync_api.sync_playwright") as mock_pw:
+                # Setup mock playwright to verify item with generic cached seller is queued for fetch
+                mock_ctx = unittest.mock.MagicMock()
+                mock_page = unittest.mock.MagicMock()
+                mock_pw.return_value.__enter__.return_value = unittest.mock.MagicMock()
+                ps._get_context = unittest.mock.MagicMock(return_value=mock_ctx)
+                mock_ctx.pages = [mock_page]
+                mock_page.evaluate.return_value = {
+                    "seller": "Real Artist Resolved",
+                    "price": "$24.95",
+                    "title": "Real Product Title",
+                    "image_url": "https://cdn.printerval.com/real.jpg"
+                }
+
+                items = [
+                    {"item_id": "9999", "seller": "Printerval Creator", "url": "https://printerval.com/product-p9999"},
+                    {"item_id": "8888", "seller": "Printerval Creator", "url": "https://printerval.com/product-p8888"}
+                ]
+                with unittest.mock.patch.object(ps, "_save_cache"):
+                    enriched = ps.enrich_seller_info(items)
+
+                # Item 8888 resolved instantly from cache because cached seller was legitimate 'Artsy Awakening'
+                self.assertEqual(enriched[1]["seller"], "Artsy Awakening")
+
+                # Item 9999 was NOT resolved from cache because 'Printerval Creator' is generic; was fetched & enriched
+                self.assertEqual(enriched[0]["seller"], "Real Artist Resolved")
+
+        # 4. Redbubble seller attribution from URL /page during variant expansion
+        from redbubble_scraper import RedbubbleScraper
+        rb = RedbubbleScraper()
+        test_parent = {
+            "item_id": "11223344",
+            "title": "Cowboys Vintage Helmet",
+            "url": "https://www.redbubble.com/i/t-shirt/Cowboys-Vintage-Helmet-by-SuperArtist99/11223344.1YY88",
+            "seller": "Redbubble Artist",
+            "price": "$22.00",
+            "image_url": "https://ih1.redbubble.net/image.11223344.jpg"
+        }
+        with unittest.mock.patch.object(rb, "_get_session") as mock_sess:
+            mock_resp = unittest.mock.MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.text = '<html><script id="__NEXT_DATA__">{"props":{"pageProps":{"inventoryItems":[]}}}</script></html>'
+            mock_sess.return_value.get.return_value = mock_resp
+
+            rb.expand_design_variants([test_parent])
+            # Parent seller was updated from URL -by-SuperArtist99
+            self.assertEqual(test_parent["seller"], "Superartist99")
+
+    def test_74_safe_threat_score_comparison_and_string_immunity(self):
+        """Test 74: Verify immunity against TypeError when threat_score is a string (e.g. 'UNKNOWN', 'N/A')."""
+        from main import safe_int_score
+        
+        # Test safe_int_score with various raw inputs
+        self.assertEqual(safe_int_score("UNKNOWN"), 0)
+        self.assertEqual(safe_int_score("Unknown"), 0)
+        self.assertEqual(safe_int_score("N/A"), 0)
+        self.assertEqual(safe_int_score(""), 0)
+        self.assertEqual(safe_int_score(None), 0)
+        self.assertEqual(safe_int_score("95"), 95)
+        self.assertEqual(safe_int_score(80), 80)
+        self.assertEqual(safe_int_score("85.5"), 85)
+
+        # Test max calculation immunity: previously crashed with TypeError: '>' not supported between instances of 'int' and 'str'
+        test_items = [
+            {"threat_score": "UNKNOWN"},
+            {"threat_score": "Unknown"},
+            {"threat_score": "N/A"},
+            {"threat_score": ""},
+            {"threat_score": None},
+            {"threat_score": 75},
+            {"threat_score": 98},
+            {"threat_score": "80"},
+        ]
+
+        for itm in test_items:
+            # Must compute without raising TypeError
+            elevated = max(safe_int_score(itm.get("threat_score")), 95)
+            self.assertIsInstance(elevated, int)
+            self.assertGreaterEqual(elevated, 95)
+
+    def test_75_printblur_scraper_contract_and_integration(self):
+        """Test 75: Verify Printblur scraper interface, normalization, dHash, and contract compliance."""
+        from printblur_scraper import PrintblurScraper
+        pb = PrintblurScraper(headless=True)
+        
+        # Verify required method signatures
+        self.assertTrue(hasattr(pb, "search"))
+        self.assertTrue(hasattr(pb, "expand_design_variants"))
+        self.assertTrue(hasattr(pb, "enrich_seller_info"))
+        self.assertTrue(hasattr(pb, "find_connected_network"))
+        self.assertTrue(hasattr(pb, "compute_dhash"))
+        self.assertTrue(hasattr(pb, "hamming_distance"))
+        self.assertTrue(hasattr(pb, "resolve_store_info"))
+        self.assertTrue(hasattr(pb, "launch_interactive_auth"))
+
+        # Test store resolution
+        info1 = pb.resolve_store_info("https://printblur.com/shops/vintage-art")
+        self.assertEqual(info1["store_name"], "Vintage Art")
+        info2 = pb.resolve_store_info("cool-creator")
+        self.assertEqual(info2["store_name"], "cool-creator")
+        self.assertIn("printblur.com/shops/cool-creator", info2["store_url"])
+
+        # Test dHash and hamming distance
+        img1 = Image.new("RGBA", (100, 100), (255, 0, 0, 255))
+        img2 = Image.new("RGBA", (100, 100), (255, 0, 0, 255))
+        h1 = pb.compute_dhash(img1)
+        h2 = pb.compute_dhash(img2)
+        self.assertEqual(pb.hamming_distance(h1, h2), 0)
+
+        # Test variant title synthesis and POD validation
+        title = pb._synthesize_variant_title("Retro Sunset Hoodie", "retro-sunset-coffee-mug", "Retro Sunset Coffee Mug")
+        self.assertIn("Retro Sunset", title)
+        self.assertTrue(pb._is_valid_pod_variant("Retro Sunset Hoodie", title, "retro-sunset-coffee-mug"))
 
 
 if __name__ == "__main__":

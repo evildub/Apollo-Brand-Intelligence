@@ -965,7 +965,7 @@ class DataStore:
     def get_enforcement_registry(self):
         return self._data.setdefault("enforcement_registry", {})
 
-    def record_enforcement_scan(self, seller_or_store: str, items: list, brand_name: str = ""):
+    def record_enforcement_scan(self, seller_or_store: str, items: list, brand_name: str = "", auto_save: bool = True):
         """Record harvested results for a seller into the permanent enforcement registry."""
         if not seller_or_store or not seller_or_store.strip():
             return
@@ -1042,7 +1042,9 @@ class DataStore:
             iid = itm.get("item_id")
             if iid and iid not in existing_ids:
                 existing_ids.add(iid)
-                existing_items.append(dict(itm))
+                # Keep up to 500 items per seller in data.json to protect memory and file size
+                if len(existing_items) < 500:
+                    existing_items.append(dict(itm))
                 
                 # Parse numeric price
                 p_str = str(itm.get("price", "0"))
@@ -1069,7 +1071,7 @@ class DataStore:
                 entry["threat_badge"] = tb
 
         entry["total_value"] = round(current_total_value, 2)
-        entry["total_listings"] = len(existing_items)
+        entry["total_listings"] = len(existing_ids) if existing_ids else len(existing_items)
         entry["brands_targeted"] = sorted(list(entry_brands))
         entry["product_types"] = sorted(list(entry_pts))
         entry["locations"] = sorted(list(entry_locs))
@@ -1094,6 +1096,21 @@ class DataStore:
                 "sample_items": flagged_items[:5]
             })
 
+        if auto_save:
+            self._save()
+
+    def record_enforcement_scans_batch(self, seller_items_map: dict, brand_name: str = "", progress_callback=None):
+        """
+        Record harvested results for multiple sellers in a single high-performance batch pass,
+        persisting to disk exactly once at the end.
+        """
+        if not seller_items_map:
+            return
+        total = len(seller_items_map)
+        for idx, (seller, s_items) in enumerate(seller_items_map.items()):
+            self.record_enforcement_scan(seller, s_items, brand_name=brand_name, auto_save=False)
+            if progress_callback and (idx % 250 == 0 or idx == total - 1):
+                progress_callback(idx + 1, total)
         self._save()
 
     def save_enforcement_registry(self, reg_dict: dict):

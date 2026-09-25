@@ -87,49 +87,86 @@ class MercadoLibreScraper:
                     except Exception:
                         pass
 
+    def _apply_cdp_window_bounds(self, is_stealth: bool, window_pos: tuple = (100, 100), window_size: tuple = (1280, 800)):
+        """Dynamically move active Playwright browser window on-screen or off-screen via Chrome DevTools Protocol."""
+        if not self._context:
+            return
+        try:
+            pages = [p for p in self._context.pages if not p.is_closed()]
+            if pages:
+                page = pages[0]
+                cdp = self._context.new_cdp_session(page)
+                win = cdp.send("Browser.getWindowForTarget")
+                if is_stealth:
+                    target_bounds = {"left": -2400, "top": -2400, "width": 1366, "height": 850, "windowState": "normal"}
+                else:
+                    target_bounds = {"left": window_pos[0], "top": window_pos[1], "width": window_size[0], "height": window_size[1], "windowState": "normal"}
+                cdp.send("Browser.setWindowBounds", {
+                    "windowId": win["windowId"],
+                    "bounds": target_bounds
+                })
+                cdp.detach()
+        except Exception as e:
+            logger.debug(f"CDP window bound shift notice in Mercado Libre: {e}")
+
+    def set_headless(self, is_headless: bool, shift_active_window: bool = True):
+        """
+        Dynamically update headless/stealth mode.
+        If persistent context has active pages, immediately shifts the browser window
+        on-screen or off-screen using Chrome DevTools Protocol without interrupting scraping.
+        """
+        self.headless = is_headless
+        if shift_active_window and self._context:
+            self._apply_cdp_window_bounds(is_stealth=is_headless)
+
     def _get_context(self, force_visible: bool = False, window_pos: tuple = (100, 100), window_size: tuple = (1100, 800)):
         """Initialize or return existing persistent Playwright context with stealth evasions."""
         from playwright.sync_api import sync_playwright
-        if self._context is None:
+        if self._context is not None:
+            # Context already running: ensure window is positioned correctly for current stealth mode
+            target_stealth = self.headless and not force_visible
+            self._apply_cdp_window_bounds(is_stealth=target_stealth, window_pos=window_pos, window_size=window_size)
+            return self._context
+
+        self._clean_profile_locks()
+        if self._pw is None:
+            self._pw = sync_playwright().start()
+        edge_path = self._find_edge_path()
+
+        args = [
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",
+            "--disable-infobars",
+            "--disable-dev-shm-usage",
+            "--lang=es-MX,es;q=0.9,en-US;q=0.8,en;q=0.7",
+        ]
+
+        # Cloudflare Evasion: Never run headless=True on Mercado Libre. Position window offscreen when stealth mode is requested.
+        is_headless = False
+        if self.headless and not force_visible:
+            args.extend(["--window-position=-2400,-2400", "--window-size=1366,850"])
+        elif force_visible:
+            args.extend([f"--window-position={window_pos[0]},{window_pos[1]}", f"--window-size={window_size[0]},{window_size[1]}"])
+
+        kwargs = {
+            "user_data_dir": self.profile_dir,
+            "headless": is_headless,
+            "args": args,
+            "viewport": {"width": window_size[0] if force_visible else 1366, "height": window_size[1] if force_visible else 850},
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "locale": "es-MX",
+            "timezone_id": "America/Mexico_City",
+        }
+        if edge_path:
+            kwargs["executable_path"] = edge_path
+
+        try:
+            self._context = self._pw.chromium.launch_persistent_context(**kwargs)
+        except Exception as e:
+            logger.warning(f"Persistent context launch retry after process cleanup: {e}")
             self._clean_profile_locks()
-            if self._pw is None:
-                self._pw = sync_playwright().start()
-            edge_path = self._find_edge_path()
-
-            args = [
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-infobars",
-                "--disable-dev-shm-usage",
-                "--lang=es-MX,es;q=0.9,en-US;q=0.8,en;q=0.7",
-            ]
-
-            # Cloudflare Evasion: Never run headless=True on Mercado Libre. Position window offscreen when stealth mode is requested.
-            is_headless = False
-            if self.headless and not force_visible:
-                args.extend(["--window-position=-2400,-2400", "--window-size=1366,850"])
-            elif force_visible:
-                args.extend([f"--window-position={window_pos[0]},{window_pos[1]}", f"--window-size={window_size[0]},{window_size[1]}"])
-
-            kwargs = {
-                "user_data_dir": self.profile_dir,
-                "headless": is_headless,
-                "args": args,
-                "viewport": {"width": window_size[0] if force_visible else 1366, "height": window_size[1] if force_visible else 850},
-                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                "locale": "es-MX",
-                "timezone_id": "America/Mexico_City",
-            }
-            if edge_path:
-                kwargs["executable_path"] = edge_path
-
-            try:
-                self._context = self._pw.chromium.launch_persistent_context(**kwargs)
-            except Exception as e:
-                logger.warning(f"Persistent context launch retry after process cleanup: {e}")
-                self._clean_profile_locks()
-                time.sleep(0.6)
-                self._context = self._pw.chromium.launch_persistent_context(**kwargs)
+            time.sleep(0.6)
+            self._context = self._pw.chromium.launch_persistent_context(**kwargs)
 
         return self._context
 

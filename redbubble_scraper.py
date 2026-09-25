@@ -96,6 +96,16 @@ class RedbubbleScraper:
 
         return self._context
 
+    def set_headless(self, is_headless: bool, shift_active_window: bool = True):
+        """Dynamically update headless mode. If persistent context is open and mode changed, reset context."""
+        old = self.headless
+        self.headless = is_headless
+        if self._context and old != is_headless:
+            try:
+                self.close()
+            except Exception:
+                pass
+
     def close(self):
         """Cleanly close persistent browser context."""
         try:

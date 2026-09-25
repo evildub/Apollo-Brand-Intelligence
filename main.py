@@ -17,7 +17,7 @@ from PIL import Image, ImageTk
 import ctypes
 
 logger = logging.getLogger("Apollo")
-APP_VERSION = "3.3.0"
+APP_VERSION = "3.3.1"
 VERSION = APP_VERSION
 
 from scraper import EbayScraper
@@ -76,6 +76,53 @@ THEMES = {
         "btn_normal_fg": "#FFFFFF",
         "select_bg": "#0044FF",
         "select_fg": "#FFFFFF",
+    },
+    "origin_platinum": {
+        "name": "🏛 Origin Platinum",
+        "is_light": True,
+        "bg": "#f0f0f0",
+        "panel": "#ffffff",
+        "entry_bg": "#ffffff",
+        "text": "#000227",
+        "subtext": "#7c8fa3",
+        "accent": "#0044ff",
+        "accent2": "#347bb7",
+        "border": "#8b8b8b",
+        "scrollbar_thumb": "#8b8b8b",
+        "scrollbar_trough": "#f0f0f0",
+        "success": "#10B981",
+        "warning": "#F59E0B",
+        "danger": "#EF4444",
+        "btn_normal_bg": "#f3f3f3",
+        "btn_normal_fg": "#000227",
+        "btn_accent_fg": "#ffffff",
+        "btn_danger_fg": "#000000",
+        "btn_danger_disabled_fg": "#000000",
+        "select_bg": "#0044ff",
+        "select_fg": "#ffffff",
+    },
+    "origin_midnight": {
+        "name": "🌌 Origin Midnight",
+        "bg": "#000227",
+        "panel": "#0c1033",
+        "entry_bg": "#05071f",
+        "text": "#ffffff",
+        "subtext": "#7c8fa3",
+        "accent": "#0044ff",
+        "accent2": "#347bb7",
+        "border": "#253158",
+        "scrollbar_thumb": "#347bb7",
+        "scrollbar_trough": "#05071f",
+        "success": "#10B981",
+        "warning": "#F59E0B",
+        "danger": "#EF4444",
+        "btn_normal_bg": "#0f1642",
+        "btn_normal_fg": "#ffffff",
+        "btn_accent_fg": "#ffffff",
+        "btn_danger_fg": "#000000",
+        "btn_danger_disabled_fg": "#000000",
+        "select_bg": "#0044ff",
+        "select_fg": "#ffffff",
     },
     "midnight": {
         "name": "🌌 Midnight Slate",
@@ -271,6 +318,8 @@ THEMES = {
         "text": "#F2F4F8",
         "subtext": "#8C93A3",
         "border": "#2E3342",
+        "scrollbar_thumb": "#46516A",
+        "scrollbar_trough": "#0B0D13",
         "btn_normal_bg": "#12141A",
         "btn_normal_fg": "#D4AF37",
         "btn_accent_fg": "#0A0B0E",
@@ -592,6 +641,8 @@ THEME_QUOTES = {
 
 THEME_SUBHEADERS = {
     "apollo_exec": "☀ The Light • Clarity • Precision",
+    "origin_platinum": "🏛 ORIGIN PLATINUM — EXECUTIVE ENTERPRISE BRAND INTELLIGENCE",
+    "origin_midnight": "🌌 ORIGIN MIDNIGHT — DEEP SURVEILLANCE & THREAT HARVESTING",
     "aether_horizon": "🌌 AETHER NEURAL HORIZON — PURE INTENT • RELENTLESS EXECUTION",
     "continental": "🪙 THE CONTINENTAL — HIGH TABLE EXCOMMUNICADO & SYNDICATE ELIMINATION SUITE",
     "honey_badger": "🦡 HONEY BADGER INTEL — FEARLESS TAKEDOWNS & UNRELENTING RECON",
@@ -1003,6 +1054,7 @@ class EbayTool(tk.Tk):
                                          state="readonly", width=19, font=FONT_SM)
         self.market_combo.pack(side="left", padx=(0, 4))
         self.market_combo.bind("<<ComboboxSelected>>", self._on_market_changed)
+        self.marketplace_var.trace_add("write", lambda *a: self.after_idle(self._on_market_changed))
 
         # eBay Regional Locale & Reverse Sweep Controls (packed by default for eBay)
         self.ebay_country_var = tk.StringVar(value="🇺🇸 United States (ebay.com)")
@@ -1324,6 +1376,16 @@ class EbayTool(tk.Tk):
 
         self.btn_guide = self._btn(top_right, "💡 Help & Guide", self._open_analyst_guide_modal, accent=False)
         self.btn_guide.pack(side="left", padx=(0, 4))
+
+        # Quick-toggle Stealth / Visible browser button in top bar
+        is_hl = self.headless_var.get()
+        self.stealth_quick_btn = self._btn(
+            top_right,
+            "👻 Stealth" if is_hl else "🖥 Visible",
+            self._toggle_headless_quick,
+            accent=not is_hl
+        )
+        self.stealth_quick_btn.pack(side="left", padx=(0, 2))
 
         # ── Unified Settings ▾ Menubutton ──
         self.settings_mb = tk.Menubutton(
@@ -2205,7 +2267,7 @@ class EbayTool(tk.Tk):
     def _apply_full_theme(self):
         t = self.theme
         self.configure(bg=t["bg"])
-        is_bright = t.get("name", "").startswith("⚡") or t.get("name", "").startswith("🪙")
+        is_bright = t.get("is_light", False) or t.get("name", "").startswith("⚡") or t.get("name", "").startswith("🪙")
 
         # 1. Background frames
         for f in self.themed_widgets["bg_frames"]:
@@ -2301,7 +2363,10 @@ class EbayTool(tk.Tk):
 
         # 9. Danger Buttons
         for btn in self.themed_widgets["danger_btns"]:
-            try: btn.configure(bg=t["danger"], fg="white", activebackground=t["danger"])
+            try:
+                d_fg = t.get("btn_danger_fg", "#000000")
+                d_dis_fg = t.get("btn_danger_disabled_fg", "#000000")
+                btn.configure(bg=t["danger"], fg=d_fg, disabledforeground=d_dis_fg, activebackground=t["danger"])
             except Exception: pass
 
         # 10. Normal Buttons
@@ -2320,8 +2385,18 @@ class EbayTool(tk.Tk):
 
         for m in (getattr(self, "settings_menu", None), getattr(self, "col_menu", None), getattr(self, "theme_menu", None)):
             if m:
-                try: m.configure(bg=t["panel"], fg=t["text"], selectcolor=t["accent"], activebackground=t["accent"], activeforeground="black" if is_bright else "white")
+                try: m.configure(bg=t["panel"], fg=t["text"], selectcolor=t["accent"], activebackground=t["accent"], activeforeground=t.get("select_fg", "black" if is_bright else "white"))
                 except Exception: pass
+
+        if hasattr(self, "stealth_quick_btn") and self.stealth_quick_btn.winfo_exists():
+            try:
+                is_headless = self.headless_var.get()
+                self.stealth_quick_btn.configure(
+                    text="👻 Stealth" if is_headless else "🖥 Visible",
+                    bg=t["panel"] if is_headless else t["accent"],
+                    fg=t["text"] if is_headless else t.get("btn_accent_fg", "black" if is_bright else "white")
+                )
+            except Exception: pass
 
         # 12. Exclusion & Inclusion canvas & inner
         try:
@@ -3308,7 +3383,7 @@ class EbayTool(tk.Tk):
             active_bg = t["accent2"]
         elif danger:
             bg = t["danger"]
-            fg = "white"
+            fg = t.get("btn_danger_fg", "#000000")
             active_bg = t["danger"]
         else:
             bg = t["btn_normal_bg"]
@@ -3318,9 +3393,10 @@ class EbayTool(tk.Tk):
         font = kwargs.pop("font", FONT_SM)
         padx = kwargs.pop("padx", 8)
         pady = kwargs.pop("pady", 3)
+        dis_fg = kwargs.pop("disabledforeground", "#000000" if danger else t.get("subtext", "#a3a3a3"))
 
         btn = tk.Button(parent, text=text, command=cmd,
-                        bg=bg, fg=fg, relief="flat",
+                        bg=bg, fg=fg, disabledforeground=dis_fg, relief="flat",
                         font=font, padx=padx, pady=pady,
                         activebackground=active_bg, cursor="hand2", **kwargs)
 
@@ -3382,60 +3458,55 @@ class EbayTool(tk.Tk):
                         background=t["accent"],
                         troughcolor=t["entry_bg"])
 
-        # Scrollbar styles (Flat, unified, zero white highlights or blurred grip bars)
-        style.configure("TScrollbar",
-                        background=t["panel"],
-                        troughcolor=t["entry_bg"],
-                        bordercolor=t["border"],
-                        darkcolor=t["panel"],
-                        lightcolor=t["panel"],
-                        arrowcolor=t["accent"],
-                        gripcount=0,
-                        relief="flat")
-        style.map("TScrollbar",
-                  background=[("active", t["accent"]), ("pressed", t.get("accent2", t["accent"]))],
-                  darkcolor=[("active", t["panel"]), ("pressed", t["panel"])],
-                  lightcolor=[("active", t["panel"]), ("pressed", t["panel"])],
-                  bordercolor=[("active", t["border"]), ("pressed", t["border"])])
+        # Scrollbar styles (High-contrast, display-adaptive visibility for office/work monitors)
+        sb_trough = t.get("scrollbar_trough", t.get("entry_bg", t.get("bg", "#0a0a0f")))
+        sb_thumb = t.get("scrollbar_thumb")
+        if not sb_thumb:
+            border_col = t.get("border", "#3a3f50")
+            try:
+                c = border_col.lstrip("#")
+                r, g, b = int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+                if (r + g + b) < 180:
+                    r = min(255, int(r * 1.5) + 30)
+                    g = min(255, int(g * 1.5) + 30)
+                    b = min(255, int(b * 1.5) + 35)
+                    sb_thumb = f"#{r:02x}{g:02x}{b:02x}"
+                else:
+                    sb_thumb = border_col
+            except Exception:
+                sb_thumb = "#475266"
 
-        style.configure("Vertical.TScrollbar",
-                        background=t["panel"],
-                        troughcolor=t["entry_bg"],
-                        bordercolor=t["border"],
-                        darkcolor=t["panel"],
-                        lightcolor=t["panel"],
-                        arrowcolor=t["accent"],
-                        gripcount=0,
-                        relief="flat")
-        style.map("Vertical.TScrollbar",
-                  background=[("active", t["accent"]), ("pressed", t.get("accent2", t["accent"]))],
-                  darkcolor=[("active", t["panel"]), ("pressed", t["panel"])],
-                  lightcolor=[("active", t["panel"]), ("pressed", t["panel"])],
-                  bordercolor=[("active", t["border"]), ("pressed", t["border"])])
+        sb_border = t.get("scrollbar_border", t.get("border", sb_thumb))
+        sb_arrow = t.get("accent", t.get("text", "#ffffff"))
 
-        style.configure("Horizontal.TScrollbar",
-                        background=t["panel"],
-                        troughcolor=t["entry_bg"],
-                        bordercolor=t["border"],
-                        darkcolor=t["panel"],
-                        lightcolor=t["panel"],
-                        arrowcolor=t["accent"],
-                        gripcount=0,
-                        relief="flat")
-        style.map("Horizontal.TScrollbar",
-                  background=[("active", t["accent"]), ("pressed", t.get("accent2", t["accent"]))],
-                  darkcolor=[("active", t["panel"]), ("pressed", t["panel"])],
-                  lightcolor=[("active", t["panel"]), ("pressed", t["panel"])],
-                  bordercolor=[("active", t["border"]), ("pressed", t["border"])])
+        for sb_name in ("TScrollbar", "Vertical.TScrollbar", "Horizontal.TScrollbar"):
+            style.configure(sb_name,
+                            background=sb_thumb,
+                            troughcolor=sb_trough,
+                            bordercolor=sb_border,
+                            darkcolor=sb_thumb,
+                            lightcolor=sb_thumb,
+                            arrowcolor=sb_arrow,
+                            arrowsize=14,
+                            gripcount=0,
+                            relief="flat")
+            style.map(sb_name,
+                      background=[("active", t["accent"]), ("pressed", t.get("accent2", t["accent"]))],
+                      darkcolor=[("active", t["accent"]), ("pressed", t.get("accent2", t["accent"]))],
+                      lightcolor=[("active", t["accent"]), ("pressed", t.get("accent2", t["accent"]))],
+                      bordercolor=[("active", t["accent"]), ("pressed", t.get("accent2", t["accent"]))],
+                      arrowcolor=[("active", t.get("btn_accent_fg", "black" if (t.get("name", "").startswith("⚡") or t.get("name", "").startswith("🪙")) else "white")),
+                                  ("pressed", t.get("btn_accent_fg", "black" if (t.get("name", "").startswith("⚡") or t.get("name", "").startswith("🪙")) else "white"))])
 
         # Combobox style
-        is_bright = t.get("name", "").startswith("⚡") or t.get("name", "").startswith("🪙")
+        is_bright = t.get("is_light", False) or t.get("name", "").startswith("⚡") or t.get("name", "").startswith("🪙")
+        combo_sel_fg = t.get("select_fg", t.get("btn_accent_fg", "black" if is_bright else "white"))
         style.configure("TCombobox",
                         fieldbackground=t["entry_bg"],
                         background=t["panel"],
                         foreground=t["text"],
                         selectbackground=t["accent"],
-                        selectforeground="black" if is_bright else "white",
+                        selectforeground=combo_sel_fg,
                         bordercolor=t["border"],
                         darkcolor=t["border"],
                         lightcolor=t["border"],
@@ -3443,7 +3514,7 @@ class EbayTool(tk.Tk):
         style.map("TCombobox",
                   fieldbackground=[("readonly", t["entry_bg"]), ("active", t["entry_bg"]), ("focus", t["entry_bg"])],
                   selectbackground=[("readonly", t["accent"]), ("active", t["accent"]), ("focus", t["accent"])],
-                  selectforeground=[("readonly", "black" if is_bright else "white"), ("active", "black" if is_bright else "white")],
+                  selectforeground=[("readonly", combo_sel_fg), ("active", combo_sel_fg)],
                   background=[("readonly", t["panel"]), ("active", t["panel"]), ("focus", t["panel"])],
                   foreground=[("readonly", t["text"]), ("active", t["text"]), ("focus", t["text"])],
                   bordercolor=[("readonly", t["border"]), ("active", t["accent"]), ("focus", t["accent"])],
@@ -3500,8 +3571,8 @@ class EbayTool(tk.Tk):
     def _update_combobox_popdowns(self):
         """Dynamically re-theme all ttk.Combobox dropdown popdown listboxes and option database."""
         t = self.theme
-        is_bright = t.get("name", "").startswith("⚡") or t.get("name", "").startswith("🪙")
-        sel_fg = "black" if is_bright else "white"
+        is_bright = t.get("is_light", False) or t.get("name", "").startswith("⚡") or t.get("name", "").startswith("🪙")
+        sel_fg = t.get("select_fg", t.get("btn_accent_fg", "black" if is_bright else "white"))
 
         # 1. Global Tk option database for dropdown popup listboxes (Tkinter TCombobox popdown)
         try:
@@ -5036,7 +5107,7 @@ class EbayTool(tk.Tk):
 
         t = self.theme
         self.run_btn.config(state="disabled")
-        self.pause_btn.config(state="normal", text="⏸  Pause", bg=t["btn_normal_bg"])
+        self.pause_btn.config(state="normal", text="⏸  Pause", bg=t["btn_normal_bg"], fg=t["btn_normal_fg"])
         self.stop_btn.config(state="normal")
         if hasattr(self, "dedup_q_btn"):
             self.dedup_q_btn.config(state="disabled")
@@ -5066,14 +5137,15 @@ class EbayTool(tk.Tk):
         if self.paused:
             self.paused = False
             self.pause_event.set()
-            self.pause_btn.config(text="⏸  Pause", bg=t["btn_normal_bg"])
+            self.pause_btn.config(text="⏸  Pause", bg=t["btn_normal_bg"], fg=t["btn_normal_fg"])
             self._status("Resumed search...")
             self._log("▶ Search resumed.")
             self.progress.start()
         else:
             self.paused = True
             self.pause_event.clear()
-            self.pause_btn.config(text="▶  Resume", bg=t["accent"])
+            acc_fg = t.get("btn_accent_fg", "black" if (t.get("name", "").startswith("⚡") or t.get("name", "").startswith("🪙")) else "white")
+            self.pause_btn.config(text="▶  Resume", bg=t["accent"], fg=acc_fg)
             self._status("Paused. Click 'Resume' to continue.")
             self._log("⏸ Search paused by user.")
             self.progress.stop()
@@ -5091,30 +5163,15 @@ class EbayTool(tk.Tk):
                 pass
 
     def _process_queue(self, is_headless=True, default_mkt="eBay", meli_c="Mexico", meli_d="2 Pages (100)", vinted_c="United Kingdom", vinted_d="2 Pages (192)", ali_d="3 Pages (180)"):
-        # Ensure scrapers honor current headless background mode
-        self.scraper.headless = is_headless
-        self.aliexpress_scraper.headless = is_headless
-        self.wish_scraper.headless = is_headless
-        self.temu_scraper.headless = is_headless
-        self.mercadolibre_scraper.headless = is_headless
-        self.redbubble_scraper.headless = is_headless
-        self.printerval_scraper.headless = is_headless
-        self.printblur_scraper.headless = is_headless
-        self.vinted_scraper.headless = is_headless
-        self.manomano_scraper.headless = is_headless
-        self.teepublic_scraper.headless = is_headless
-        self.etsy_scraper.headless = is_headless
-        self.spreadshirt_scraper.headless = is_headless
-        self.zazzle_scraper.headless = is_headless
-        self.cafepress_scraper.headless = is_headless
-        self.threadless_scraper.headless = is_headless
-        self.teespring_scraper.headless = is_headless
-        self.fineartamerica_scraper.headless = is_headless
+        # Ensure all scrapers honor current headless background mode
+        self._sync_scraper_headless_mode(dynamic_window_shift=False)
 
         total_new_items = 0
         total_initial_jobs = len(self.queue)
         job_idx = 0
         while self.queue and not self.stop_event.is_set():
+            # Live synchronization: Check and apply latest headless setting before starting each job
+            self._sync_scraper_headless_mode(dynamic_window_shift=False)
             job = self.queue[0]
             job_idx += 1
 
@@ -5260,6 +5317,8 @@ class EbayTool(tk.Tk):
                     if self.stop_event.is_set():
                         break
                     self.pause_event.wait()
+                    # Live synchronization: Check and apply latest headless setting before each search term
+                    self._sync_scraper_headless_mode(dynamic_window_shift=False)
 
                     actual_term = "" if include_term == "*" else include_term
                     term_display = "🏪 Full Store Inventory" if include_term == "*" else f"'{include_term}'"
@@ -5325,7 +5384,6 @@ class EbayTool(tk.Tk):
                             max_pages=ali_pages
                         )
                     elif is_meli:
-                        self.mercadolibre_scraper.headless = is_headless
                         selected_c = job.get("meli_country", meli_c)
                         depth_str = job.get("meli_depth", meli_d)
                         m_pages_match = re.search(r'(\d+)\s+Page', depth_str, re.IGNORECASE)
@@ -5369,7 +5427,6 @@ class EbayTool(tk.Tk):
                             reg_domain = REGIONAL_DOMAINS.get(target_code, {}).get("domain", "listado.mercadolibre.com.mx")
                             job_record["url"] = f"https://{reg_domain}/{actual_term.replace(' ', '-')}"
                     elif is_redbubble:
-                        self.redbubble_scraper.headless = is_headless
                         rb_max = 100
                         rb_depth_raw = job.get("rb_depth") or (self.rb_depth_var.get() if hasattr(self, "rb_depth_var") else "100")
                         m = re.search(r'\((\d+)\)', rb_depth_raw) or re.search(r'(\d+)', rb_depth_raw)
@@ -5384,7 +5441,6 @@ class EbayTool(tk.Tk):
                         )
                         job_record["url"] = f"https://www.redbubble.com/shop/?query={actual_term.replace(' ', '+')}"
                     elif is_printerval:
-                        self.printerval_scraper.headless = is_headless
                         pv_max = 100
                         pv_depth_raw = job.get("pv_depth") or (self.pv_depth_var.get() if hasattr(self, "pv_depth_var") else "100")
                         m = re.search(r'\((\d+)\)', pv_depth_raw) or re.search(r'(\d+)', pv_depth_raw)
@@ -5399,7 +5455,6 @@ class EbayTool(tk.Tk):
                         )
                         job_record["url"] = f"https://printerval.com/search?q={actual_term.replace(' ', '+')}"
                     elif is_printblur:
-                        self.printblur_scraper.headless = is_headless
                         pb_max = 100
                         pb_depth_raw = job.get("pb_depth") or (self.pb_depth_var.get() if hasattr(self, "pb_depth_var") else "100")
                         m = re.search(r'\((\d+)\)', pb_depth_raw) or re.search(r'(\d+)', pb_depth_raw)
@@ -5410,11 +5465,11 @@ class EbayTool(tk.Tk):
                             actual_term,
                             max_items=pb_max,
                             condition=job.get("condition", "all"),
+                            stop_event=self.stop_event,
                             log_callback=self._log
                         )
                         job_record["url"] = f"https://printblur.com/search?interest={actual_term.replace(' ', '+')}"
                     elif is_vinted:
-                        self.vinted_scraper.headless = is_headless
                         target_terms = [actual_term] if actual_term else ([job["brand"]] if job.get("brand") else [])
                         job_v_depth = job.get("vinted_depth") or vinted_d
                         job_v_country = job.get("vinted_country") or vinted_c
@@ -5480,7 +5535,6 @@ class EbayTool(tk.Tk):
                         dom_ext = "fr" if clean_loc == "France" else ("es" if clean_loc == "Spain" else ("de" if clean_loc == "Germany" else ("it" if clean_loc == "Italy" else ("co.uk" if clean_loc == "United Kingdom" else "fr"))))
                         job_record["url"] = f"https://www.manomano.{dom_ext}/recherche/{actual_term.replace(' ', '+')}"
                     elif is_scribd:
-                        self.scribd_scraper.headless = is_headless
                         sc_pages = 2
                         if hasattr(self, "scribd_depth_var"):
                             m = re.search(r'(\d+)\s+Page', self.scribd_depth_var.get())
@@ -5508,7 +5562,6 @@ class EbayTool(tk.Tk):
                         )
                         job_record["url"] = f"https://www.scribd.com/search?content_type=documents&query={actual_term.replace(' ', '+')}"
                     elif is_tiktok:
-                        self.tiktok_scraper.headless = is_headless
                         tt_pages = 2
                         tt_depth_raw = job.get("tiktok_depth") or (self.tiktok_depth_var.get() if hasattr(self, "tiktok_depth_var") else "2 Pages (100)")
                         m = re.search(r'(\d+)\s+Page', tt_depth_raw, re.IGNORECASE) or re.search(r'\((\d+)\)', tt_depth_raw)
@@ -5527,7 +5580,6 @@ class EbayTool(tk.Tk):
                         )
                         job_record["url"] = f"https://shop.tiktok.com/us/search?q={actual_term.replace(' ', '+')}"
                     elif is_teepublic:
-                        self.teepublic_scraper.headless = is_headless
                         tp_pages = 2
                         if hasattr(self, "tp_depth_var"):
                             m = re.search(r'(\d+)\s+Page', self.tp_depth_var.get())
@@ -5543,7 +5595,6 @@ class EbayTool(tk.Tk):
                         )
                         job_record["url"] = f"https://www.teepublic.com/t-shirts?query={actual_term.replace(' ', '+')}"
                     elif is_etsy:
-                        self.etsy_scraper.headless = is_headless
                         etsy_pages = 2
                         if hasattr(self, "etsy_depth_var"):
                             m = re.search(r'(\d+)\s+Page', self.etsy_depth_var.get())
@@ -5560,7 +5611,6 @@ class EbayTool(tk.Tk):
                         )
                         job_record["url"] = f"https://www.etsy.com/search?q={actual_term.replace(' ', '+')}"
                     elif is_spreadshirt:
-                        self.spreadshirt_scraper.headless = is_headless
                         sp_pages = 2
                         if hasattr(self, "spreadshirt_depth_var"):
                             m = re.search(r'(\d+)\s+Page', self.spreadshirt_depth_var.get())
@@ -5576,7 +5626,6 @@ class EbayTool(tk.Tk):
                         )
                         job_record["url"] = f"https://www.spreadshirt.com/shop/{actual_term.replace(' ', '+')}/"
                     elif is_zazzle:
-                        self.zazzle_scraper.headless = is_headless
                         z_pages = 2
                         if hasattr(self, "zazzle_depth_var"):
                             m = re.search(r'(\d+)\s+Page', self.zazzle_depth_var.get())
@@ -5592,7 +5641,6 @@ class EbayTool(tk.Tk):
                         )
                         job_record["url"] = f"https://www.zazzle.com/s/{actual_term.replace(' ', '+')}"
                     elif is_cafepress:
-                        self.cafepress_scraper.headless = is_headless
                         cp_pages = 2
                         if hasattr(self, "cafepress_depth_var"):
                             m = re.search(r'(\d+)\s+Page', self.cafepress_depth_var.get())
@@ -5608,7 +5656,6 @@ class EbayTool(tk.Tk):
                         )
                         job_record["url"] = f"https://www.cafepress.com/+{actual_term.replace(' ', '+')}"
                     elif is_threadless:
-                        self.threadless_scraper.headless = is_headless
                         th_pages = 2
                         if hasattr(self, "threadless_depth_var"):
                             m = re.search(r'(\d+)\s+Page', self.threadless_depth_var.get())
@@ -5624,7 +5671,6 @@ class EbayTool(tk.Tk):
                         )
                         job_record["url"] = f"https://www.threadless.com/search/?q={actual_term.replace(' ', '+')}"
                     elif is_teespring:
-                        self.teespring_scraper.headless = is_headless
                         ts_pages = 2
                         if hasattr(self, "teespring_depth_var"):
                             m = re.search(r'(\d+)\s+Page', self.teespring_depth_var.get())
@@ -5640,7 +5686,6 @@ class EbayTool(tk.Tk):
                         )
                         job_record["url"] = f"https://spring.com/search?q={actual_term.replace(' ', '+')}"
                     elif is_faa:
-                        self.fineartamerica_scraper.headless = is_headless
                         faa_pages = 2
                         if hasattr(self, "fineartamerica_depth_var"):
                             m = re.search(r'(\d+)\s+Page', self.fineartamerica_depth_var.get())
@@ -5892,7 +5937,7 @@ class EbayTool(tk.Tk):
         self.progress.stop()
 
         self.run_btn.config(state="normal")
-        self.pause_btn.config(state="disabled", text="⏸  Pause", bg=t["btn_normal_bg"])
+        self.pause_btn.config(state="disabled", text="⏸  Pause", bg=t["btn_normal_bg"], fg=t["btn_normal_fg"])
         self.stop_btn.config(state="disabled")
         if hasattr(self, "dedup_q_btn"):
             self.dedup_q_btn.config(state="normal")
@@ -5928,7 +5973,8 @@ class EbayTool(tk.Tk):
     def _update_pause_ui_state(self):
         t = self.theme
         if self.paused:
-            self.pause_btn.config(text="▶  Resume", bg=t["success"], fg="#FFFFFF")
+            acc_fg = t.get("btn_accent_fg", "black" if (t.get("name", "").startswith("⚡") or t.get("name", "").startswith("🪙")) else "white")
+            self.pause_btn.config(text="▶  Resume", bg=t["accent"], fg=acc_fg)
             self.progress.stop()
         else:
             self.pause_btn.config(text="⏸  Pause", bg=t["btn_normal_bg"], fg=t["btn_normal_fg"])
@@ -8334,7 +8380,187 @@ class EbayTool(tk.Tk):
                 if hasattr(self, "progress"):
                     self.after(0, lambda: self.progress.stop())
 
-        threading.Thread(target=_worker, daemon=True).start()
+    def _detect_item_marketplace(self, it: dict) -> str:
+        """
+        Identify canonical marketplace platform from item metadata, URL domain, or item ID structure.
+        Returns one of: 'mercadolibre', 'ebay', 'aliexpress', 'temu', 'wish', 'tiktok',
+        'printerval', 'printblur', 'redbubble', 'teepublic', 'spreadshirt', 'zazzle',
+        'cafepress', 'scribd', 'teespring', 'threadless', 'fineartamerica', 'vinted', 'manomano', or 'unknown'.
+        """
+        if not it:
+            return "unknown"
+        mkt = str(it.get("marketplace", "")).strip().lower()
+        url = str(it.get("url", "")).strip().lower()
+        iid = str(it.get("item_id", "")).strip()
+
+        # 1. Mercado Libre & Regional Domains
+        if any(k in mkt or k in url for k in ("mercadolibre", "mercadolivre", "mercado", "meli")) or iid.startswith("ML"):
+            return "mercadolibre"
+
+        # 2. eBay
+        if "ebay" in mkt or "ebay" in url or "/itm/" in url:
+            return "ebay"
+
+        # 3. AliExpress
+        if "aliexpress" in mkt or "aliexpress" in url or mkt == "ali":
+            return "aliexpress"
+
+        # 4. Temu
+        if "temu" in mkt or "temu" in url:
+            return "temu"
+
+        # 5. Wish
+        if "wish" in mkt or "wish.com" in url:
+            return "wish"
+
+        # 6. TikTok
+        if "tiktok" in mkt or "tiktok" in url:
+            return "tiktok"
+
+        # 7. Printblur
+        if "printblur" in mkt or "printblur" in url:
+            return "printblur"
+
+        # 8. Printerval
+        if "printerval" in mkt or "printerval" in url:
+            return "printerval"
+
+        # 9. Redbubble
+        if "redbubble" in mkt or "redbubble" in url:
+            return "redbubble"
+
+        # 10. TeePublic
+        if "teepublic" in mkt or "teepublic" in url:
+            return "teepublic"
+
+        # 11. Spreadshirt
+        if "spreadshirt" in mkt or "spreadshirt" in url or "spreadshop" in url:
+            return "spreadshirt"
+
+        # 12. Zazzle
+        if "zazzle" in mkt or "zazzle" in url:
+            return "zazzle"
+
+        # 13. CafePress
+        if "cafepress" in mkt or "cafepress" in url:
+            return "cafepress"
+
+        # 14. Scribd
+        if "scribd" in mkt or "scribd" in url:
+            return "scribd"
+
+        # 15. TeeSpring
+        if any(k in mkt or k in url for k in ("teespring", "spring.com", "creator-spring")):
+            return "teespring"
+
+        # 16. Threadless
+        if "threadless" in mkt or "threadless" in url:
+            return "threadless"
+
+        # 17. Fine Art America
+        if any(k in mkt or k in url for k in ("fineartamerica", "pixels.com")):
+            return "fineartamerica"
+
+        # 18. Vinted
+        if "vinted" in mkt or "vinted" in url:
+            return "vinted"
+
+        # 19. ManoMano
+        if "manomano" in mkt or "manomano" in url:
+            return "manomano"
+
+        return mkt or "unknown"
+
+    def _propagate_enriched_seller(self, item: dict, s_name: str) -> int:
+        """
+        Auto-update sibling listings in current results that share the same store/seller
+        or identical standalone item URL/ID across Mercado Libre, eBay, AliExpress, etc.
+        Returns the number of sibling items updated.
+        """
+        s_name_clean = str(s_name).strip()
+        if not s_name_clean:
+            return 0
+
+        GENERIC_SELLER_PLACEHOLDERS = (
+            "ebay seller", "unknown", "resolving...", "global search", "aliexpress global",
+            "printerval creator", "printerval seller", "printblur creator", "printblur seller",
+            "mercado libre seller", "mercado libre merchant", "tiktok shop merchant",
+            "tiktok seller", "redbubble artist", "vinted user", "meli_seller_",
+            "ir para", "ir a la", "pagina do vendedor", "página do vendedor",
+            "ver más", "ver mais", "generic", "artist", "creator"
+        )
+        if any(g in s_name_clean.lower() for g in GENERIC_SELLER_PLACEHOLDERS):
+            return 0
+
+        item["seller"] = s_name_clean
+        store_id = str(item.get("store_id", "")).strip()
+        store_url = str(item.get("store_url", "")).strip()
+        seller_origin = item.get("seller_origin")
+        location = item.get("location")
+        business_entity = item.get("business_entity")
+        threat_badge = item.get("threat_badge")
+        threat_score = item.get("threat_score")
+        item_url_norm = str(item.get("url", "")).split("?")[0].strip().lower()
+        item_id_val = str(item.get("item_id", "")).strip()
+        is_catalog_item = "/p/" in item_url_norm
+
+        updated_count = 0
+        for other in self.results:
+            if other is item:
+                continue
+            is_match = False
+            other_url_norm = str(other.get("url", "")).split("?")[0].strip().lower()
+            other_id_val = str(other.get("item_id", "")).strip()
+
+            if store_id and str(other.get("store_id", "")).strip() == store_id:
+                is_match = True
+            elif store_url and str(other.get("store_url", "")).strip() == store_url:
+                is_match = True
+            elif not is_match and item.get("url") and other.get("url"):
+                u1, u2 = str(item.get("url", "")).lower(), str(other.get("url", "")).lower()
+                if "/pagina/" in u1 and "/pagina/" in u2:
+                    p1 = u1.split("/pagina/")[1].split("?")[0].split("/")[0]
+                    p2 = u2.split("/pagina/")[1].split("?")[0].split("/")[0]
+                    if p1 and p1 == p2:
+                        is_match = True
+                elif "/loja/" in u1 and "/loja/" in u2:
+                    l1 = u1.split("/loja/")[1].split("?")[0].split("/")[0]
+                    l2 = u2.split("/loja/")[1].split("?")[0].split("/")[0]
+                    if l1 and l1 == l2:
+                        is_match = True
+                elif "_custid_" in u1 and "_custid_" in u2:
+                    c1 = u1.split("_custid_")[1].split("?")[0].split("&")[0]
+                    c2 = u2.split("_custid_")[1].split("?")[0].split("&")[0]
+                    if c1 and c1 == c2:
+                        is_match = True
+            elif not is_catalog_item:
+                if item_url_norm and other_url_norm and item_url_norm == other_url_norm:
+                    is_match = True
+                elif item_id_val and other_id_val and item_id_val == other_id_val:
+                    is_match = True
+
+            if is_match:
+                other["seller"] = s_name_clean
+                if seller_origin and not other.get("seller_origin"):
+                    other["seller_origin"] = seller_origin
+                if location and not other.get("location"):
+                    other["location"] = location
+                if business_entity and not other.get("business_entity"):
+                    other["business_entity"] = business_entity
+                if threat_badge:
+                    other["threat_badge"] = threat_badge
+                if threat_score:
+                    other["threat_score"] = threat_score
+                if hasattr(self, "data_store"):
+                    try: self.data_store.add_or_update_listing(other)
+                    except Exception: pass
+                updated_count += 1
+
+        if hasattr(self, "data_store"):
+            try: self.data_store.add_or_update_listing(item)
+            except Exception: pass
+
+        return updated_count
 
     def _enrich_sellers(self):
         """Enrich real seller/merchant/store names across AliExpress, Wish, Temu, and Printerval listings."""
@@ -8428,11 +8654,7 @@ class EbayTool(tk.Tk):
             (_match(["teepublic"]), "teepublic_scraper", "enrich_seller_info"),
         ]
 
-        is_headless = self.headless_var.get()
-        for _, s_attr, _ in enrichment_registry:
-            s_inst = getattr(self, s_attr, None)
-            if s_inst and hasattr(s_inst, "headless"):
-                s_inst.headless = is_headless
+        self._sync_scraper_headless_mode(dynamic_window_shift=False)
 
         self._log(f"🏪 Starting Seller Name Enrichment for {len(target_items)} item(s)...")
         self._status(f"🏪 Enriching {len(target_items)} sellers...")
@@ -8626,15 +8848,7 @@ class EbayTool(tk.Tk):
         ):
             return
 
-        is_headless = self.headless_var.get()
-        self.printerval_scraper.headless = is_headless
-        self.printblur_scraper.headless = is_headless
-        self.spreadshirt_scraper.headless = is_headless
-        self.zazzle_scraper.headless = is_headless
-        self.cafepress_scraper.headless = is_headless
-        self.threadless_scraper.headless = is_headless
-        self.teespring_scraper.headless = is_headless
-        self.fineartamerica_scraper.headless = is_headless
+        self._sync_scraper_headless_mode(dynamic_window_shift=False)
 
         self._log(f"👕 Starting POD Variant Expansion for {len(pod_targets)} parent design(s)...")
         self._status(f"👕 Expanding POD variants for {len(pod_targets)} design(s)...")
@@ -8955,15 +9169,7 @@ class EbayTool(tk.Tk):
         ):
             return
 
-        is_headless = self.headless_var.get()
-        self.printerval_scraper.headless = is_headless
-        self.printblur_scraper.headless = is_headless
-        self.spreadshirt_scraper.headless = is_headless
-        self.zazzle_scraper.headless = is_headless
-        self.cafepress_scraper.headless = is_headless
-        self.threadless_scraper.headless = is_headless
-        self.teespring_scraper.headless = is_headless
-        self.fineartamerica_scraper.headless = is_headless
+        self._sync_scraper_headless_mode(dynamic_window_shift=False)
 
         self.stop_event.clear()
         self.stop_btn.config(state="normal")
@@ -8979,9 +9185,11 @@ class EbayTool(tk.Tk):
             GENERIC_SELLERS = (
                 "ebay seller", "global search", "aliexpress global", "creator", "unknown",
                 "printerval creator", "printerval seller", "printblur creator", "printblur seller",
-                "mercado libre seller", "mercado libre merchant",
+                "mercado libre seller", "mercado libre merchant", "meli_seller_",
+                "ir para", "ir a la", "pagina do vendedor", "página do vendedor",
+                "ver más", "ver mais", "tiktok shop merchant", "tiktok seller",
                 "mercado", "redbubble artist", "resolving...", "generic", "artist",
-                "spreadshirt creator", "teepublic artist"
+                "spreadshirt creator", "teepublic artist", "vinted user"
             )
             def _is_unresolved(s):
                 if not s: return True
@@ -9013,10 +9221,13 @@ class EbayTool(tk.Tk):
 
             try:
                 # ── STAGE 1: POD VARIANT EXPANSION & CREATOR ATTRIBUTION ──
+                POD_PLATFORMS = {
+                    "printerval", "printblur", "redbubble", "teepublic", "spreadshirt",
+                    "zazzle", "cafepress", "threadless", "teespring", "fineartamerica"
+                }
                 pod_targets = [
                     it for it in active_items
-                    if any(m in (it.get("marketplace", "") + " " + it.get("url", "")).lower()
-                           for m in ("printerval", "printblur", "redbubble", "teepublic", "spreadshirt", "zazzle", "cafepress", "threadless", "teespring", "spring.com", "creator-spring.com", "fineartamerica", "pixels.com"))
+                    if self._detect_item_marketplace(it) in POD_PLATFORMS
                 ]
 
                 if pod_targets and not self.stop_event.is_set():
@@ -9025,7 +9236,7 @@ class EbayTool(tk.Tk):
                     # 1A. Printerval (Unified Variant Expansion + Instant Creator Attribution)
                     printerval_targets = [
                         it for it in pod_targets
-                        if "printerval" in it.get("marketplace", "").lower() or "printerval.com" in it.get("url", "").lower()
+                        if self._detect_item_marketplace(it) == "printerval"
                     ]
                     if printerval_targets and not self.stop_event.is_set():
                         new_pv = self.printerval_scraper.expand_design_variants(
@@ -9042,7 +9253,7 @@ class EbayTool(tk.Tk):
                     # 1B. Printblur (Unified Variant Expansion + Instant Creator Attribution)
                     printblur_targets = [
                         it for it in pod_targets
-                        if "printblur" in it.get("marketplace", "").lower() or "printblur.com" in it.get("url", "").lower()
+                        if self._detect_item_marketplace(it) == "printblur"
                     ]
                     if printblur_targets and not self.stop_event.is_set():
                         new_pb = self.printblur_scraper.expand_design_variants(
@@ -9059,7 +9270,7 @@ class EbayTool(tk.Tk):
                     # 1C. Redbubble
                     redbubble_targets = [
                         it for it in pod_targets
-                        if "redbubble" in it.get("marketplace", "").lower() or "redbubble.com" in it.get("url", "").lower()
+                        if self._detect_item_marketplace(it) == "redbubble"
                     ]
                     if redbubble_targets and not self.stop_event.is_set():
                         new_rb = self.redbubble_scraper.expand_design_variants(
@@ -9076,7 +9287,7 @@ class EbayTool(tk.Tk):
                     # 1C. TeePublic
                     teepublic_targets = [
                         it for it in pod_targets
-                        if "teepublic" in it.get("marketplace", "").lower() or "teepublic.com" in it.get("url", "").lower()
+                        if self._detect_item_marketplace(it) == "teepublic"
                     ]
                     if teepublic_targets and not self.stop_event.is_set():
                         new_tp = self.teepublic_scraper.expand_design_variants(
@@ -9093,7 +9304,7 @@ class EbayTool(tk.Tk):
                     # 1D. Spreadshirt
                     spreadshirt_targets = [
                         it for it in pod_targets
-                        if "spreadshirt" in it.get("marketplace", "").lower() or "spreadshirt.com" in it.get("url", "").lower() or "spreadshop.com" in it.get("url", "").lower()
+                        if self._detect_item_marketplace(it) == "spreadshirt"
                     ]
                     if spreadshirt_targets and not self.stop_event.is_set():
                         new_sp = self.spreadshirt_scraper.expand_design_variants(
@@ -9110,7 +9321,7 @@ class EbayTool(tk.Tk):
                     # 1E. Zazzle
                     zazzle_targets = [
                         it for it in pod_targets
-                        if "zazzle" in it.get("marketplace", "").lower() or "zazzle.com" in it.get("url", "").lower()
+                        if self._detect_item_marketplace(it) == "zazzle"
                     ]
                     for p_item in zazzle_targets:
                         if self.stop_event.is_set(): break
@@ -9125,7 +9336,7 @@ class EbayTool(tk.Tk):
                     # 1F. CafePress
                     cafepress_targets = [
                         it for it in pod_targets
-                        if "cafepress" in it.get("marketplace", "").lower() or "cafepress.com" in it.get("url", "").lower()
+                        if self._detect_item_marketplace(it) == "cafepress"
                     ]
                     for p_item in cafepress_targets:
                         if self.stop_event.is_set(): break
@@ -9140,7 +9351,7 @@ class EbayTool(tk.Tk):
                     # 1G. Threadless
                     threadless_targets = [
                         it for it in pod_targets
-                        if "threadless" in it.get("marketplace", "").lower() or "threadless.com" in it.get("url", "").lower()
+                        if self._detect_item_marketplace(it) == "threadless"
                     ]
                     for p_item in threadless_targets:
                         if self.stop_event.is_set(): break
@@ -9155,7 +9366,7 @@ class EbayTool(tk.Tk):
                     # 1H. TeeSpring
                     teespring_targets = [
                         it for it in pod_targets
-                        if "teespring" in it.get("marketplace", "").lower() or "spring.com" in it.get("url", "").lower() or "creator-spring.com" in it.get("url", "").lower()
+                        if self._detect_item_marketplace(it) == "teespring"
                     ]
                     for p_item in teespring_targets:
                         if self.stop_event.is_set(): break
@@ -9170,7 +9381,7 @@ class EbayTool(tk.Tk):
                     # 1I. Fine Art America
                     faa_targets = [
                         it for it in pod_targets
-                        if "fineartamerica" in it.get("marketplace", "").lower() or "fineartamerica.com" in it.get("url", "").lower() or "pixels.com" in it.get("url", "").lower()
+                        if self._detect_item_marketplace(it) == "fineartamerica"
                     ]
                     for p_item in faa_targets:
                         if self.stop_event.is_set(): break
@@ -9189,6 +9400,8 @@ class EbayTool(tk.Tk):
                             except Exception: pass
 
                     self.after(0, lambda: self._repopulate_results_table())
+                else:
+                    self._log("⚡ [Pipeline 1/3] No POD listings detected in target scope — skipping POD variant expansion.")
 
                 # ── STAGE 2: SELLER / CREATOR ENRICHMENT (For un-enriched items) ──
                 if not self.stop_event.is_set():
@@ -9199,39 +9412,77 @@ class EbayTool(tk.Tk):
 
                     if items_needing_enrichment:
                         self._status(f"⚡ [Pipeline 2/3] Enriching {len(items_needing_enrichment)} un-enriched seller(s)...")
-                        self._log(f"🏪 [Pipeline 2/3] Resolving merchant store names for {len(items_needing_enrichment)} listing(s)...")
+                        self._log(f"🏪 [Pipeline 2/3] Resolving merchant store names for {len(items_needing_enrichment)} listing(s) across platforms...")
 
-                        # Printerval standalone items needing enrichment
-                        pv_enrich = [
-                            it for it in items_needing_enrichment
-                            if "printerval" in it.get("marketplace", "").lower() or "printerval.com" in it.get("url", "").lower()
+                        # Group items by detected canonical marketplace
+                        mkt_groups = defaultdict(list)
+                        for it in items_needing_enrichment:
+                            mkt = self._detect_item_marketplace(it)
+                            mkt_groups[mkt].append(it)
+
+                        def _on_enrich_prog(current, total, item):
+                            s_name = str(item.get("seller", "")).strip()
+                            if s_name and not _is_unresolved(s_name):
+                                self._propagate_enriched_seller(item, s_name)
+                            mkt_name = self._detect_item_marketplace(item).replace("_", " ").title()
+                            pct = int((current / total) * 100) if total else 0
+                            self.after(0, lambda: self._status(f"⚡ [Pipeline 2/3] Enriching {mkt_name} [{current}/{total}] ({pct}%) -> '{s_name}'"))
+                            self.after(0, lambda: self._log(f"  ✓ [{mkt_name}] Enriched: '{item.get('title', '')[:40]}...' → Seller: '{s_name}', Price: {item.get('price', '')}"))
+                            self.after(0, lambda: self._repopulate_results_table())
+
+                        ENRICHMENT_DISPATCH = [
+                            ("mercadolibre", "mercadolibre_scraper", "enrich_seller_info", "Mercado Libre"),
+                            ("ebay", "scraper", "enrich_ebay_seller_info", "eBay"),
+                            ("aliexpress", "aliexpress_scraper", "enrich_seller_info", "AliExpress"),
+                            ("temu", "temu_scraper", "enrich_seller_info", "Temu"),
+                            ("wish", "wish_scraper", "enrich_seller_info", "Wish"),
+                            ("tiktok", "tiktok_scraper", "enrich_seller_info", "TikTok"),
+                            ("printerval", "printerval_scraper", "enrich_seller_info", "Printerval"),
+                            ("printblur", "printblur_scraper", "enrich_seller_info", "Printblur"),
+                            ("redbubble", "redbubble_scraper", "enrich_seller_info", "Redbubble"),
+                            ("teepublic", "teepublic_scraper", "enrich_seller_info", "TeePublic"),
+                            ("spreadshirt", "spreadshirt_scraper", "enrich_seller_info", "Spreadshirt"),
+                            ("zazzle", "zazzle_scraper", "enrich_seller_info", "Zazzle"),
+                            ("cafepress", "cafepress_scraper", "enrich_seller_info", "CafePress"),
+                            ("scribd", "scribd_scraper", "enrich_seller_info", "Scribd"),
+                            ("teespring", "teespring_scraper", "enrich_seller_info", "TeeSpring"),
                         ]
-                        if pv_enrich and not self.stop_event.is_set():
-                            self.printerval_scraper.enrich_seller_info(pv_enrich, stop_event=self.stop_event)
 
-                        # Printblur standalone items needing enrichment
-                        pb_enrich = [
-                            it for it in items_needing_enrichment
-                            if "printblur" in it.get("marketplace", "").lower() or "printblur.com" in it.get("url", "").lower()
-                        ]
-                        if pb_enrich and not self.stop_event.is_set():
-                            self.printblur_scraper.enrich_seller_info(pb_enrich, stop_event=self.stop_event)
+                        for mkt_key, s_attr, m_name, mkt_label in ENRICHMENT_DISPATCH:
+                            if self.stop_event.is_set():
+                                break
+                            mkt_items = mkt_groups.get(mkt_key, [])
+                            unresolved_mkt = [it for it in mkt_items if _is_unresolved(it.get("seller"))]
+                            if not unresolved_mkt:
+                                continue
 
-                        # AliExpress items needing enrichment
-                        ali_enrich = [
-                            it for it in items_needing_enrichment
-                            if "aliexpress" in it.get("marketplace", "").lower() or "aliexpress.com" in it.get("url", "").lower()
-                        ]
-                        if ali_enrich and not self.stop_event.is_set() and hasattr(self, "aliexpress_scraper"):
-                            self.aliexpress_scraper.enrich_seller_info(ali_enrich, stop_event=self.stop_event)
+                            s_inst = getattr(self, s_attr, None)
+                            if not s_inst:
+                                continue
+                            m_fn = getattr(s_inst, m_name, None)
+                            if not m_fn or not callable(m_fn):
+                                continue
 
-                        # Persist enriched sellers to data_store
+                            self._log(f"🏪 [Pipeline 2/3] Resolving merchant store names for {len(unresolved_mkt)} {mkt_label} listing(s)...")
+                            try:
+                                m_fn(
+                                    unresolved_mkt,
+                                    progress_callback=_on_enrich_prog,
+                                    stop_event=self.stop_event
+                                )
+                            except Exception as ex:
+                                logger.error(f"Error enriching {mkt_label} in pipeline: {ex}")
+                                self.after(0, lambda e=ex, m=mkt_label: self._log(f"⚠ Warning: {m} enrichment error: {e}", error=True))
+
+                        # Persist any enriched items to data_store
                         if hasattr(self, "data_store"):
                             for e_it in items_needing_enrichment:
                                 try: self.data_store.add_or_update_listing(e_it)
                                 except Exception: pass
 
                         self.after(0, lambda: self._repopulate_results_table())
+                    else:
+                        self._log("⚡ [Pipeline 2/3] All target listings already have verified merchant/store names — skipping seller enrichment.")
 
                 # Accurate count of sellers enriched across Stage 1 & Stage 2
                 enriched_sellers_count = sum(
@@ -10396,21 +10647,57 @@ class EbayTool(tk.Tk):
             filetypes=[("Excel", "*.xlsx")],
             initialfile=f"enforcement_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         )
-        if path:
+        if not path:
+            return
+
+        modal = ExportProgressModal(self, total_items=len(export_items), title="Exporting Enforcement Dossier")
+        self._status(f"💾 Exporting {len(export_items):,} rows to Excel...")
+
+        def _worker():
+            start_t = time.time()
             try:
-                self.exporter.export(export_items, path)
-                # Ingest verified exported results into Enterprise Brand Enforcement Registry
+                def progress_cb(cur, tot, msg=""):
+                    self.after(0, lambda c=cur, t=tot, m=msg: modal.update_progress(c, t, m))
+
+                # Step 1: Write Excel file
+                self.exporter.export(export_items, path, progress_callback=progress_cb)
+
+                # Step 2: Batch update Brand Enforcement Registry
+                self.after(0, lambda: modal.set_indeterminate("🛡 Updating Enterprise Brand Enforcement Registry..."))
                 seller_items = {}
                 for item in export_items:
                     seller = item.get("seller") or "Unknown"
                     seller_items.setdefault(seller, []).append(item)
-                for seller, s_items in seller_items.items():
-                    self.data_store.record_enforcement_scan(seller, s_items)
-                self._log(f"Exported {len(export_items)} rows → {path}")
-                self._log(f"🛡 Logged {len(export_items)} verified listing(s) across {len(seller_items)} seller(s) into Enterprise Brand Enforcement Registry.")
-                messagebox.showinfo("Exported", f"Saved {len(export_items)} verified listings to:\n{path}\n\n🛡 Logged into Enterprise Brand Enforcement Registry.")
+
+                if self.data_store:
+                    def ds_cb(cur, tot):
+                        self.after(0, lambda c=cur, t=tot: modal.update_progress(c, t, f"🛡 Updating seller registry ({c:,}/{t:,})..."))
+                    self.data_store.record_enforcement_scans_batch(seller_items, progress_callback=ds_cb)
+
+                elapsed = time.time() - start_t
+                def on_done():
+                    modal.finish()
+                    self._log(f"Exported {len(export_items):,} rows in {elapsed:.1f}s → {path}")
+                    self._log(f"🛡 Logged {len(export_items):,} verified listing(s) across {len(seller_items):,} seller(s) into Enterprise Brand Enforcement Registry.")
+                    self._status(f"✅ Exported {len(export_items):,} rows in {elapsed:.1f}s!")
+                    if hasattr(self, "_play_sound"):
+                        self._play_sound("complete")
+                    messagebox.showinfo(
+                        "Export Complete",
+                        f"Saved {len(export_items):,} verified listings to:\n{path}\n\n"
+                        f"• Time Elapsed: {elapsed:.1f}s\n"
+                        f"• Unique Sellers Logged: {len(seller_items):,}\n\n"
+                        f"🛡 Enterprise Brand Enforcement Registry successfully updated."
+                    )
+                self.after(0, on_done)
             except Exception as e:
-                messagebox.showerror("Export Error", str(e))
+                def on_err(err=e):
+                    modal.finish()
+                    self._log(f"❌ Export Error: {err}")
+                    messagebox.showerror("Export Error", f"Export failed:\n{err}")
+                self.after(0, on_err)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _export_job_log(self):
         """Export comprehensive Job Audit Log & Summary Report."""
@@ -10483,18 +10770,59 @@ class EbayTool(tk.Tk):
     # ══════════════════════════════════════════════════════════════════════════
     #  BROWSER & API SETTINGS
     # ══════════════════════════════════════════════════════════════════════════
+    def _get_all_scrapers(self):
+        """Return all 20 marketplace and POD scraper instances initialized on EbayTool."""
+        scraper_attrs = [
+            "scraper", "aliexpress_scraper", "wish_scraper", "temu_scraper",
+            "mercadolibre_scraper", "redbubble_scraper", "printerval_scraper",
+            "printblur_scraper", "vinted_scraper", "tiktok_scraper",
+            "manomano_scraper", "scribd_scraper", "teepublic_scraper",
+            "etsy_scraper", "spreadshirt_scraper", "zazzle_scraper",
+            "cafepress_scraper", "threadless_scraper", "teespring_scraper",
+            "fineartamerica_scraper"
+        ]
+        return [getattr(self, attr) for attr in scraper_attrs if hasattr(self, attr) and getattr(self, attr) is not None]
+
+    def _sync_scraper_headless_mode(self, dynamic_window_shift: bool = True):
+        """
+        Synchronize headless/stealth mode across all 20 scrapers.
+        If dynamic_window_shift is True, active browser windows (e.g. Mercado Libre, Printerval)
+        are shifted on-screen or off-screen in real time via Chrome DevTools Protocol.
+        """
+        is_headless = self.headless_var.get() if hasattr(self, "headless_var") else True
+        for sc in self._get_all_scrapers():
+            if hasattr(sc, "set_headless"):
+                try:
+                    sc.set_headless(is_headless, shift_active_window=dynamic_window_shift)
+                except TypeError:
+                    sc.set_headless(is_headless)
+                except Exception:
+                    sc.headless = is_headless
+            elif hasattr(sc, "headless"):
+                sc.headless = is_headless
+
+    def _toggle_headless_quick(self):
+        """Toggle headless mode directly from top-bar quick button."""
+        new_val = not self.headless_var.get()
+        self.headless_var.set(new_val)
+        self._toggle_headless()
+
     def _toggle_headless(self):
         is_headless = self.headless_var.get()
-        self.scraper.headless = is_headless
-        self.aliexpress_scraper.headless = is_headless
-        self.wish_scraper.headless = is_headless
-        self.temu_scraper.headless = is_headless
-        self.mercadolibre_scraper.headless = is_headless
-        self.redbubble_scraper.headless = is_headless
-        self.printerval_scraper.headless = is_headless
-        self.printblur_scraper.headless = is_headless
+        self._sync_scraper_headless_mode(dynamic_window_shift=True)
         self.data_store.set_setting("headless", is_headless)
-        self._log(f"Browser search mode: {'👻 Silent Background' if is_headless else '🖥 Visible Browser Window'}")
+        mode_label = "👻 Silent Background" if is_headless else "🖥 Visible Browser Window"
+        self._log(f"Browser search mode: {mode_label}")
+        if hasattr(self, "stealth_quick_btn"):
+            t = self.theme
+            self.stealth_quick_btn.config(
+                text="👻 Stealth" if is_headless else "🖥 Visible",
+                bg=t["panel"] if is_headless else t["accent"],
+                fg=t["text"] if is_headless else ("black" if str(t.get("name","")).startswith("⚡") else "white")
+            )
+        if getattr(self, "running", False):
+            self._log(f"⚡ Browser mode updated mid-job to: {mode_label}. Active browser shifted and upcoming jobs synchronized.")
+            self._status(f"Browser mode updated mid-job: {mode_label}")
 
     def _toggle_api(self):
         if self.use_api.get():
@@ -12150,6 +12478,128 @@ class EbayTool(tk.Tk):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  EXCEL EXPORT & REGISTRY PROGRESS MODAL
+# ══════════════════════════════════════════════════════════════════════════════
+class ExportProgressModal(tk.Toplevel):
+    """
+    Dedicated non-blocking progress modal for high-volume Excel exports and registry updates.
+    Displays live percentage, current operation phase, and prevents accidental window termination during disk I/O.
+    """
+    def __init__(self, parent, total_items: int, title="Exporting Enforcement Dossier"):
+        super().__init__(parent)
+        self.withdraw()
+        self.parent = parent
+        self.t = getattr(parent, "theme", {
+            "bg": "#0D1117", "panel": "#161B22", "border": "#30363D",
+            "text": "#E6EDF3", "subtext": "#8B949E", "accent": "#238636"
+        })
+        self.total_items = max(1, total_items)
+        self.title(f"💾 {title}")
+        self.geometry("520x220")
+        self.resizable(False, False)
+        self.configure(bg=self.t.get("bg", "#0D1117"))
+        
+        if hasattr(parent, "_apply_dark_titlebar"):
+            parent._apply_dark_titlebar(self)
+            
+        self.transient(parent)
+        self.protocol("WM_DELETE_WINDOW", self._on_close_attempt)
+        self.allow_close = False
+        
+        self._build_ui(title)
+        if hasattr(parent, "_center_window"):
+            parent._center_window(self, 520, 220)
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
+    def _build_ui(self, title_text):
+        t = self.t
+        pad = tk.Frame(self, bg=t.get("bg", "#0D1117"), padx=24, pady=20)
+        pad.pack(fill="both", expand=True)
+
+        self.lbl_header = tk.Label(
+            pad, text=f"💾 {title_text}",
+            font=("Segoe UI", 12, "bold"),
+            fg=t.get("text", "#E6EDF3"), bg=t.get("bg", "#0D1117")
+        )
+        self.lbl_header.pack(anchor="w", pady=(0, 4))
+
+        self.lbl_status = tk.Label(
+            pad, text="Preparing data...",
+            font=("Segoe UI", 9),
+            fg=t.get("subtext", "#8B949E"), bg=t.get("bg", "#0D1117")
+        )
+        self.lbl_status.pack(anchor="w", pady=(0, 14))
+
+        self.progress_var = tk.DoubleVar(value=0.0)
+        self.progress_bar = ttk.Progressbar(
+            pad, variable=self.progress_var, maximum=100.0, mode="determinate"
+        )
+        self.progress_bar.pack(fill="x", pady=(0, 8))
+
+        sub_row = tk.Frame(pad, bg=t.get("bg", "#0D1117"))
+        sub_row.pack(fill="x", pady=(0, 10))
+        
+        self.lbl_percent = tk.Label(
+            sub_row, text="0.0%",
+            font=("Segoe UI", 9, "bold"),
+            fg=t.get("accent", "#58A6FF"), bg=t.get("bg", "#0D1117")
+        )
+        self.lbl_percent.pack(side="left")
+
+        self.lbl_count = tk.Label(
+            sub_row, text=f"0 / {self.total_items:,} items",
+            font=("Segoe UI", 9),
+            fg=t.get("subtext", "#8B949E"), bg=t.get("bg", "#0D1117")
+        )
+        self.lbl_count.pack(side="right")
+
+        self.lbl_note = tk.Label(
+            pad, text="⚡ Background worker active. Do not close to ensure file integrity.",
+            font=("Segoe UI", 8, "italic"),
+            fg=t.get("subtext", "#8B949E"), bg=t.get("bg", "#0D1117")
+        )
+        self.lbl_note.pack(anchor="w")
+
+    def update_progress(self, current: int, total: int, status_text: str = ""):
+        try:
+            if total > 0:
+                pct = min(100.0, (current / total) * 100.0)
+                self.progress_var.set(pct)
+                self.lbl_percent.config(text=f"{pct:.1f}%")
+                self.lbl_count.config(text=f"{current:,} / {total:,} items")
+            if status_text:
+                self.lbl_status.config(text=status_text)
+            self.update_idletasks()
+        except Exception:
+            pass
+
+    def set_indeterminate(self, status_text: str = ""):
+        try:
+            self.progress_bar.config(mode="indeterminate")
+            self.progress_bar.start(15)
+            if status_text:
+                self.lbl_status.config(text=status_text)
+            self.lbl_percent.config(text="Processing...")
+            self.lbl_count.config(text="")
+            self.update_idletasks()
+        except Exception:
+            pass
+
+    def _on_close_attempt(self):
+        if self.allow_close:
+            self.destroy()
+
+    def finish(self):
+        self.allow_close = True
+        try:
+            self.destroy()
+        except Exception:
+            pass
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  GLOBAL MULTI-LOCALE EXPANDER & COMPLIANCE EXPORTER
 # ══════════════════════════════════════════════════════════════════════════════
 class MultiLocaleModal(tk.Toplevel):
@@ -12408,26 +12858,50 @@ class MultiLocaleModal(tk.Toplevel):
         if not path:
             return
 
-        try:
-            total_rows = self.parent.exporter.export_multi_locale(self.target_items, selected_locales, path)
-            # Ingest verified exported results into Enterprise Brand Enforcement Registry
-            seller_items = {}
-            for item in self.target_items:
-                seller = item.get("seller") or "Unknown"
-                seller_items.setdefault(seller, []).append(item)
-            ds = getattr(self.parent, "data_store", None)
-            if ds:
-                for seller, s_items in seller_items.items():
-                    ds.record_enforcement_scan(seller, s_items)
+        total_projected = len(self.target_items) * len(selected_locales)
+        modal = ExportProgressModal(self, total_items=total_projected, title="Exporting Multi-Locale Pack")
+        self.status_var.set("🌐 Generating Multi-Locale Excel export...")
 
-            self.parent._log(f"🌐 Multi-Locale Enforcement Pack exported: {total_rows} listings across {len(selected_locales)} domains → {path}")
-            self.parent._log(f"🛡 Logged {len(self.target_items)} verified listing(s) across {len(seller_items)} seller(s) into Enterprise Brand Enforcement Registry.")
-            self.status_var.set(f"✅ Exported {total_rows:,} rows across {len(selected_locales)} domains to Excel!")
-            messagebox.showinfo("Multi-Locale Export Complete",
-                                f"Successfully generated Multi-Locale Enforcement Pack!\n\n• Base Harvested Listings: {len(self.target_items):,}\n• Target Locales: {len(selected_locales)}\n• Total Expanded Listings: {total_rows:,}\n\nSaved to:\n{path}\n\n🛡 Logged into Enterprise Brand Enforcement Registry.",
-                                parent=self)
-        except Exception as e:
-            messagebox.showerror("Export Error", f"Failed to export multi-locale file: {e}", parent=self)
+        def _worker():
+            start_t = time.time()
+            try:
+                def progress_cb(cur, tot, msg=""):
+                    self.after(0, lambda c=cur, t=tot, m=msg: modal.update_progress(c, t, m))
+
+                total_rows = self.parent.exporter.export_multi_locale(
+                    self.target_items, selected_locales, path, progress_callback=progress_cb
+                )
+
+                self.after(0, lambda: modal.set_indeterminate("🛡 Updating Enterprise Brand Enforcement Registry..."))
+                seller_items = {}
+                for item in self.target_items:
+                    seller = item.get("seller") or "Unknown"
+                    seller_items.setdefault(seller, []).append(item)
+
+                ds = getattr(self.parent, "data_store", None)
+                if ds:
+                    def ds_cb(cur, tot):
+                        self.after(0, lambda c=cur, t=tot: modal.update_progress(c, t, f"🛡 Updating seller registry ({c:,}/{t:,})..."))
+                    ds.record_enforcement_scans_batch(seller_items, progress_callback=ds_cb)
+
+                elapsed = time.time() - start_t
+                def on_done():
+                    modal.finish()
+                    self.parent._log(f"🌐 Multi-Locale Enforcement Pack exported: {total_rows:,} listings across {len(selected_locales)} domains in {elapsed:.1f}s → {path}")
+                    self.parent._log(f"🛡 Logged {len(self.target_items)} verified listing(s) across {len(seller_items)} seller(s) into Enterprise Brand Enforcement Registry.")
+                    self.status_var.set(f"✅ Exported {total_rows:,} rows across {len(selected_locales)} domains in {elapsed:.1f}s!")
+                    messagebox.showinfo("Multi-Locale Export Complete",
+                                        f"Successfully generated Multi-Locale Enforcement Pack!\n\n• Base Harvested Listings: {len(self.target_items):,}\n• Target Locales: {len(selected_locales)}\n• Total Expanded Listings: {total_rows:,}\n• Time Elapsed: {elapsed:.1f}s\n\nSaved to:\n{path}\n\n🛡 Logged into Enterprise Brand Enforcement Registry.",
+                                        parent=self)
+                self.after(0, on_done)
+            except Exception as e:
+                def on_err(err=e):
+                    modal.finish()
+                    self.parent._log(f"❌ Multi-Locale Export Error: {err}")
+                    messagebox.showerror("Export Error", f"Failed to export multi-locale file: {err}", parent=self)
+                self.after(0, on_err)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

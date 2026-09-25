@@ -171,6 +171,35 @@ class PrintblurScraper:
                 except Exception:
                     pass
 
+    def _apply_cdp_window_bounds(self, is_stealth: bool, window_pos: tuple = (100, 100), window_size: tuple = (1280, 800)):
+        """Dynamically move active Playwright browser window on-screen or off-screen via Chrome DevTools Protocol."""
+        ctx = getattr(self, "_active_context", None) or self._context
+        if not ctx:
+            return
+        try:
+            pages = [p for p in ctx.pages if not p.is_closed()]
+            if pages:
+                page = pages[0]
+                cdp = ctx.new_cdp_session(page)
+                win = cdp.send("Browser.getWindowForTarget")
+                if is_stealth:
+                    target_bounds = {"left": -2400, "top": -2400, "width": 1366, "height": 850, "windowState": "normal"}
+                else:
+                    target_bounds = {"left": window_pos[0], "top": window_pos[1], "width": window_size[0], "height": window_size[1], "windowState": "normal"}
+                cdp.send("Browser.setWindowBounds", {
+                    "windowId": win["windowId"],
+                    "bounds": target_bounds
+                })
+                cdp.detach()
+        except Exception as e:
+            logger.debug(f"CDP window bound shift notice in Printblur: {e}")
+
+    def set_headless(self, is_headless: bool, shift_active_window: bool = True):
+        """Dynamically update headless mode and shift browser window if active."""
+        self.headless = is_headless
+        if shift_active_window and (getattr(self, "_active_context", None) or self._context):
+            self._apply_cdp_window_bounds(is_stealth=is_headless)
+
     def _get_context(self, p=None, force_visible: bool = False, window_pos: tuple = (100, 100), window_size: tuple = (1100, 800)):
         """Initialize and return a persistent Playwright context with stealth evasions."""
         from playwright.sync_api import sync_playwright
@@ -219,7 +248,7 @@ class PrintblurScraper:
                 temp_profile = tempfile.mkdtemp(prefix="pb_edge_session_")
                 kwargs["user_data_dir"] = temp_profile
                 context = p.chromium.launch_persistent_context(**kwargs)
-
+        self._active_context = context
         return context
 
     def launch_interactive_auth(self, window_pos: tuple = (100, 100), window_size: tuple = (1100, 800)):
@@ -260,9 +289,11 @@ class PrintblurScraper:
     def search(self, query: str,
                max_items: int = 50,
                max_pages: int = 5,
+               condition: str = "all",
                progress_callback=None,
                stop_event: threading.Event = None,
-               log_callback=None) -> List[Dict]:
+               log_callback=None,
+               **kwargs) -> List[Dict]:
         """
         Execute automated keyword search across Printblur.com with stealth pagination.
         Harvests all matching listing cards (title, price, image, item_id, url, marketplace).
@@ -856,10 +887,12 @@ class PrintblurScraper:
 
     def resolve_store_info(self, store_input: str) -> Dict[str, str]:
         """Resolve store slug or link into clean store metadata."""
-        clean = store_input.strip()
-        m = re.search(r'printblur\.com/shops/([^/?#]+)', clean, re.IGNORECASE)
+        clean = store_input.strip() if store_input else ""
+        if not clean or any(g in clean.lower() for g in ("global", "marketplace", "all", "wholesale", "catalog", "search")):
+            return {"store_name": "Printblur Global Catalog", "store_url": "https://printblur.com"}
+        m = re.search(r'printblur\.com/(?:shops/|@)([^/?#]+)', clean, re.IGNORECASE)
         if m:
-            slug = m.group(1).replace("-", " ").title()
+            slug = m.group(1).replace("-", " ").replace("_", " ").title()
             return {"store_name": slug, "store_url": clean}
         return {"store_name": clean, "store_url": f"https://printblur.com/shops/{urllib.parse.quote(clean.lower().replace(' ', '-'))}"}
 

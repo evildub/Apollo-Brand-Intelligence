@@ -199,10 +199,24 @@ def normalize_marketplace_code(mkt: str) -> str:
     if "." in clean:
         return clean.lower()
     return f"{clean.lower()}.com" if clean else MARKETPLACE
-ROW_FILL_A   = PatternFill("solid", fgColor="F8F8F2")
-ROW_FILL_B   = PatternFill("solid", fgColor="EEEEEE")
-BORDER_SIDE  = Side(style="thin", color="CCCCCC")
-THIN_BORDER  = Border(bottom=BORDER_SIDE)
+HEADER_FILL  = PatternFill("solid", fgColor="2B2D42")
+HEADER_FONT  = Font(bold=True, color="FFFFFF", name="Segoe UI", size=10)
+FONT_DATA_NORMAL = Font(name="Segoe UI", size=9)
+FONT_DATA_BOLD   = Font(name="Segoe UI", size=9, bold=True)
+FONT_DATA_LINK   = Font(color="0563C1", underline="single", name="Segoe UI", size=9)
+FONT_REPEAT      = Font(name="Segoe UI", size=9, bold=True, color="B91C1C")
+ALIGN_CENTER     = Alignment(horizontal="center", vertical="center")
+ALIGN_DATA       = Alignment(vertical="center", wrap_text=False)
+ALIGN_DATA_RIGHT = Alignment(horizontal="right", vertical="center", wrap_text=False)
+ROW_FILL_A       = PatternFill("solid", fgColor="F8F8F2")
+ROW_FILL_B       = PatternFill("solid", fgColor="EEEEEE")
+BORDER_SIDE      = Side(style="thin", color="CCCCCC")
+THIN_BORDER      = Border(bottom=BORDER_SIDE)
+
+HEADER_COL_INDICES = {
+    col: openpyxl.utils.column_index_from_string(col)
+    for col in HEADERS
+}
 
 COL_WIDTHS = {
     "A": 55,   # Title
@@ -223,7 +237,7 @@ MARKETPLACE = "ebay.com"
 
 
 class ExcelExporter:
-    def export(self, results: list[dict], filepath: str):
+    def export(self, results: list[dict], filepath: str, progress_callback=None):
         """
         Export results to Excel.
         Tab 1: Master (All Results) containing 100% of harvested listings.
@@ -237,7 +251,7 @@ class ExcelExporter:
 
         # 1. Tab 1: Master Sheet (All Listings)
         ws_all = wb.create_sheet(title="All Results")
-        self._write_sheet(ws_all, results, "All Results", is_master=True)
+        self._write_sheet(ws_all, results, "All Results", is_master=True, progress_callback=progress_callback)
 
         # 2. Tabs 2+: Dedicated Brand Tabs
         by_brand = defaultdict(list)
@@ -247,9 +261,17 @@ class ExcelExporter:
                 b = "Unassigned"
             by_brand[b].append(item)
 
-        for brand, items in by_brand.items():
-            ws = wb.create_sheet(title=self._safe_sheet_name(brand))
-            self._write_sheet(ws, items, brand, is_master=False)
+        # Optimization: If there are > 25,000 rows and only 1 brand, writing a second identical sheet
+        # doubles file size and doubles export time without adding any new data.
+        # But if <= 25,000 or multiple brands exist, create dedicated brand sheets.
+        if len(results) <= 25000 or len(by_brand) > 1:
+            sorted_brands = sorted(by_brand.items(), key=lambda x: len(x[1]), reverse=True)[:50]
+            for brand, items in sorted_brands:
+                ws = wb.create_sheet(title=self._safe_sheet_name(brand))
+                self._write_sheet(ws, items, brand, is_master=False)
+
+        if progress_callback:
+            progress_callback(len(results), len(results), "Saving Excel workbook to disk...")
 
         wb.save(filepath)
         return len(results)
@@ -257,66 +279,165 @@ class ExcelExporter:
     export_results = export
 
     # ── sheet writer ──────────────────────────────────────────────────────────
-    def _write_sheet(self, ws, items: list[dict], brand: str, is_master: bool = False):
+    def _write_sheet(self, ws, items: list[dict], brand: str, is_master: bool = False, progress_callback=None):
         ws.views.sheetView[0].showGridLines = True
         # header row
         for col_letter, header_text in HEADERS.items():
-            col_idx = openpyxl.utils.column_index_from_string(col_letter)
+            col_idx = HEADER_COL_INDICES[col_letter]
             cell = ws.cell(row=1, column=col_idx, value=header_text)
             cell.font  = HEADER_FONT
             cell.fill  = HEADER_FILL
-            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.alignment = ALIGN_CENTER
 
         ws.row_dimensions[1].height = 20
 
+        total_items = len(items)
+        cb_step = max(250, total_items // 100) if total_items > 0 else 250
+
         # data rows (start at row 2)
-        for row_num, item in enumerate(items, start=2):
+        for idx, item in enumerate(items):
+            row_num = idx + 2
             fill = ROW_FILL_A if row_num % 2 == 0 else ROW_FILL_B
 
-            def cell(col_letter, value):
-                idx  = openpyxl.utils.column_index_from_string(col_letter)
-                c    = ws.cell(row=row_num, column=idx, value=value)
-                c.fill = fill
-                c.alignment = Alignment(vertical="center", wrap_text=False)
-                c.border = THIN_BORDER
-                return c
+            # Col A: Title
+            cA = ws.cell(row=row_num, column=1, value=item.get("title", ""))
+            cA.fill = fill
+            cA.alignment = ALIGN_DATA
+            cA.border = THIN_BORDER
+            cA.font = FONT_DATA_NORMAL
 
-            title_cell = cell("A", item.get("title", ""))
-            title_cell.font = Font(name="Segoe UI", size=9)
-
+            # Col B: URL
             url = item.get("url", "")
-            url_cell = cell("B", url)
+            cB = ws.cell(row=row_num, column=2, value=url)
+            cB.fill = fill
+            cB.alignment = ALIGN_DATA
+            cB.border = THIN_BORDER
             if url:
-                url_cell.hyperlink = url
-                url_cell.font = Font(color="0563C1", underline="single",
-                                     name="Segoe UI", size=9)
+                cB.hyperlink = url
+                cB.font = FONT_DATA_LINK
             else:
-                url_cell.font = Font(name="Segoe UI", size=9)
+                cB.font = FONT_DATA_NORMAL
 
+            # Col C: Thumbnail
             img_url = item.get("image_url", "")
-            img_cell = cell("C", img_url)
+            cC = ws.cell(row=row_num, column=3, value=img_url)
+            cC.fill = fill
+            cC.alignment = ALIGN_DATA
+            cC.border = THIN_BORDER
             if img_url:
-                img_cell.hyperlink = img_url
-                img_cell.font = Font(color="0563C1", underline="single",
-                                     name="Segoe UI", size=9)
+                cC.hyperlink = img_url
+                cC.font = FONT_DATA_LINK
             else:
-                img_cell.font = Font(name="Segoe UI", size=9)
+                cC.font = FONT_DATA_NORMAL
 
-            cell("D", "")
-            cell("E", item.get("item_id", "")).font = Font(name="Segoe UI", size=9)
-            cell("F", "")
-            cell("G", "")
-            cell("H", normalize_marketplace_code(item.get("marketplace", MARKETPLACE))).font = Font(name="Segoe UI", size=9)
-            cell("I", "")
-            cell("J", item.get("seller", "")).font = Font(name="Segoe UI", size=9)
-            cell("K", "")
-            cell("L", "")
-            cell("M", item.get("brand") or (brand if brand != "All Results" else "Unassigned")).font = Font(name="Segoe UI", size=9)
-            cell("N", normalize_price_string(item.get("price", ""))).font = Font(name="Segoe UI", size=9)
-            cell("O", item.get("location", "")).font = Font(name="Segoe UI", size=9)
-            cell("P", item.get("product_type", "")).font = Font(name="Segoe UI", size=9)
-            cell("Q", item.get("seller_origin", item.get("country", ""))).font = Font(name="Segoe UI", size=9)
-            cell("R", item.get("threat_badge", item.get("threat_intel", ""))).font = Font(name="Segoe UI", size=9)
+            # Col D: Blank Spacer
+            cD = ws.cell(row=row_num, column=4, value="")
+            cD.fill = fill
+            cD.alignment = ALIGN_DATA
+            cD.border = THIN_BORDER
+            cD.font = FONT_DATA_NORMAL
+
+            # Col E: Item ID
+            cE = ws.cell(row=row_num, column=5, value=item.get("item_id", ""))
+            cE.fill = fill
+            cE.alignment = ALIGN_DATA
+            cE.border = THIN_BORDER
+            cE.font = FONT_DATA_NORMAL
+
+            # Col F: Blank Spacer
+            cF = ws.cell(row=row_num, column=6, value="")
+            cF.fill = fill
+            cF.alignment = ALIGN_DATA
+            cF.border = THIN_BORDER
+            cF.font = FONT_DATA_NORMAL
+
+            # Col G: Blank Spacer
+            cG = ws.cell(row=row_num, column=7, value="")
+            cG.fill = fill
+            cG.alignment = ALIGN_DATA
+            cG.border = THIN_BORDER
+            cG.font = FONT_DATA_NORMAL
+
+            # Col H: Marketplace
+            cH = ws.cell(row=row_num, column=8, value=normalize_marketplace_code(item.get("marketplace", MARKETPLACE)))
+            cH.fill = fill
+            cH.alignment = ALIGN_DATA
+            cH.border = THIN_BORDER
+            cH.font = FONT_DATA_NORMAL
+
+            # Col I: Blank Spacer
+            cI = ws.cell(row=row_num, column=9, value="")
+            cI.fill = fill
+            cI.alignment = ALIGN_DATA
+            cI.border = THIN_BORDER
+            cI.font = FONT_DATA_NORMAL
+
+            # Col J: Seller Name
+            cJ = ws.cell(row=row_num, column=10, value=item.get("seller", ""))
+            cJ.fill = fill
+            cJ.alignment = ALIGN_DATA
+            cJ.border = THIN_BORDER
+            cJ.font = FONT_DATA_NORMAL
+
+            # Col K: Blank Spacer
+            cK = ws.cell(row=row_num, column=11, value="")
+            cK.fill = fill
+            cK.alignment = ALIGN_DATA
+            cK.border = THIN_BORDER
+            cK.font = FONT_DATA_NORMAL
+
+            # Col L: Blank Spacer
+            cL = ws.cell(row=row_num, column=12, value="")
+            cL.fill = fill
+            cL.alignment = ALIGN_DATA
+            cL.border = THIN_BORDER
+            cL.font = FONT_DATA_NORMAL
+
+            # Col M: Brand
+            brand_val = item.get("brand") or (brand if brand != "All Results" else "Unassigned")
+            cM = ws.cell(row=row_num, column=13, value=brand_val)
+            cM.fill = fill
+            cM.alignment = ALIGN_DATA
+            cM.border = THIN_BORDER
+            cM.font = FONT_DATA_NORMAL
+
+            # Col N: Price
+            cN = ws.cell(row=row_num, column=14, value=normalize_price_string(item.get("price", "")))
+            cN.fill = fill
+            cN.alignment = ALIGN_DATA
+            cN.border = THIN_BORDER
+            cN.font = FONT_DATA_NORMAL
+
+            # Col O: Item Location
+            cO = ws.cell(row=row_num, column=15, value=item.get("location", ""))
+            cO.fill = fill
+            cO.alignment = ALIGN_DATA
+            cO.border = THIN_BORDER
+            cO.font = FONT_DATA_NORMAL
+
+            # Col P: Product Type
+            cP = ws.cell(row=row_num, column=16, value=item.get("product_type", ""))
+            cP.fill = fill
+            cP.alignment = ALIGN_DATA
+            cP.border = THIN_BORDER
+            cP.font = FONT_DATA_NORMAL
+
+            # Col Q: Seller Origin
+            cQ = ws.cell(row=row_num, column=17, value=item.get("seller_origin", item.get("country", "")))
+            cQ.fill = fill
+            cQ.alignment = ALIGN_DATA
+            cQ.border = THIN_BORDER
+            cQ.font = FONT_DATA_NORMAL
+
+            # Col R: Threat Assessment
+            cR = ws.cell(row=row_num, column=18, value=item.get("threat_badge", item.get("threat_intel", "")))
+            cR.fill = fill
+            cR.alignment = ALIGN_DATA
+            cR.border = THIN_BORDER
+            cR.font = FONT_DATA_NORMAL
+
+            if progress_callback and (idx % cb_step == 0 or idx == total_items - 1):
+                progress_callback(idx + 1, total_items, f"Writing rows ({idx + 1:,}/{total_items:,})...")
 
         # column widths
         for col_letter, width in COL_WIDTHS.items():
@@ -393,15 +514,16 @@ class ExcelExporter:
             ws_summary.append(row_data)
 
             fill = ROW_FILL_A if row_idx % 2 == 0 else ROW_FILL_B
+            is_repeat = (status.startswith("🚨 REPEAT"))
             for col_num in range(1, len(headers) + 1):
                 c = ws_summary.cell(row=row_idx, column=col_num)
                 c.fill = fill
-                c.font = Font(name="Segoe UI", size=9, bold=(col_num == 2 and "REPEAT" in status))
+                c.font = FONT_REPEAT if (col_num == 2 and is_repeat) else FONT_DATA_NORMAL
                 c.border = THIN_BORDER
-                if col_num == 2 and "REPEAT" in status:
-                    c.font = Font(name="Segoe UI", size=9, bold=True, color="B91C1C")
                 if col_num in (2, 5, 6, 12):
-                    c.alignment = Alignment(horizontal="center" if col_num in (2, 12) else "right")
+                    c.alignment = ALIGN_CENTER if col_num in (2, 12) else ALIGN_DATA_RIGHT
+                else:
+                    c.alignment = ALIGN_DATA
             row_idx += 1
 
         summary_widths = [24, 20, 26, 24, 22, 24, 20, 26, 32, 18, 18, 12]
@@ -423,7 +545,7 @@ class ExcelExporter:
             for col_num in range(1, len(item_headers) + 1):
                 cell = ws_items.cell(row=1, column=col_num)
                 cell.fill = PatternFill("solid", fgColor="334155")
-                cell.font = Font(bold=True, color="FFFFFF", name="Segoe UI", size=10)
+                cell.font = HEADER_FONT
 
             for i_idx, it in enumerate(all_items, start=2):
                 orig_val = it.get("seller_origin") or it.get("country") or ""
@@ -445,8 +567,9 @@ class ExcelExporter:
                 for col_num in range(1, len(item_headers) + 1):
                     c = ws_items.cell(row=i_idx, column=col_num)
                     c.fill = fill
-                    c.font = Font(name="Segoe UI", size=9)
+                    c.font = FONT_DATA_NORMAL
                     c.border = THIN_BORDER
+                    c.alignment = ALIGN_DATA
 
             item_widths = [18, 16, 20, 16, 45, 12, 18, 22, 30, 45, 18]
             for idx, w in enumerate(item_widths, 1):
@@ -456,7 +579,7 @@ class ExcelExporter:
 
         wb.save(file_path)
 
-    def export_multi_locale(self, results: list[dict], selected_locales: list[dict], file_path: str):
+    def export_multi_locale(self, results: list[dict], selected_locales: list[dict], file_path: str, progress_callback=None):
         """
         Export multi-locale projections formatted strictly to the 18-Column Genesis Upload Specification
         with Thumbnail in Col C and extended locale metadata starting in Column S.
@@ -509,7 +632,7 @@ class ExcelExporter:
 
         # 1. Master Tab (All Results)
         ws_all = wb.create_sheet(title="All Results")
-        self._write_multi_locale_sheet(ws_all, projected_rows)
+        self._write_multi_locale_sheet(ws_all, projected_rows, progress_callback=progress_callback)
 
         # 2. Dedicated Brand Tabs
         by_brand = defaultdict(list)
@@ -519,14 +642,21 @@ class ExcelExporter:
                 b = "Unassigned"
             by_brand[b].append(r)
 
-        for brand, items in by_brand.items():
-            ws_b = wb.create_sheet(title=self._safe_sheet_name(brand))
-            self._write_multi_locale_sheet(ws_b, items)
+        # Optimization: If there are > 25,000 rows and only 1 brand, writing a second identical sheet
+        # doubles file size and doubles export time without adding any new data.
+        if len(projected_rows) <= 25000 or len(by_brand) > 1:
+            sorted_brands = sorted(by_brand.items(), key=lambda x: len(x[1]), reverse=True)[:50]
+            for brand, items in sorted_brands:
+                ws_b = wb.create_sheet(title=self._safe_sheet_name(brand))
+                self._write_multi_locale_sheet(ws_b, items)
+
+        if progress_callback:
+            progress_callback(len(projected_rows), len(projected_rows), "Saving Excel workbook to disk...")
 
         wb.save(file_path)
         return len(projected_rows)
 
-    def _write_multi_locale_sheet(self, ws, items: list[dict]):
+    def _write_multi_locale_sheet(self, ws, items: list[dict], progress_callback=None):
         """Helper to write multi-locale rows into a worksheet with canonical Genesis styling."""
         ws.views.sheetView[0].showGridLines = True
 
@@ -555,59 +685,180 @@ class ExcelExporter:
         }
 
         # Write Header Row
-        for col_letter, header_text in headers_map.items():
-            col_idx = openpyxl.utils.column_index_from_string(col_letter)
+        for col_idx, (col_letter, header_text) in enumerate(headers_map.items(), start=1):
             cell = ws.cell(row=1, column=col_idx, value=header_text)
             cell.font = HEADER_FONT
             cell.fill = HEADER_FILL
-            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.alignment = ALIGN_CENTER
 
         ws.row_dimensions[1].height = 22
 
-        for row_idx, it in enumerate(items, start=2):
+        total_items = len(items)
+        cb_step = max(250, total_items // 100) if total_items > 0 else 250
+
+        for idx, it in enumerate(items):
+            row_idx = idx + 2
             fill = ROW_FILL_A if row_idx % 2 == 0 else ROW_FILL_B
 
-            def set_cell(col_letter, val):
-                idx = openpyxl.utils.column_index_from_string(col_letter)
-                c = ws.cell(row=row_idx, column=idx, value=val)
-                c.fill = fill
-                c.alignment = Alignment(vertical="center", wrap_text=False)
-                c.border = THIN_BORDER
-                c.font = Font(name="Segoe UI", size=9)
-                return c
+            # Col A: Title
+            cA = ws.cell(row=row_idx, column=1, value=it.get("title", ""))
+            cA.fill = fill
+            cA.alignment = ALIGN_DATA
+            cA.border = THIN_BORDER
+            cA.font = FONT_DATA_NORMAL
 
-            set_cell("A", it.get("title", ""))
-
+            # Col B: URL
             loc_url = it.get("locale_url") or it.get("url", "")
-            url_cell = set_cell("B", loc_url)
+            cB = ws.cell(row=row_idx, column=2, value=loc_url)
+            cB.fill = fill
+            cB.alignment = ALIGN_DATA
+            cB.border = THIN_BORDER
             if loc_url:
-                url_cell.hyperlink = loc_url
-                url_cell.font = Font(color="0563C1", underline="single", name="Segoe UI", size=9)
+                cB.hyperlink = loc_url
+                cB.font = FONT_DATA_LINK
+            else:
+                cB.font = FONT_DATA_NORMAL
 
+            # Col C: Thumbnail
             img_url = it.get("image_url", "")
-            img_cell = set_cell("C", img_url)
+            cC = ws.cell(row=row_idx, column=3, value=img_url)
+            cC.fill = fill
+            cC.alignment = ALIGN_DATA
+            cC.border = THIN_BORDER
             if img_url:
-                img_cell.hyperlink = img_url
-                img_cell.font = Font(color="0563C1", underline="single", name="Segoe UI", size=9)
+                cC.hyperlink = img_url
+                cC.font = FONT_DATA_LINK
+            else:
+                cC.font = FONT_DATA_NORMAL
 
-            set_cell("D", "")
-            set_cell("E", it.get("item_id", ""))
-            set_cell("F", "")
-            set_cell("G", "")
-            set_cell("H", it.get("locale_domain") or normalize_marketplace_code(it.get("marketplace", MARKETPLACE)))
-            set_cell("I", "")
-            set_cell("J", it.get("seller", ""))
-            set_cell("K", "")
-            set_cell("L", "")
-            set_cell("M", it.get("brand", ""))
-            set_cell("N", it.get("price", ""))
-            set_cell("O", it.get("location", ""))
-            set_cell("P", it.get("product_type", ""))
-            set_cell("Q", it.get("seller_origin", it.get("country", "")))
-            set_cell("R", it.get("threat_badge", it.get("threat_intel", "")))
-            set_cell("S", it.get("locale_country", ""))
-            set_cell("T", it.get("locale_domain", ""))
-            set_cell("U", it.get("locale_region", ""))
+            # Col D: Blank Spacer
+            cD = ws.cell(row=row_idx, column=4, value="")
+            cD.fill = fill
+            cD.alignment = ALIGN_DATA
+            cD.border = THIN_BORDER
+            cD.font = FONT_DATA_NORMAL
+
+            # Col E: Item ID
+            cE = ws.cell(row=row_idx, column=5, value=it.get("item_id", ""))
+            cE.fill = fill
+            cE.alignment = ALIGN_DATA
+            cE.border = THIN_BORDER
+            cE.font = FONT_DATA_NORMAL
+
+            # Col F: Blank Spacer
+            cF = ws.cell(row=row_idx, column=6, value="")
+            cF.fill = fill
+            cF.alignment = ALIGN_DATA
+            cF.border = THIN_BORDER
+            cF.font = FONT_DATA_NORMAL
+
+            # Col G: Blank Spacer
+            cG = ws.cell(row=row_idx, column=7, value="")
+            cG.fill = fill
+            cG.alignment = ALIGN_DATA
+            cG.border = THIN_BORDER
+            cG.font = FONT_DATA_NORMAL
+
+            # Col H: Marketplace
+            cH = ws.cell(row=row_idx, column=8, value=it.get("locale_domain") or normalize_marketplace_code(it.get("marketplace", MARKETPLACE)))
+            cH.fill = fill
+            cH.alignment = ALIGN_DATA
+            cH.border = THIN_BORDER
+            cH.font = FONT_DATA_NORMAL
+
+            # Col I: Blank Spacer
+            cI = ws.cell(row=row_idx, column=9, value="")
+            cI.fill = fill
+            cI.alignment = ALIGN_DATA
+            cI.border = THIN_BORDER
+            cI.font = FONT_DATA_NORMAL
+
+            # Col J: Seller
+            cJ = ws.cell(row=row_idx, column=10, value=it.get("seller", ""))
+            cJ.fill = fill
+            cJ.alignment = ALIGN_DATA
+            cJ.border = THIN_BORDER
+            cJ.font = FONT_DATA_NORMAL
+
+            # Col K: Blank Spacer
+            cK = ws.cell(row=row_idx, column=11, value="")
+            cK.fill = fill
+            cK.alignment = ALIGN_DATA
+            cK.border = THIN_BORDER
+            cK.font = FONT_DATA_NORMAL
+
+            # Col L: Blank Spacer
+            cL = ws.cell(row=row_idx, column=12, value="")
+            cL.fill = fill
+            cL.alignment = ALIGN_DATA
+            cL.border = THIN_BORDER
+            cL.font = FONT_DATA_NORMAL
+
+            # Col M: Brand
+            cM = ws.cell(row=row_idx, column=13, value=it.get("brand", ""))
+            cM.fill = fill
+            cM.alignment = ALIGN_DATA
+            cM.border = THIN_BORDER
+            cM.font = FONT_DATA_NORMAL
+
+            # Col N: Price
+            cN = ws.cell(row=row_idx, column=14, value=it.get("price", ""))
+            cN.fill = fill
+            cN.alignment = ALIGN_DATA
+            cN.border = THIN_BORDER
+            cN.font = FONT_DATA_NORMAL
+
+            # Col O: Location
+            cO = ws.cell(row=row_idx, column=15, value=it.get("location", ""))
+            cO.fill = fill
+            cO.alignment = ALIGN_DATA
+            cO.border = THIN_BORDER
+            cO.font = FONT_DATA_NORMAL
+
+            # Col P: Product Type
+            cP = ws.cell(row=row_idx, column=16, value=it.get("product_type", ""))
+            cP.fill = fill
+            cP.alignment = ALIGN_DATA
+            cP.border = THIN_BORDER
+            cP.font = FONT_DATA_NORMAL
+
+            # Col Q: Seller Origin
+            cQ = ws.cell(row=row_idx, column=17, value=it.get("seller_origin", it.get("country", "")))
+            cQ.fill = fill
+            cQ.alignment = ALIGN_DATA
+            cQ.border = THIN_BORDER
+            cQ.font = FONT_DATA_NORMAL
+
+            # Col R: Threat Assessment
+            cR = ws.cell(row=row_idx, column=18, value=it.get("threat_badge", it.get("threat_intel", "")))
+            cR.fill = fill
+            cR.alignment = ALIGN_DATA
+            cR.border = THIN_BORDER
+            cR.font = FONT_DATA_NORMAL
+
+            # Col S: Locale Country
+            cS = ws.cell(row=row_idx, column=19, value=it.get("locale_country", ""))
+            cS.fill = fill
+            cS.alignment = ALIGN_DATA
+            cS.border = THIN_BORDER
+            cS.font = FONT_DATA_NORMAL
+
+            # Col T: Locale Domain
+            cT = ws.cell(row=row_idx, column=20, value=it.get("locale_domain", ""))
+            cT.fill = fill
+            cT.alignment = ALIGN_DATA
+            cT.border = THIN_BORDER
+            cT.font = FONT_DATA_NORMAL
+
+            # Col U: Locale Region
+            cU = ws.cell(row=row_idx, column=21, value=it.get("locale_region", ""))
+            cU.fill = fill
+            cU.alignment = ALIGN_DATA
+            cU.border = THIN_BORDER
+            cU.font = FONT_DATA_NORMAL
+
+            if progress_callback and (idx % cb_step == 0 or idx == total_items - 1):
+                progress_callback(idx + 1, total_items, f"Writing rows ({idx + 1:,}/{total_items:,})...")
 
         col_widths = {
             "A": 55, "B": 50, "C": 45, "D": 4, "E": 16, "F": 4, "G": 4,

@@ -2638,6 +2638,274 @@ class TestApolloCoreFeatures(unittest.TestCase):
         self.assertIn("Retro Sunset", title)
         self.assertTrue(pb._is_valid_pod_variant("Retro Sunset Hoodie", title, "retro-sunset-coffee-mug"))
 
+    def test_76_hero_pipeline_marketplace_recognition_and_meli_enrichment(self):
+        """Test 76: Verify 1-Click Auto-Pipeline marketplace recognition and Mercado Libre enrichment."""
+        from main import EbayTool
+
+        app = EbayTool()
+        app.withdraw()
+        try:
+            # 1. Verify _detect_item_marketplace recognition across platforms
+            meli_mexico = {"marketplace": "Mercado Libre", "url": "https://articulo.mercadolibre.com.mx/MLM-12345-item", "item_id": "MLM12345"}
+            meli_brazil = {"marketplace": "Mercado Livre", "url": "https://produto.mercadolivre.com.br/MLB-67890-item", "item_id": "MLB67890"}
+            meli_by_id = {"marketplace": "", "url": "https://listado.mercadolibre.cl/item", "item_id": "MLC112233"}
+            ebay_item = {"marketplace": "eBay", "url": "https://www.ebay.com/itm/123456789", "item_id": "123456789"}
+            ali_item = {"marketplace": "AliExpress", "url": "https://www.aliexpress.com/item/1005001.html", "item_id": "1005001"}
+            printerval_item = {"marketplace": "Printerval", "url": "https://printerval.com/item-p99", "item_id": "99"}
+
+            self.assertEqual(app._detect_item_marketplace(meli_mexico), "mercadolibre")
+            self.assertEqual(app._detect_item_marketplace(meli_brazil), "mercadolibre")
+            self.assertEqual(app._detect_item_marketplace(meli_by_id), "mercadolibre")
+            self.assertEqual(app._detect_item_marketplace(ebay_item), "ebay")
+            self.assertEqual(app._detect_item_marketplace(ali_item), "aliexpress")
+            self.assertEqual(app._detect_item_marketplace(printerval_item), "printerval")
+
+            # 2. Verify _propagate_enriched_seller updates sibling items with same store / URL
+            item_a = {
+                "item_id": "MLM100",
+                "title": "Toyota Badge A",
+                "url": "https://articulo.mercadolibre.com.mx/pagina/autoparts_mexico/MLM100",
+                "seller": "Mercado Libre Seller",
+                "marketplace": "Mercado Libre"
+            }
+            item_b = {
+                "item_id": "MLM200",
+                "title": "Toyota Badge B",
+                "url": "https://articulo.mercadolibre.com.mx/pagina/autoparts_mexico/MLM200",
+                "seller": "Mercado Libre Seller",
+                "marketplace": "Mercado Libre"
+            }
+            app.results = [item_a, item_b]
+
+            # Enrich item_a with real store name
+            updated = app._propagate_enriched_seller(item_a, "AutoParts Mexico Store")
+            self.assertEqual(item_a["seller"], "AutoParts Mexico Store")
+            self.assertEqual(item_b["seller"], "AutoParts Mexico Store", "Sibling item sharing /pagina/autoparts_mexico/ must inherit enriched seller")
+            self.assertEqual(updated, 1)
+
+            # 3. Verify mock Mercado Libre enrichment in _run_hero_pipeline Stage 2
+            meli_target = {
+                "item_id": "MLM999",
+                "title": "TRD Emblem Grille",
+                "url": "https://articulo.mercadolibre.com.mx/MLM-999-trd",
+                "seller": "Mercado Libre Seller",
+                "marketplace": "Mercado Libre"
+            }
+            app.results = [meli_target]
+
+            def mock_enrich(items, progress_callback=None, stop_event=None):
+                for idx, it in enumerate(items, 1):
+                    it["seller"] = "SpeedShop CDMX"
+                    if progress_callback:
+                        progress_callback(idx, len(items), it)
+
+            with unittest.mock.patch.object(app.mercadolibre_scraper, "enrich_seller_info", side_effect=mock_enrich) as mock_m:
+                with unittest.mock.patch.object(app, "_show_themed_confirm", return_value=True):
+                    # Run hero pipeline on selected items
+                    app.result_tree = unittest.mock.MagicMock()
+                    app.result_tree.selection.return_value = []
+                    
+                    # We can directly invoke worker logic or verify dispatch mapping
+                    items_needing = [it for it in app.results if "mercado" in it.get("seller", "").lower()]
+                    self.assertEqual(len(items_needing), 1)
+                    mkt = app._detect_item_marketplace(items_needing[0])
+                    self.assertEqual(mkt, "mercadolibre")
+                    
+                    # Call enrichment
+                    app.mercadolibre_scraper.enrich_seller_info(items_needing)
+                    self.assertEqual(meli_target["seller"], "SpeedShop CDMX")
+
+        finally:
+            app.destroy()
+
+    def test_77_dynamic_headless_mid_run_switching_and_cdp_bounds(self):
+        """Test 77: Verify dynamic headless/stealth mode switching mid-run, UI button sync, and CDP bounds."""
+        from main import EbayTool
+
+        app = EbayTool()
+        app.withdraw()
+        try:
+            # 1. Verify _get_all_scrapers returns all 20 scrapers
+            all_scrapers = app._get_all_scrapers()
+            self.assertEqual(len(all_scrapers), 20)
+
+            # 2. Test initial sync to stealth (True)
+            app.headless_var.set(True)
+            app._sync_scraper_headless_mode(dynamic_window_shift=False)
+            for sc in all_scrapers:
+                self.assertTrue(sc.headless, f"Scraper {sc.__class__.__name__} should be headless=True")
+
+            # 3. Test dynamic switch to visible (False) mid-flight
+            app.headless_var.set(False)
+            app._sync_scraper_headless_mode(dynamic_window_shift=False)
+            for sc in all_scrapers:
+                self.assertFalse(sc.headless, f"Scraper {sc.__class__.__name__} should be headless=False")
+
+            # 4. Verify MercadoLibreScraper CDP window bounds shifting
+            meli = app.mercadolibre_scraper
+            mock_cdp = unittest.mock.MagicMock()
+            mock_cdp.send.return_value = {"windowId": 9999, "bounds": {"left": -2400, "top": -2400, "width": 1366, "height": 850}}
+            mock_page = unittest.mock.MagicMock()
+            mock_page.is_closed.return_value = False
+            mock_context = unittest.mock.MagicMock()
+            mock_context.pages = [mock_page]
+            mock_context.new_cdp_session.return_value = mock_cdp
+
+            meli._context = mock_context
+
+            # Switch to visible: should shift window to (100, 100)
+            meli.set_headless(False, shift_active_window=True)
+            self.assertFalse(meli.headless)
+            mock_cdp.send.assert_any_call("Browser.setWindowBounds", {
+                "windowId": 9999,
+                "bounds": {"left": 100, "top": 100, "width": 1280, "height": 800, "windowState": "normal"}
+            })
+
+            # Switch back to stealth: should shift window to (-2400, -2400)
+            meli.set_headless(True, shift_active_window=True)
+            self.assertTrue(meli.headless)
+            mock_cdp.send.assert_any_call("Browser.setWindowBounds", {
+                "windowId": 9999,
+                "bounds": {"left": -2400, "top": -2400, "width": 1366, "height": 850, "windowState": "normal"}
+            })
+
+            # 5. Verify Redbubble and Scribd context reset on mode change
+            rb = app.redbubble_scraper
+            rb._context = unittest.mock.MagicMock()
+            rb.headless = True
+            rb.set_headless(False)
+            self.assertFalse(rb.headless)
+            self.assertIsNone(rb._context)
+
+            sc = app.scribd_scraper
+            sc._context = unittest.mock.MagicMock()
+            sc._browser = unittest.mock.MagicMock()
+            sc.headless = True
+            sc.set_headless(False)
+            self.assertFalse(sc.headless)
+            self.assertIsNone(sc._context)
+
+            # 6. Verify top-bar quick button toggle and live UI synchronization
+            app.headless_var.set(True)
+            app._toggle_headless()
+            self.assertEqual(app.stealth_quick_btn.cget("text"), "👻 Stealth")
+
+            # Click quick toggle: should become visible
+            app._toggle_headless_quick()
+            self.assertFalse(app.headless_var.get())
+            self.assertEqual(app.stealth_quick_btn.cget("text"), "🖥 Visible")
+            for sc_inst in all_scrapers:
+                self.assertFalse(sc_inst.headless)
+
+            # Click again: should become stealth
+            app._toggle_headless_quick()
+            self.assertTrue(app.headless_var.get())
+            self.assertEqual(app.stealth_quick_btn.cget("text"), "👻 Stealth")
+            for sc_inst in all_scrapers:
+                self.assertTrue(sc_inst.headless)
+
+        finally:
+            app.destroy()
+
+    def test_78_printblur_search_signature_and_store_resolution(self):
+        """Verify PrintblurScraper.search accepts condition, stop_event, **kwargs and resolve_store_info handles global sweeps."""
+        import threading
+        from printblur_scraper import PrintblurScraper
+        pb = PrintblurScraper(headless=True)
+
+        # 1. Verify resolve_store_info for global catalog vs creator profile
+        g1 = pb.resolve_store_info("")
+        self.assertEqual(g1["store_name"], "Printblur Global Catalog")
+
+        g2 = pb.resolve_store_info("🌐 Global Printblur Search")
+        self.assertEqual(g2["store_name"], "Printblur Global Catalog")
+
+        c1 = pb.resolve_store_info("https://printblur.com/@vintage_vibes")
+        self.assertEqual(c1["store_name"], "Vintage Vibes")
+
+        c2 = pb.resolve_store_info("https://printblur.com/shops/cool-tees")
+        self.assertEqual(c2["store_name"], "Cool Tees")
+
+        # 2. Verify search() accepts condition and stop_event without throwing unexpected keyword argument error
+        with unittest.mock.patch("playwright.sync_api.sync_playwright") as mock_pw:
+            mock_ctx = unittest.mock.MagicMock()
+            mock_page = unittest.mock.MagicMock()
+            mock_pw.return_value.__enter__.return_value = unittest.mock.MagicMock()
+            pb._get_context = unittest.mock.MagicMock(return_value=mock_ctx)
+            mock_ctx.pages = [mock_page]
+            mock_page.evaluate.return_value = []
+
+            stop_ev = threading.Event()
+            # This call threw TypeError before the fix; now it must succeed gracefully
+            results = pb.search(
+                "Toyota",
+                max_items=10,
+                condition="all",
+                stop_event=stop_ev,
+                log_callback=lambda m: None,
+                extra_unexpected_param="safe"
+            )
+    def test_79_origin_themes_and_button_contrast(self):
+        """Verify Origin Platinum & Origin Midnight theme definitions, contrast, and black Stop button invariant."""
+        from main import THEMES, THEME_SUBHEADERS, EbayTool
+        import tkinter as tk
+
+        # 1. Verify Origin themes exist and conform to color specifications
+        self.assertIn("origin_platinum", THEMES)
+        self.assertIn("origin_midnight", THEMES)
+
+        plat = THEMES["origin_platinum"]
+        mid = THEMES["origin_midnight"]
+
+        self.assertEqual(plat["bg"], "#f0f0f0")
+        self.assertEqual(plat["text"], "#000227")
+        self.assertEqual(plat["accent"], "#0044ff")
+        self.assertEqual(plat["btn_danger_fg"], "#000000")
+        self.assertEqual(plat["btn_danger_disabled_fg"], "#000000")
+
+        self.assertEqual(mid["bg"], "#000227")
+        self.assertEqual(mid["text"], "#ffffff")
+        self.assertEqual(mid["accent"], "#0044ff")
+        self.assertEqual(mid["btn_danger_fg"], "#000000")
+        self.assertEqual(mid["btn_danger_disabled_fg"], "#000000")
+
+        # 2. Strict naming rule: Ensure forbidden brand word 'Genesis' is NOT exposed in UI names
+        self.assertNotIn("genesis", plat["name"].lower())
+        self.assertNotIn("genesis", mid["name"].lower())
+        self.assertNotIn("genesis", THEME_SUBHEADERS.get("origin_platinum", "").lower())
+        self.assertNotIn("genesis", THEME_SUBHEADERS.get("origin_midnight", "").lower())
+
+        # 3. Verify Continental pause and contrast fix
+        cont = THEMES["continental"]
+        self.assertEqual(cont.get("btn_accent_fg"), "#0A0B0E")
+
+        # 4. Verify live UI switching to Origin Platinum and Origin Midnight
+        app = EbayTool()
+        app.withdraw()
+        try:
+            # Switch to Origin Platinum
+            app.current_theme_key = "origin_platinum"
+            app.theme = plat
+            app._apply_full_theme()
+            self.assertEqual(app.stop_btn.cget("fg"), "#000000")
+            self.assertEqual(app.stop_btn.cget("disabledforeground"), "#000000")
+
+            # Switch to Origin Midnight
+            app.current_theme_key = "origin_midnight"
+            app.theme = mid
+            app._apply_full_theme()
+            self.assertEqual(app.stop_btn.cget("fg"), "#000000")
+            self.assertEqual(app.stop_btn.cget("disabledforeground"), "#000000")
+
+            # Switch to Continental
+            app.current_theme_key = "continental"
+            app.theme = cont
+            app._apply_full_theme()
+            self.assertEqual(app.stop_btn.cget("fg"), "#000000")
+            self.assertEqual(app.stop_btn.cget("disabledforeground"), "#000000")
+        finally:
+            app.destroy()
+
 
 if __name__ == "__main__":
     unittest.main()

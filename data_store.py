@@ -177,6 +177,8 @@ class DataStore:
         return self._data.get("settings", {}).get(key, default)
 
     def set_setting(self, key, value):
+        if self._data.get("settings", {}).get(key) == value:
+            return
         self._data.setdefault("settings", {})[key] = value
         self._save()
 
@@ -208,6 +210,13 @@ class DataStore:
         self.set_setting("unlocked_cowboys", True)
         self.unlock_achievement("lone_star")
 
+    def is_stark_unlocked(self) -> bool:
+        return bool(self.get_setting("unlocked_stark", False)) or self.is_achievement_unlocked("privatized_takedown")
+
+    def unlock_stark(self):
+        self.set_setting("unlocked_stark", True)
+        self.unlock_achievement("privatized_takedown")
+
     # ── Achievements & Career Enforcement Milestones ───────────────────────────
     def get_achievements_data(self) -> dict:
         """Return achievements dictionary containing lifetime stats and unlocked milestones."""
@@ -233,6 +242,8 @@ class DataStore:
             ach["unlocked"]["rebel_frequency"] = {"unlocked_at": now_str}
         if self.get_setting("unlocked_cowboys", False) and "lone_star" not in ach["unlocked"]:
             ach["unlocked"]["lone_star"] = {"unlocked_at": now_str}
+        if self.get_setting("unlocked_stark", False) and "privatized_takedown" not in ach["unlocked"]:
+            ach["unlocked"]["privatized_takedown"] = {"unlocked_at": now_str}
         return ach
 
     def get_lifetime_listings(self) -> int:
@@ -281,6 +292,8 @@ class DataStore:
             self._data.setdefault("settings", {})["unlocked_fir"] = True
         elif ach_id == "lone_star":
             self._data.setdefault("settings", {})["unlocked_cowboys"] = True
+        elif ach_id == "privatized_takedown":
+            self._data.setdefault("settings", {})["unlocked_stark"] = True
 
         self._save()
         return True
@@ -856,6 +869,8 @@ class DataStore:
         if name not in dossiers or len(dossiers) <= 1:
             return False
         del dossiers[name]
+        if name == "Main Dossier" or not dossiers.get("Main Dossier"):
+            self._data["staged_dossier"] = []
         self._save()
         try:
             snap_path = self._get_dossier_snapshot_path(name)
@@ -864,6 +879,46 @@ class DataStore:
         except Exception:
             pass
         return True
+
+    def purge_staged_cache_and_vacuum(self) -> dict:
+        """Purge all temporary staged dossier listings, cached search scratchpads, and vacuum data.json.
+        Leaves themes, brands, exclusions, inclusions, presets, column widths, and achievements completely intact."""
+        before_bytes = os.path.getsize(DATA_FILE) if os.path.exists(DATA_FILE) else 0
+
+        # 1. Clear staged scratchpads across all dossiers
+        self._data["staged_dossier"] = []
+        if "dossiers" in self._data and isinstance(self._data["dossiers"], dict):
+            for k in list(self._data["dossiers"].keys()):
+                self._data["dossiers"][k] = []
+
+        # 2. Compact enforcement registry to keep only recent entries if excessively bloated (> 2,000)
+        reg = self._data.get("enforcement_registry", {})
+        if len(reg) > 2000:
+            sorted_keys = sorted(reg.keys(), key=lambda k: reg[k].get("last_seen", ""), reverse=True)
+            self._data["enforcement_registry"] = {k: reg[k] for k in sorted_keys[:1000]}
+
+        # 3. Clean up dossier snapshot directory
+        purged_files = 0
+        if os.path.exists(DOSSIERS_DIR):
+            for f in os.listdir(DOSSIERS_DIR):
+                if f.endswith(".json") or f.endswith(".tmp"):
+                    try:
+                        os.remove(os.path.join(DOSSIERS_DIR, f))
+                        purged_files += 1
+                    except Exception:
+                        pass
+
+        # 4. Save and compact data.json
+        self._save()
+        after_bytes = os.path.getsize(DATA_FILE) if os.path.exists(DATA_FILE) else 0
+        freed_mb = max(0.0, (before_bytes - after_bytes) / (1024 * 1024))
+
+        return {
+            "freed_mb": freed_mb,
+            "before_bytes": before_bytes,
+            "after_bytes": after_bytes,
+            "purged_snapshots": purged_files
+        }
 
     def clear_dossier(self, name: str):
         """Clear all listings from a specific dossier vault."""
@@ -1257,7 +1312,12 @@ class DataStore:
             badge = f"🌍 {country_resolved}"
             is_high = False
         elif loc_clean:
-            badge = "❓ Warehouse (Unresolved Origin)"
+            if any(k in loc_clean for k in ("maker", "artisan", "creator", "global maker", "etsy")):
+                badge = "🧶 Commercial Maker (Etsy)"
+            elif is_3pl or any(k in loc_clean for k in ("warehouse", "distribution", "logistics", "fulfillment", "hub", "center")):
+                badge = "❓ Warehouse (Unresolved Origin)"
+            else:
+                badge = "❓ Unresolved Origin"
             is_high = False
 
         return {

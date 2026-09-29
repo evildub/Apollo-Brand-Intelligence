@@ -113,3 +113,72 @@ When explicitly instructed to update GitHub or publish a release:
 3. **Zero Blind Merges (Test Suite Verification)**:
    - Run `python run_tests.py` before declaring any task complete to ensure 100% test pass rate across all unit and integration tests.
    - Every bug discovered and fixed in the field must have a corresponding regression unit test added to `run_tests.py` to ensure it never recurs.
+
+---
+
+## 7. OPSEC, Confidentiality & Internal Secrets Invariants
+
+1. **Strict Prohibition on Exposing Internal Codenames ("Genesis")**:
+   - **NEVER** display, list, or reference sensitive internal codenames—specifically the word `"Genesis"` (or proprietary enterprise backend systems)—in user-facing UI labels, theme names, subheaders, tooltips, dialogs, about pages, public exports, or commit messages.
+   - Use generic, professional terminology instead: e.g., *"Enterprise Base of Record"*, *"Enterprise 18-Column Schema"*, *"Central Rights System"*, or *"Enterprise Dossier"*.
+   - Vehicle parts and catalog data (e.g. Genesis G70/G80 automotive models in test lists) are domain-specific data, but internal architectural systems must NEVER be named or leaked.
+
+2. **Absolute Secrecy of Hidden Themes & Easter Eggs**:
+   - Hidden/secret themes (e.g., The Continental, future easter eggs) and their unlock triggers, cheat codes, or secret keystrokes must **NEVER** be listed, exposed, or detailed in user-facing menus, documentation, the Field Guide, tooltips, or public docs.
+   - Keep easter egg conditions and unlock paths strictly internal in code. Do not spoil the surprise or explain how to unlock them in public-facing interfaces.
+
+---
+
+## 8. The Apollo & Artemis Twin-Engine Architecture
+
+1. **Strict Separation of Concerns**:
+   - **Apollo (`main.py`)**: *The Eyes* — Dedicated to Multi-Sector Reconnaissance, 19+ Scrapers, Search Hygiene, DCT pHash Visual Dredging, Syndicate Correlation, and Dossier Triage.
+   - **Artemis (`artemis.py`)**: *The Hands* — Dedicated to Rights Enforcement, Authenticated Portal Automation (Amazon Brand Registry, Walmart Brand Portal, VeRO, POD portals), Rights Owner / LOA Registries, and Formal Notice Filing.
+   - **Zero Monolithic Bloat**: Artemis must never import Apollo's scraping engines. Apollo must never embed heavy Playwright portal automation loops directly inside `main.py`.
+
+2. **The Decoupled Bridge Interface (`artemis_bridge.py`)**:
+   - Apollo communicates with Artemis strictly via `artemis_bridge.py` using standardized intake JSON files written to a dedicated drop directory (`artemis_intake/`).
+   - Artemis is 100% standalone: enforcement analysts can launch `artemis.py` directly without Apollo running, or Apollo can spawn it via the 1-click bridge.
+
+3. **Isolated State & Session Vaults**:
+   - Artemis maintains its own independent configuration and database (`artemis_data.json`), completely decoupled from Apollo's `data.json`.
+   - Browser profiles, portal authentication tokens, and legal rights credentials reside strictly within Artemis's own session management.
+
+4. **Independent Test Execution**:
+   - Artemis maintains its own dedicated, high-speed test suite (`run_artemis_tests.py`), verifying the bridge, data store, legal notice generator, LOA registry, and portal dispatch logic independently of Apollo's extensive test suite (`run_tests.py`).
+   - Run `python run_artemis_tests.py` when modifying rights enforcement or bridge logic.
+
+5. **Universal Theme-Adaptive Dialogs (Zero Native White Popups)**:
+   - Every dialog, confirmation prompt, alert, or file notification in both Apollo and Artemis MUST use theme-adaptive modals (`_show_themed_info`, `_show_themed_confirm`, `_show_themed_warning`, `_show_themed_error`).
+   - Never use unstyled native Windows `tkinter.messagebox` which causes blinding white flashbangs on dark themes.
+
+---
+
+## 9. Marketplace Isolation & Cross-Functional Verification Protocol
+
+1. **Strict Marketplace Isolation (Zero Collateral Contamination)**:
+   - An update or bug fix for one marketplace (e.g. eBay, Shopify, Printerval, Redbubble) must NEVER alter, degrade, or cross-contaminate the scraping, parsing, or queuing behavior of any other marketplace unless explicitly instructed by the user or mutually verified.
+   - Core dispatch routines (`_process_queue`, `_add_to_queue`) must maintain explicit, isolated branches for each marketplace. Unhandled or unknown platforms must NEVER fall back into an arbitrary scraper (e.g., never default an unknown or web platform to the eBay scraper).
+
+2. **Mandatory 360° Cross-Functional Verification for Any Marketplace Change**:
+   - Whenever an update is made to ANY marketplace scraper, store resolver, or queuing path, the change MUST be verified across ALL functional subsystems touching that platform before declaring completion:
+     1. **Direct Store / Seller Search**: Single-seller inventory querying by username, store slug, `/str/`, and `/usr/` URLs.
+     2. **Global / Organic Search**: Sector-wide search sweeps with keywords or brand targets without store constraints.
+     3. **Full Store / Inventory Sweeps**: Unfiltered catalog sweeps (`*` includes) across all departments.
+     4. **Connected Seller Network (`connected_network_modal.py`)**: Multi-listing seller graph correlation and cross-store attribution.
+     5. **Whitelist & Dealer Filtering**: Dealer exemption checks, false positive exclusion, and brand safety shields.
+     6. **Seller & Merchant Enrichment**: Both 1-Click Auto-Pipeline seller resolution AND manual backdoor / context-menu enrichment.
+     7. **Artemis Bridge & Notice Assembly (`artemis_bridge.py`)**: Data ingestion into legal dossiers and format compliance.
+
+3. **Absolute Fidelity to User Selection (No Unsolicited Auto-Expansion)**:
+   - In a Store / Seller Search, search ONLY the exact brands or keywords targeted by the user.
+   - NEVER auto-expand a parent corporate brand (e.g. `General Motors`) into unselected sub-brands (`Chevrolet`, `Cadillac`, `GMC`, etc.) in store searches. If the user wants specific sub-brands, they will select them.
+   - Distinguish strictly between:
+     - **Store Search**: Restricted to the user's targeted handle with user-selected search terms.
+     - **Organic Search**: Global marketplace sweeps paired with user-entered violation keywords.
+
+4. **Empirical Verification Over Synthetic Test Passes**:
+   - Passing synthetic unit test assertions does NOT prove live marketplace resilience against active anti-bot systems, session cookies, or dynamic HTML changes.
+   - Whenever touching scraper handles, session management, or routing logic, execute real live test queries against the actual target marketplace to confirm real listings are returned before reporting back to the user.
+
+

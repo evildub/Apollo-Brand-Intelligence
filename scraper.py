@@ -227,7 +227,7 @@ class EbayScraper:
                     domain=active_dom,
                     stop_event=stop_event, pause_event=pause_event
                 )
-                if items or (stop_event and stop_event.is_set()):
+                if items or (stop_event and stop_event.is_set()) or self.is_bot_challenge:
                     return items
             except Exception:
                 pass
@@ -425,7 +425,7 @@ class EbayScraper:
                 # Warm up session with authentic eBay cookies on active domain
                 try:
                     page.goto(f"https://{host}", wait_until="domcontentloaded", timeout=12000)
-                    time.sleep(0.6)
+                    time.sleep(1.8)
                 except Exception:
                     pass
 
@@ -520,6 +520,23 @@ class EbayScraper:
                             continue
 
                     page_items = self._parse_html(html, fallback_seller=cand or seller_label, domain=active_dom)
+                    if not page_items and html:
+                        h_low = html.lower()
+                        if any(k in h_low for k in ("error page | ebay", "pardon our interruption", "something went wrong on our end")) or ("0." in h_low and "ebay" in h_low and "sorry" in h_low):
+                            time.sleep(1.8)
+                            try:
+                                page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                                try:
+                                    page.wait_for_selector(".s-card, .s-item, .str-item-card, .srp-results", timeout=5000)
+                                except Exception: pass
+                                time.sleep(0.4)
+                                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                                time.sleep(0.3)
+                                html = page.content()
+                                page_items = self._parse_html(html, fallback_seller=cand or seller_label, domain=active_dom)
+                            except Exception:
+                                pass
+
                     if page_items:
                         active_info = cand_info
                         seller_label = cand or seller_label
@@ -583,12 +600,20 @@ class EbayScraper:
 
                 if not items and html:
                     html_low = html.lower()
-                    if any(t in html_low for t in ("pardon our interruption", "security measure", "please verify you are a human", "access denied")):
+                    if any(t in html_low for t in (
+                        "pardon our interruption",
+                        "security measure",
+                        "please verify you are a human",
+                        "access denied",
+                        "something went wrong on our end",
+                        "error page | ebay",
+                        "sorry, something went wrong",
+                    )) or ("0." in html_low and "ebay" in html_low and "sorry" in html_low):
                         self.is_bot_challenge = True
                         self.blocked_store_name = seller_label
                         self.blocked_store_url = url
-                        self.last_scrape_warning = f"⚠ [IP THROTTLE / BOT CHALLENGE] eBay returned a security rate-limit / CAPTCHA challenge on '{seller_label}' — zero results returned due to IP block, not empty inventory."
-                    elif any(t in html_low for t in ("error page | ebay", "does not exist", "store not found", "seller not found", "we looked everywhere")):
+                        self.last_scrape_warning = f"⚠ [IP THROTTLE / BOT CHALLENGE] eBay / Akamai rate-limited '{seller_label}' ('Something went wrong on our end' / Error Page) — zero results returned due to temporary edge rate-limit, not empty store."
+                    elif any(t in html_low for t in ("does not exist", "store not found", "seller not found", "we looked everywhere")):
                         self.last_scrape_warning = f"ℹ Store/Seller '{seller_label}' returned 0 results or store was not found on eBay ({active_dom})."
                     else:
                         self.last_scrape_warning = ""

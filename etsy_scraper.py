@@ -26,7 +26,18 @@ logger = logging.getLogger("EtsyScraper")
 COMMERCIAL_KEYWORDS = [
     "decal", "decals", "sticker", "stickers", "badge", "badges", "emblem", "emblems",
     "vinyl", "t-shirt", "tee", "hoodie", "apparel", "reproduction", "custom fit",
-    "laser cut", "cnc", "3d print", "3d printed", "replacement", "wholesale"
+    "laser cut", "cnc", "3d print", "3d printed", "replacement", "wholesale",
+    "patch", "patches", "keychain", "keychains", "tumbler", "mug", "sign",
+    "print on demand", "pack of", "set of", "custom made", "accessories"
+]
+
+# Keywords indicating vintage / used / 1-of-1 / handpicked closet listings
+VINTAGE_HANDPICKED_KEYWORDS = [
+    "vintage", "retro 70s", "retro 80s", "retro 90s", "antique", "estate find",
+    "thrifted", "pre-owned", "preowned", "used", "original 19", "deadstock",
+    "one of a kind", "1 of 1", "handpicked", "curated", "single piece",
+    "collector original", "true vintage", "authentic vintage", "rare find", "rare vintage",
+    "worn", "distressed original", "old stock original"
 ]
 
 
@@ -264,11 +275,12 @@ class EtsyScraper:
                 if p_match:
                     price = f"${p_match.group(0)}"
 
-            # Badges (Bestseller, Star Seller, In Demand)
+            # Badges (Bestseller, Star Seller, In Demand, Vintage, Rare Find)
             badges = []
-            if card.select(".wt-badge--status-02, .wt-badge"):
-                for b in card.select(".wt-badge"):
-                    badges.append(b.get_text(strip=True))
+            for b in card.select(".wt-badge--status-02, .wt-badge, .wt-badge--status-01, [class*='badge']"):
+                b_text = b.get_text(strip=True)
+                if b_text and len(b_text) < 40 and b_text not in badges:
+                    badges.append(b_text)
 
             badge_str = " | ".join(badges) if badges else ""
 
@@ -286,6 +298,8 @@ class EtsyScraper:
             threat_badge = "🧶 Commercial Scale (Etsy)"
             if "Bestseller" in badge_str or "Popular" in badge_str:
                 threat_badge = "🔥 Bestseller Scale (Etsy)"
+            elif "Vintage" in badge_str or "Rare find" in badge_str:
+                threat_badge = "⚪ Vintage / Single Item"
 
             return {
                 "title": raw_title,
@@ -300,6 +314,7 @@ class EtsyScraper:
                 "thumbnail": img_url,
                 "threat_badge": threat_badge,
                 "threat_intel": f"Commercial Merchant ({badge_str})" if badge_str else "Commercial Merchant",
+                "raw_badges": badge_str,
                 "product_type": "Custom Goods & Repro",
                 "brand": "Unknown"
             }
@@ -312,19 +327,245 @@ class EtsyScraper:
         """
         title_lower = str(item.get("title", "")).lower()
         intel_lower = str(item.get("threat_intel", "")).lower()
+        raw_badges = str(item.get("raw_badges", "")).lower()
 
-        # Check for commercial keywords
-        for kw in COMMERCIAL_KEYWORDS:
-            if kw in title_lower:
-                return True
+        # 1. Direct vintage badges on search card
+        has_vintage_badge = any(b in raw_badges for b in ["vintage", "rare find", "only 1 left", "only 1 available"])
+        has_vintage_kw = any(vk in title_lower for vk in VINTAGE_HANDPICKED_KEYWORDS)
 
-        # Check for volume sales badges
-        if any(b in intel_lower for b in ["bestseller", "popular", "star seller", "in demand", "sales"]):
+        has_commercial_kw = any(ck in title_lower for ck in COMMERCIAL_KEYWORDS)
+        has_commercial_badge = any(b in intel_lower or b in raw_badges for b in ["bestseller", "popular", "star seller", "in demand", "sales"])
+
+        # If it says "vintage" but ALSO "reproduction", "t-shirt", "decal", or has bestseller badge -> Commercial Repro!
+        if (has_vintage_badge or has_vintage_kw) and (has_commercial_kw or has_commercial_badge):
             return True
 
-        # If title contains explicit "1 of 1", "vintage single", "one-of-a-kind" -> classify non-commercial
-        if any(w in title_lower for w in ["one of a kind", "1 of 1", "handpicked used", "pre-owned single"]):
+        # Pure vintage badge or title keywords without commercial reproduction terms -> Suppress
+        if has_vintage_badge or has_vintage_kw:
             return False
 
-        # Default assumption on e-commerce search is commercial reproduction
+        # Commercial signals present -> Commercial
+        if has_commercial_kw or has_commercial_badge:
+            return True
+
+        # Default assumption on general search is commercial
         return True
+
+    @staticmethod
+    def parse_listing_highlights_html(html: str, url: str) -> Dict[str, Any]:
+        """
+        Pure HTML parser for Etsy product detail pages (testable offline).
+        Extracts 'Handpicked by [Shop]' vs 'Made by [Shop]', variations, and stock levels.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        highlights = []
+        is_handpicked = False
+        is_made_by = False
+        shop_name = ""
+        maker_label = ""
+
+        # 1. Regex & Beautiful Soup searches for Highlights
+        hp_match = re.search(r"Handpicked\s+by\s*(?:<[^>]+>)?\s*([A-Za-z0-9_\-]+)", html, re.IGNORECASE)
+        if not hp_match:
+            for hl_tag in soup.select("[data-sub-section*='item-details'] li, .wt-list-unstyled li, [class*='highlights'] li, p, div"):
+                t = hl_tag.get_text(separator=" ", strip=True)
+                if "handpicked by" in t.lower():
+                    m = re.search(r"Handpicked\s+by\s+([A-Za-z0-9_\-]+)", t, re.IGNORECASE)
+                    if m:
+                        hp_match = m
+                        break
+
+        made_match = re.search(r"(?:Made|Designed)\s+by\s*(?:<[^>]+>)?\s*([A-Za-z0-9_\-]+)", html, re.IGNORECASE)
+        if not made_match:
+            for hl_tag in soup.select("[data-sub-section*='item-details'] li, .wt-list-unstyled li, [class*='highlights'] li, p, div"):
+                t = hl_tag.get_text(separator=" ", strip=True)
+                if any(k in t.lower() for k in ("made by", "designed by")):
+                    m = re.search(r"(?:Made|Designed)\s+by\s+([A-Za-z0-9_\-]+)", t, re.IGNORECASE)
+                    if m:
+                        made_match = m
+                        break
+
+        if hp_match:
+            is_handpicked = True
+            shop_name = hp_match.group(1).strip()
+            maker_label = f"Handpicked by {shop_name}"
+            highlights.append(maker_label)
+        elif made_match:
+            is_made_by = True
+            shop_name = made_match.group(1).strip()
+            maker_label = f"Made by {shop_name}"
+            highlights.append(maker_label)
+
+        # 2. Check for Vintage Decades / Era
+        vintage_era_match = re.search(r"Vintage\s+from\s+the\s+(\d{4}s|\d{2}s)", html, re.IGNORECASE)
+        if not vintage_era_match:
+            vintage_era_match = re.search(r"Vintage\s+from\s+before\s+(\d{4})", html, re.IGNORECASE)
+        if vintage_era_match:
+            highlights.append(vintage_era_match.group(0))
+
+        # 3. Stock Level & Variations Inspection
+        has_variations = bool(soup.select("select[id*='variation'], select[name*='variation'], [data-selector='variation-select']"))
+        stock_match = re.search(r"Only\s+(\d+)\s+available|Only\s+(\d+)\s+left", html, re.IGNORECASE)
+        is_single_stock = False
+        is_multi_stock = False
+
+        if stock_match:
+            qty = int(stock_match.group(1) or stock_match.group(2) or 1)
+            stock_text = f"Only {qty} available"
+            if qty == 1:
+                is_single_stock = True
+        elif has_variations:
+            stock_text = "Multi-Stock (Variations Active)"
+            is_multi_stock = True
+        elif "in stock" in html.lower():
+            stock_text = "In Stock"
+            is_multi_stock = True
+        else:
+            stock_text = "Standard Stock"
+
+        # 4. Final Classification
+        if is_handpicked:
+            classification = "HANDPICKED_VINTAGE"
+            is_commercial = False
+            visual_benign = True
+            badge = f"⚪ Handpicked: {shop_name} (Vintage)"
+            intel = f"Verified Vintage Resale — Handpicked by {shop_name} ({stock_text})"
+            score = 15
+        elif is_made_by:
+            classification = "COMMERCIAL_MAKER"
+            is_commercial = True
+            visual_benign = False
+            badge = f"🧶 Commercial Producer: {shop_name}"
+            intel = f"Active Producer — Made by {shop_name} ({stock_text})"
+            score = 85
+        elif vintage_era_match or (is_single_stock and any(k in html.lower() for k in ("vintage", "pre-owned", "thrifted"))):
+            classification = "VINTAGE_SINGLE_STOCK"
+            is_commercial = False
+            visual_benign = True
+            badge = "⚪ Vintage / Single Stock (Etsy)"
+            intel = f"Suppressed Closet Item — {vintage_era_match.group(0) if vintage_era_match else 'Single Stock'}"
+            score = 20
+        elif has_variations or is_multi_stock:
+            classification = "COMMERCIAL_STOCK"
+            is_commercial = True
+            visual_benign = False
+            badge = "🧶 Commercial Producer (Multi-Stock)"
+            intel = f"Commercial Multi-Stock Listing ({stock_text})"
+            score = 80
+        else:
+            classification = "STANDARD_COMMERCIAL"
+            is_commercial = True
+            visual_benign = False
+            badge = "🧶 Commercial Scale (Etsy)"
+            intel = f"Commercial Listing ({stock_text})"
+            score = 75
+
+        return {
+            "url": url,
+            "classification": classification,
+            "is_handpicked": is_handpicked,
+            "is_made_by": is_made_by,
+            "is_commercial": is_commercial,
+            "visual_benign": visual_benign,
+            "shop_name": shop_name,
+            "maker_label": maker_label,
+            "highlights": highlights,
+            "stock_intel": stock_text,
+            "threat_badge": badge,
+            "threat_intel": intel,
+            "threat_score": score
+        }
+
+    def inspect_listing_highlights(self, url: str) -> Dict[str, Any]:
+        """
+        Inspect Etsy product details page for 'Handpicked' vs 'Made by' and stock levels.
+        """
+        result = {
+            "url": url,
+            "classification": "UNKNOWN",
+            "highlights": [],
+            "maker_type": "Unknown",
+            "maker_name": "",
+            "stock_intel": "Unknown",
+            "is_handpicked": False,
+            "is_commercial": True,
+            "threat_badge": "🧶 Commercial Scale (Etsy)",
+            "threat_intel": "Commercial Listing",
+            "threat_score": 75,
+            "visual_benign": False
+        }
+
+        try:
+            with sync_playwright() as p:
+                context = self._get_context(p)
+                page = context.new_page()
+                page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+                page.goto(url, timeout=25000, wait_until="domcontentloaded")
+                time.sleep(1.5)
+                html = page.content()
+                context.close()
+                return self.parse_listing_highlights_html(html, url)
+        except Exception as e:
+            logger.error(f"Error inspecting Etsy listing {url}: {e}")
+            result["error"] = str(e)
+            return result
+
+    def batch_verify_highlights(
+        self,
+        listings: List[Dict[str, Any]],
+        progress_callback=None,
+        stop_event=None
+    ) -> List[Dict[str, Any]]:
+        """
+        Batch inspect a target list of Etsy items with stealth browser reuse and natural jitter.
+        """
+        if not listings:
+            return []
+
+        total = len(listings)
+        results = []
+
+        try:
+            with sync_playwright() as p:
+                context = self._get_context(p)
+                page = context.new_page()
+                page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+
+                for idx, it in enumerate(listings):
+                    if stop_event and stop_event.is_set():
+                        break
+
+                    url = it.get("url", "")
+                    if not url or "etsy.com/listing" not in url:
+                        continue
+
+                    try:
+                        page.goto(url, timeout=25000, wait_until="domcontentloaded")
+                        time.sleep(1.2)
+                        html = page.content()
+                        res = self.parse_listing_highlights_html(html, url)
+
+                        # Update item in-place
+                        it["threat_badge"] = res["threat_badge"]
+                        it["threat_intel"] = res["threat_intel"]
+                        it["threat_score"] = res["threat_score"]
+                        it["visual_benign"] = res["visual_benign"]
+                        it["etsy_classification"] = res["classification"]
+                        it["etsy_stock_intel"] = res["stock_intel"]
+                        if res.get("shop_name"):
+                            it["seller"] = res["shop_name"]
+
+                        results.append(it)
+                        if progress_callback:
+                            progress_callback(idx + 1, total, it, res)
+                    except Exception as e:
+                        logger.warning(f"Error inspecting {url}: {e}")
+
+                    # Natural jitter delay to keep DataDome dormant
+                    time.sleep(1.0)
+
+                context.close()
+        except Exception as e:
+            logger.error(f"Batch verify error: {e}")
+
+        return results

@@ -1505,9 +1505,11 @@ class TestApolloCoreFeatures(unittest.TestCase):
         self.assertTrue(any("https://www.teepublic.com/hoodie/998877-vintage-gr-racing" in v["url"] for v in variants))
 
     def test_47_etsy_commercial_classifier(self):
-        """Test Item 47: Verify Etsy scraper correctly separates commercial volume listings from 1-of-1 items."""
+        """Test Item 47: Verify Etsy scraper separates commercial volume listings from 1-of-1 items and parses Highlights."""
         from etsy_scraper import EtsyScraper
         scraper = EtsyScraper()
+        
+        # 1. Commercial Keyword & Badge
         commercial_item = {
             "title": "Set of 4 Cast Metal TRD Grille Badges with Hardware",
             "threat_intel": "Commercial Merchant (Bestseller | Star Seller)",
@@ -1515,12 +1517,60 @@ class TestApolloCoreFeatures(unittest.TestCase):
         }
         self.assertTrue(scraper._is_commercial_scale(commercial_item))
 
+        # 2. Handpicked Vintage Item
         handpicked_item = {
             "title": "Vintage Single Pre-owned Single 1980s Keyring One of a Kind",
             "threat_intel": "Single Item",
             "url": "https://www.etsy.com/listing/7654321"
         }
         self.assertFalse(scraper._is_commercial_scale(handpicked_item))
+
+        # 3. Vintage badge in raw_badges
+        vintage_badge_item = {
+            "title": "Chevy Keyring",
+            "threat_intel": "Commercial Merchant (Vintage)",
+            "raw_badges": "Vintage | Rare find",
+            "url": "https://www.etsy.com/listing/7654322"
+        }
+        self.assertFalse(scraper._is_commercial_scale(vintage_badge_item))
+
+        # 4. Product Details Highlights: Handpicked by Shop vs Made by Shop
+        handpicked_html = """
+        <div data-sub-section="item-details">
+            <ul class="wt-list-unstyled">
+                <li><span class="wt-text-body-01">Handpicked by <a href="/shop/PickleSurplus">PickleSurplus</a></span></li>
+                <li><span>Vintage from the 1980s</span></li>
+            </ul>
+        </div>
+        <div class="wt-badge">Only 1 available</div>
+        """
+        res_hp = EtsyScraper.parse_listing_highlights_html(handpicked_html, "https://www.etsy.com/listing/111")
+        self.assertEqual(res_hp["classification"], "HANDPICKED_VINTAGE")
+        self.assertTrue(res_hp["is_handpicked"])
+        self.assertFalse(res_hp["is_commercial"])
+        self.assertTrue(res_hp["visual_benign"])
+        self.assertIn("PickleSurplus", res_hp["threat_badge"])
+        self.assertIn("Only 1 available", res_hp["stock_intel"])
+
+        made_html = """
+        <div data-sub-section="item-details">
+            <ul class="wt-list-unstyled">
+                <li><span class="wt-text-body-01">Made by <a href="/shop/CarChains3D">CarChains3D</a></span></li>
+                <li><span>Materials: PLA, Cast Aluminum</span></li>
+            </ul>
+        </div>
+        <select id="variation-selector-0" name="variation0">
+            <option>Red</option>
+            <option>Black</option>
+        </select>
+        """
+        res_made = EtsyScraper.parse_listing_highlights_html(made_html, "https://www.etsy.com/listing/222")
+        self.assertEqual(res_made["classification"], "COMMERCIAL_MAKER")
+        self.assertTrue(res_made["is_made_by"])
+        self.assertTrue(res_made["is_commercial"])
+        self.assertFalse(res_made["visual_benign"])
+        self.assertIn("CarChains3D", res_made["threat_badge"])
+        self.assertIn("Multi-Stock", res_made["stock_intel"])
 
     def test_48_spreadshirt_variant_expansion(self):
         """Test Item 48: Verify Spreadshirt 1-to-30 variant expansion maps to physical product lines."""
@@ -2725,9 +2775,9 @@ class TestApolloCoreFeatures(unittest.TestCase):
         app = EbayTool()
         app.withdraw()
         try:
-            # 1. Verify _get_all_scrapers returns all 20 scrapers
+            # 1. Verify _get_all_scrapers returns all 21 scrapers
             all_scrapers = app._get_all_scrapers()
-            self.assertEqual(len(all_scrapers), 20)
+            self.assertEqual(len(all_scrapers), 21)
 
             # 2. Test initial sync to stealth (True)
             app.headless_var.set(True)
@@ -2846,16 +2896,13 @@ class TestApolloCoreFeatures(unittest.TestCase):
                 extra_unexpected_param="safe"
             )
     def test_79_origin_themes_and_button_contrast(self):
-        """Verify Origin Platinum & Origin Midnight theme definitions, contrast, and black Stop button invariant."""
+        """Verify Origin Platinum theme definitions, contrast, and black Stop button invariant."""
         from main import THEMES, THEME_SUBHEADERS, EbayTool
         import tkinter as tk
 
-        # 1. Verify Origin themes exist and conform to color specifications
+        # 1. Verify Origin Platinum theme exists and conforms to color specifications
         self.assertIn("origin_platinum", THEMES)
-        self.assertIn("origin_midnight", THEMES)
-
         plat = THEMES["origin_platinum"]
-        mid = THEMES["origin_midnight"]
 
         self.assertEqual(plat["bg"], "#f0f0f0")
         self.assertEqual(plat["text"], "#000227")
@@ -2863,36 +2910,21 @@ class TestApolloCoreFeatures(unittest.TestCase):
         self.assertEqual(plat["btn_danger_fg"], "#000000")
         self.assertEqual(plat["btn_danger_disabled_fg"], "#000000")
 
-        self.assertEqual(mid["bg"], "#000227")
-        self.assertEqual(mid["text"], "#ffffff")
-        self.assertEqual(mid["accent"], "#0044ff")
-        self.assertEqual(mid["btn_danger_fg"], "#000000")
-        self.assertEqual(mid["btn_danger_disabled_fg"], "#000000")
-
         # 2. Strict naming rule: Ensure forbidden brand word 'Genesis' is NOT exposed in UI names
         self.assertNotIn("genesis", plat["name"].lower())
-        self.assertNotIn("genesis", mid["name"].lower())
         self.assertNotIn("genesis", THEME_SUBHEADERS.get("origin_platinum", "").lower())
-        self.assertNotIn("genesis", THEME_SUBHEADERS.get("origin_midnight", "").lower())
 
         # 3. Verify Continental pause and contrast fix
         cont = THEMES["continental"]
         self.assertEqual(cont.get("btn_accent_fg"), "#0A0B0E")
 
-        # 4. Verify live UI switching to Origin Platinum and Origin Midnight
+        # 4. Verify live UI switching to Origin Platinum and Continental
         app = EbayTool()
         app.withdraw()
         try:
             # Switch to Origin Platinum
             app.current_theme_key = "origin_platinum"
             app.theme = plat
-            app._apply_full_theme()
-            self.assertEqual(app.stop_btn.cget("fg"), "#000000")
-            self.assertEqual(app.stop_btn.cget("disabledforeground"), "#000000")
-
-            # Switch to Origin Midnight
-            app.current_theme_key = "origin_midnight"
-            app.theme = mid
             app._apply_full_theme()
             self.assertEqual(app.stop_btn.cget("fg"), "#000000")
             self.assertEqual(app.stop_btn.cget("disabledforeground"), "#000000")
@@ -2905,6 +2937,297 @@ class TestApolloCoreFeatures(unittest.TestCase):
             self.assertEqual(app.stop_btn.cget("disabledforeground"), "#000000")
         finally:
             app.destroy()
+
+    def test_80_database_vacuum_and_column_resize_protection(self):
+        """Verify data_store vacuuming, bloat prevention, and column resize row click protection."""
+        from data_store import DataStore
+        from main import EbayTool
+        import unittest.mock
+
+        ds = DataStore()
+
+        # 1. Verify set_setting does NOT re-save if value is identical (in-memory guard)
+        with unittest.mock.patch.object(ds, "_save") as mock_save:
+            ds.set_setting("theme", ds.get_setting("theme", "apollo_exec"))
+            mock_save.assert_not_called()
+
+        # 2. Verify purge_staged_cache_and_vacuum removes bloat while preserving brands and settings
+        ds._data["staged_dossier"] = [{"item_id": "test_123", "title": "Bloat Item"}] * 100
+        ds.set_setting("custom_brand_flag", "preserved_value")
+        initial_brands = dict(ds.get_brands())
+
+        res = ds.purge_staged_cache_and_vacuum()
+        self.assertIn("freed_mb", res)
+        self.assertEqual(ds._data.get("staged_dossier"), [])
+        self.assertEqual(ds.get_setting("custom_brand_flag"), "preserved_value")
+        self.assertEqual(ds.get_brands(), initial_brands)
+
+        # 3. Verify _on_column_resized rejects row/cell clicks without touching data_store
+        app = EbayTool()
+        app.withdraw()
+        try:
+            with unittest.mock.patch.object(app.data_store, "set_setting") as mock_set:
+                # Mock event clicking on a table cell row
+                fake_event = unittest.mock.MagicMock()
+                fake_event.x = 50
+                fake_event.y = 50
+                app.result_tree.identify_region = unittest.mock.MagicMock(return_value="cell")
+
+                app._on_column_resized(fake_event)
+                mock_set.assert_not_called()
+        finally:
+            app.destroy()
+
+    def test_81_sector_switcher_and_ebay_organic_mode(self):
+        """Verify Sector Switcher combobox and eBay Organic Keyword Search mode."""
+        from main import EbayTool, SECTOR_PLATFORMS
+
+        # 1. Verify SECTOR_PLATFORMS definition has all 3 sectors
+        self.assertIn("🏬 Marketplaces", SECTOR_PLATFORMS)
+        self.assertIn("🌐 Websites", SECTOR_PLATFORMS)
+        self.assertIn("📱 Social Media", SECTOR_PLATFORMS)
+        self.assertIn("🛒 eBay.com", SECTOR_PLATFORMS["🏬 Marketplaces"])
+        self.assertIn("🎵 TikTok Shop", SECTOR_PLATFORMS["🏬 Marketplaces"])
+        self.assertIn("🛍 Shopify Store Dredge", SECTOR_PLATFORMS["🌐 Websites"])
+        self.assertIn("🎵 TikTok Shop", SECTOR_PLATFORMS["📱 Social Media"])
+
+        app = EbayTool()
+        app.withdraw()
+        try:
+            # 2. Verify Sector combobox and Platform combobox synchronization
+            self.assertTrue(hasattr(app, "sector_combo"), "App must have sector_combo")
+            self.assertEqual(app.sector_var.get(), "🏬 Marketplaces")
+            self.assertEqual(tuple(app.market_combo["values"]), tuple(SECTOR_PLATFORMS["🏬 Marketplaces"]))
+
+            # Switch to Websites
+            app.sector_var.set("🌐 Websites")
+            app._on_sector_changed()
+            self.assertEqual(tuple(app.market_combo["values"]), tuple(SECTOR_PLATFORMS["🌐 Websites"]))
+            self.assertEqual(app.marketplace_var.get(), "🛍 Shopify Store Dredge")
+            self.assertIn("Shopify", app._get_current_platform_name())
+            self.assertIn("Shopify", app.store_placeholder)
+
+            # Switch back to Marketplaces (eBay)
+            app.sector_var.set("🏬 Marketplaces")
+            app._on_sector_changed()
+            app.marketplace_var.set("🛒 eBay.com")
+            app._on_market_changed()
+            self.assertTrue(hasattr(app, "ebay_organic_cb"), "App must have ebay_organic_cb")
+            self.assertEqual(app._get_current_platform_name(), "eBay")
+
+            # 3. Verify eBay Organic Search Toggle
+            app.ebay_organic_var.set(True)
+            app._on_ebay_organic_toggled()
+            self.assertEqual(app.store_hdr_lbl.cget("text"), "🔍 Organic Search (e.g. airbag)")
+            self.assertIn("Organic", app.store_placeholder)
+
+            # 4. Verify Continental theme pinned at bottom and checkbox contrast
+            from main import THEMES
+            self.assertIn("check_select_bg", THEMES["continental"])
+            self.assertEqual(THEMES["continental"]["check_select_bg"], "#060709")
+            app.data_store.unlock_wick()
+            app._refresh_theme_menu()
+            last_entry_idx = app.theme_menu.index("end")
+            self.assertEqual(app.theme_menu.type(last_entry_idx), "radiobutton")
+            self.assertEqual(app.theme_menu.entrycget(last_entry_idx, "label"), "🪙 The Continental")
+
+            # 5. Verify top bar action buttons decluttered into settings dropdown
+            self.assertIsNone(app.btn_registry)
+            self.assertIsNone(app.btn_whitelist)
+            self.assertIsNone(app.btn_guide)
+
+            # 4. Verify _add_to_queue in Organic Search mode
+            # Case A: Violation keywords + Target brand
+            app.queue.clear()
+            app.brand_states.clear()
+            app.brand_states["Toyota"] = "target"
+            app.store_text.delete("1.0", "end")
+            app.store_text.insert("1.0", "airbag\nrecalled")
+            app._add_to_queue()
+
+            self.assertEqual(len(app.queue), 2)
+            self.assertEqual(app.queue[0]["store"], "🛒 Global eBay Search")
+            self.assertTrue(app.queue[0]["ebay_organic"])
+            self.assertEqual(app.queue[0]["includes"], ["Toyota airbag"])
+            self.assertEqual(app.queue[1]["includes"], ["Toyota recalled"])
+
+            # Case B: Violation keywords only (no brand selected)
+            app.queue.clear()
+            app.brand_states.clear()
+            app.store_text.delete("1.0", "end")
+            app.store_text.insert("1.0", "airbag")
+            app._add_to_queue()
+
+            self.assertEqual(len(app.queue), 1)
+            self.assertEqual(app.queue[0]["store"], "🛒 Global eBay Search")
+            self.assertEqual(app.queue[0]["brand"], "Organic Keyword")
+            self.assertEqual(app.queue[0]["includes"], ["airbag"])
+
+            # Toggle organic search off
+            app.ebay_organic_var.set(False)
+            app._on_ebay_organic_toggled()
+            self.assertEqual(app.store_hdr_lbl.cget("text"), "🏪 Stores / Sellers (One per line or URL)")
+        finally:
+            app.destroy()
+
+    def test_82_stark_industries_theme_and_privatized_takedown(self):
+        """Test 82: Verify Stark Industries theme, Arc Reactor palette, J.A.R.V.I.S. button flairs, and Privatized Takedown achievement."""
+        from main import THEMES, THEME_SUBHEADERS, EbayTool
+        from data_store import DataStore
+        import tempfile
+        import shutil
+
+        # 1. Palette & Subheader Invariants
+        self.assertIn("stark_industries", THEMES)
+        stark = THEMES["stark_industries"]
+        self.assertEqual(stark["name"], "🦾 Stark Industries")
+        self.assertEqual(stark["accent"], "#FFC72C")
+        self.assertEqual(stark["accent2"], "#C81E2E")
+        self.assertEqual(stark["border"], "#D4AF37")
+        self.assertEqual(stark["arc_cyan"], "#00F5FF")
+        self.assertEqual(stark["check_select_bg"], "#0A0B0E")
+        self.assertIn("PRIVATIZED COUNTERFEIT TAKEDOWN", THEME_SUBHEADERS["stark_industries"].upper())
+
+        # 2. DataStore Unlock Invariant
+        ds = DataStore()
+        initial_stark = ds.is_stark_unlocked()
+        initial_ach = ds.is_achievement_unlocked("privatized_takedown")
+        try:
+            ds.unlock_stark()
+            self.assertTrue(ds.is_stark_unlocked())
+            self.assertTrue(ds.is_achievement_unlocked("privatized_takedown"))
+        finally:
+            if not initial_stark:
+                ds._data.setdefault("settings", {})["unlocked_stark"] = False
+            if not initial_ach and "privatized_takedown" in ds._data.get("achievements", {}).get("unlocked", {}):
+                del ds._data["achievements"]["unlocked"]["privatized_takedown"]
+            ds._save()
+
+        # 3. Dynamic UI Transformation Invariant
+        app = EbayTool()
+        app.withdraw()
+        try:
+            app.current_theme_key = "stark_industries"
+            app.theme = THEMES["stark_industries"]
+            app._apply_full_theme()
+
+            self.assertEqual(app.run_btn.cget("text"), "⚡ Engage Repulsors: Execute Sweep")
+            self.assertEqual(app.sweep_btn.cget("text"), "🚀 Deploy House Party Protocol: Sweep All Targets")
+            self.assertEqual(app.add_q_btn.cget("text"), "🎯 Target Lock Acquisition")
+            self.assertEqual(app.clean_sweep_btn.cget("text"), "💥 Jericho Protocol")
+            self.assertIn("// STARK INDUSTRIES TACTICAL HUD", app.store_placeholder)
+
+            # 4. Easter Egg Trigger & Dialog
+            app._trigger_stark_easter_egg(auto_switch=True)
+            self.assertTrue(hasattr(app, "_stark_win") and app._stark_win.winfo_exists())
+            self.assertIn("Stark Industries", app._stark_win.title())
+            app._stark_win.destroy()
+
+            # 5. 25k Single Sweep Milestone Detection
+            app.data_store._data.setdefault("achievements", {})["unlocked"] = {}
+            app.data_store._data.setdefault("settings", {})["unlocked_stark"] = False
+            self.assertFalse(app.data_store.is_stark_unlocked())
+
+            app.results = [{"id": f"item_{i}", "marketplace": "eBay"} for i in range(25000)]
+            app._check_enforcement_milestones()
+            self.assertTrue(app.data_store.is_stark_unlocked())
+            self.assertTrue(app.data_store.is_achievement_unlocked("privatized_takedown"))
+            if hasattr(app, "_stark_win") and app._stark_win and app._stark_win.winfo_exists():
+                app._stark_win.destroy()
+
+            # 6. About Dialog Key Trigger Test
+            app._show_about_dialog()
+            self.assertTrue(hasattr(app, "_about_dialog_win") and app._about_dialog_win.winfo_exists())
+            about_win = app._about_dialog_win
+            for ch in "jarvis":
+                about_win.event_generate("<KeyPress>", keysym=ch)
+            if hasattr(app, "_stark_win") and app._stark_win and app._stark_win.winfo_exists():
+                app._stark_win.destroy()
+            if hasattr(app, "_about_dialog_win") and app._about_dialog_win and app._about_dialog_win.winfo_exists():
+                app._about_dialog_win.destroy()
+        finally:
+            app.destroy()
+
+    def test_83_artemis_rights_engine_and_bridge(self):
+        """Test 83: Verify Artemis Rights Engine, decoupled intake bridge, legal notice generator, and GUI."""
+        import tempfile
+        import shutil
+        import os
+        from unittest.mock import patch, MagicMock
+
+        import artemis_bridge
+        from artemis_data_store import ArtemisDataStore
+        from artemis_engine import ArtemisEngine
+        from artemis import ArtemisApp
+
+        temp_dir = tempfile.mkdtemp()
+        try:
+            # 1. Test Bridge Dispatch & Serialization
+            mock_intake_dir = os.path.join(temp_dir, "intake_queue")
+            with patch("artemis_bridge.get_intake_dir", return_value=mock_intake_dir):
+                sample_items = [
+                    {"item_id": "B00FAKE123", "title": "Fake Toyota Emblem", "seller": "RogueVendor99", "price": "$12.99", "platform": "Amazon", "brand": "Toyota"},
+                    {"item_id": "B00FAKE456", "title": "Counterfeit Toyota Key Fob", "seller": "ShenzhenTraders", "price": "$15.99", "platform": "Amazon", "brand": "Toyota"}
+                ]
+                fpath = artemis_bridge.dispatch_batch_to_artemis(sample_items, source_batch_name="Test Recon Batch")
+                self.assertTrue(os.path.exists(fpath))
+
+                # Verify pending batch retrieval
+                batches = artemis_bridge.get_pending_artemis_batches()
+                self.assertEqual(len(batches), 1)
+                self.assertEqual(batches[0]["total_items"], 2)
+                self.assertEqual(batches[0]["batch_name"], "Test Recon Batch")
+
+                # Verify ingestion archiving
+                artemis_bridge.mark_batch_as_ingested(fpath)
+                self.assertFalse(os.path.exists(fpath))
+
+            # 2. Test ArtemisDataStore (State & Enqueue)
+            data_file = os.path.join(temp_dir, "artemis_data.json")
+            ads = ArtemisDataStore(data_file=data_file)
+            added = ads.enqueue_listings(sample_items, source_batch="Test Batch")
+            self.assertEqual(added, 2)
+            self.assertEqual(len(ads.get_enforcement_queue()), 2)
+
+            # Test deduplication
+            dup_added = ads.enqueue_listings(sample_items, source_batch="Test Batch Dup")
+            self.assertEqual(dup_added, 0)
+            self.assertEqual(len(ads.get_enforcement_queue()), 2)
+
+            # Test Brand Rights
+            rights = ads.get_brand_rights("Toyota")
+            self.assertIsNotNone(rights)
+            self.assertIn("Toyota Motor Sales", rights.get("rights_holder", ""))
+
+            # 3. Test ArtemisEngine (Notice Generator & CSV)
+            engine = ArtemisEngine(ads)
+            notice = engine.generate_notice_text("Amazon", "Toyota", sample_items)
+            self.assertIn("FORMAL NOTICE OF INTELLECTUAL PROPERTY INFRINGEMENT", notice)
+            self.assertIn("Toyota Motor Sales", notice)
+            self.assertIn("B00FAKE123", notice)
+            self.assertIn("RogueVendor99", notice)
+
+            csv_out = os.path.join(temp_dir, "test_batch.csv")
+            engine.export_batch_csv(sample_items, csv_out)
+            self.assertTrue(os.path.exists(csv_out))
+            with open(csv_out, "r", encoding="utf-8-sig") as f:
+                content = f.read()
+                self.assertIn("B00FAKE123", content)
+                self.assertIn("RogueVendor99", content)
+
+            # 4. Test Artemis GUI Launch & Destruction
+            app = ArtemisApp()
+            app.withdraw()
+            try:
+                self.assertEqual(len(app.nb.tabs()), 4)
+                self.assertTrue(hasattr(app, "queue_tree"))
+                self.assertTrue(hasattr(app, "hist_tree"))
+                app._refresh_all()
+            finally:
+                app.destroy()
+
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

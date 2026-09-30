@@ -6,6 +6,7 @@ and submission audit logs in an isolated artemis_data.json.
 
 import json
 import os
+import uuid
 import copy
 import shutil
 import threading
@@ -113,6 +114,19 @@ class ArtemisDataStore:
                 if k not in self._data:
                     self._data[k] = copy.deepcopy(v)
 
+            # Guarantee unique queue_id across all loaded items to prevent Tkinter tree collision
+            seen_qids = set()
+            needs_save = False
+            for item in self._data.get("enforcement_queue", []):
+                qid = item.get("queue_id")
+                if not qid or qid in seen_qids:
+                    item["queue_id"] = f"artemis_q_{int(datetime.now().timestamp())}_{uuid.uuid4().hex[:8]}"
+                    needs_save = True
+                seen_qids.add(item["queue_id"])
+
+            if needs_save:
+                self._save_locked()
+
     def _save_locked(self):
         tmp_file = self.data_file + ".tmp"
         try:
@@ -200,15 +214,31 @@ class ArtemisDataStore:
             queue = self._data.setdefault("enforcement_queue", [])
             existing_signatures = {(item.get("platform", "").lower(), str(item.get("item_id", "")).strip()) for item in queue}
 
+            PLAT_NORM = {
+                "printblur.com": "Printblur", "redbubble.com": "Redbubble", "printerval.com": "Printerval",
+                "teepublic.com": "TeePublic", "teespring.com": "Teespring", "spreadshirt.com": "Spreadshirt",
+                "zazzle.com": "Zazzle", "cafepress.com": "CafePress", "threadless.com": "Threadless",
+                "fineartamerica.com": "Fine Art America", "mercadolibre.com": "Mercado Libre",
+                "aliexpress.com": "AliExpress", "temu.com": "Temu", "etsy.com": "Etsy",
+                "ebay.com": "eBay", "amazon.com": "Amazon", "walmart.com": "Walmart",
+                "vinted.com": "Vinted", "tiktok.com": "TikTok", "manomano.com": "ManoMano",
+                "scribd.com": "Scribd", "shopify.com": "Shopify"
+            }
+
             for it in listings:
                 item_id = str(it.get("item_id") or it.get("id") or "").strip()
-                platform = it.get("platform") or it.get("marketplace") or "Unknown"
+                raw_plat = str(it.get("platform") or it.get("marketplace") or "").strip()
+                plat_key = raw_plat.lower()
+                platform = PLAT_NORM.get(plat_key, raw_plat.capitalize() if raw_plat else "Unknown")
+                if platform.endswith(".com"):
+                    platform = platform[:-4].capitalize()
+
                 sig = (platform.lower(), item_id)
                 if item_id and sig in existing_signatures:
                     continue
 
                 record = {
-                    "queue_id": f"artemis_q_{int(datetime.now().timestamp())}_{added_count}",
+                    "queue_id": f"artemis_q_{int(datetime.now().timestamp())}_{uuid.uuid4().hex[:8]}",
                     "item_id": item_id,
                     "title": it.get("title", "Untitled Listing"),
                     "seller": it.get("seller", "Unknown Merchant"),

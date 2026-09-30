@@ -162,10 +162,13 @@ class SpreadshirtScraper:
         store_filter: Optional[str] = None,
         condition: str = "all",
         status_callback=None,
-        log_callback=None
+        log_callback=None,
+        stop_event: Optional[threading.Event] = None,
+        pause_event: Optional[threading.Event] = None
     ) -> List[Dict[str, Any]]:
         """
         Execute deep keyword search across Spreadshirt with multi-page pagination.
+        Supports real-time cancellation and pause events.
         """
         results = []
         clean_q = query.strip()
@@ -194,6 +197,12 @@ class SpreadshirtScraper:
                 page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
 
                 for page_num in range(1, depth_pages + 1):
+                    if stop_event and stop_event.is_set():
+                        _log("⏹ [Spreadshirt] Scan cancelled by user.")
+                        break
+                    if pause_event:
+                        pause_event.wait()
+
                     enc_q = urllib.parse.quote_plus(clean_q)
                     if store_filter:
                         clean_store = store_filter.strip().lstrip("@")
@@ -235,6 +244,11 @@ class SpreadshirtScraper:
 
                     page_items_count = 0
                     for card in cards:
+                        if stop_event and stop_event.is_set():
+                            break
+                        if pause_event:
+                            pause_event.wait()
+
                         item = self._parse_card(card)
                         if not item:
                             continue

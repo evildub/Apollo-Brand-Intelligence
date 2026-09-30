@@ -199,15 +199,19 @@ class RedbubbleScraper:
         except ValueError:
             return 0.0
 
-    def search(self, query: str, max_items: int = 50, condition: str = "all", log_callback=None) -> List[Dict]:
+    def search(self, query: str, max_items: int = 50, condition: str = "all", log_callback=None,
+               stop_event: Optional[threading.Event] = None, pause_event: Optional[threading.Event] = None) -> List[Dict]:
         """
         Execute search on Redbubble using Next.js hydration payload extraction with HTML fallback.
+        Supports real-time cancellation and pause events.
         
         Args:
             query: Keyword string (e.g., 'Toyota TRD', 'Ford Mustang')
             max_items: Maximum listings to return
             condition: 'all', 'new', or 'used'
             log_callback: Optional callable for live UI logging
+            stop_event: Optional threading.Event to abort early
+            pause_event: Optional threading.Event to pause execution
             
         Returns:
             List of normalized listing dicts.
@@ -229,6 +233,11 @@ class RedbubbleScraper:
 
         try:
             while len(results) < max_items and page <= 5:
+                if stop_event and stop_event.is_set():
+                    _log("⏹ [Redbubble] Search stopped by user.")
+                    break
+                if pause_event:
+                    pause_event.wait()
                 if page == 1:
                     target_url = f"https://www.redbubble.com/shop/?query={encoded_q}"
                 else:
@@ -373,17 +382,22 @@ class RedbubbleScraper:
                                existing_item_ids: Optional[set] = None,
                                progress_callback=None,
                                stop_event: threading.Event = None,
+                               pause_event: threading.Event = None,
+                               on_variant_found=None,
                                log_callback=None) -> List[Dict]:
         """
         Dredge and harvest all Print-on-Demand (POD) product variants for given Redbubble listings.
         Each parent design listing expands into 60-74 physical product listings
         (Hoodies, Mugs, Stickers, T-Shirts, Posters, Cases, Pillows, Magnets, Acrylic Blocks, etc.).
+        Supports real-time streaming to the UI via on_variant_found and live pause/stop events.
         
         Args:
             items: List of parent design listing dicts to expand.
             existing_item_ids: Optional set of already known item IDs to prevent duplicates.
             progress_callback: Optional callable(current, total, new_variants_found, item)
             stop_event: Optional threading.Event to abort early.
+            pause_event: Optional threading.Event to pause execution.
+            on_variant_found: Optional callable(variant_item) for real-time live streaming into the UI table.
             log_callback: Optional live logger callable.
             
         Returns:
@@ -413,6 +427,8 @@ class RedbubbleScraper:
                 if stop_event and stop_event.is_set():
                     _log("⏹ [Redbubble] Variant expansion cancelled by user.")
                     break
+                if pause_event:
+                    pause_event.wait()
 
                 parent_id = str(parent.get("item_id", "")).strip()
                 raw_url = str(parent.get("url", "")).strip()
@@ -652,6 +668,11 @@ class RedbubbleScraper:
                     for var in parent_variants:
                         expanded_results.append(var)
                         new_for_this_parent += 1
+                        if on_variant_found:
+                            try:
+                                on_variant_found(var)
+                            except Exception:
+                                pass
 
                     _log(f"  ✓ Harvested +{new_for_this_parent} POD product variants for '{parent_title[:30]}...' (Total new: {len(expanded_results)})")
 

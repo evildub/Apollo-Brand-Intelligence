@@ -5,6 +5,7 @@ Companion application to Apollo Brand Intelligence.
 
 import os
 import sys
+import uuid
 import copy
 import shutil
 import subprocess
@@ -66,10 +67,13 @@ class ArtemisApp(tk.Tk):
         self._apply_dark_titlebar()
         self._configure_ttk_styles()
         self._build_ui()
-        self._check_pending_intake(silent=True)
+        self._auto_ingest_pending_batches(silent=False)
         self._refresh_queue_table()
 
         self.bind("<F1>", lambda e: self._open_field_guide())
+
+        # Auto-poll background intake drop-queue every 1500ms
+        self.after(1500, self._poll_intake_loop)
 
         # Reveal window smoothly once all widgets and dark styles are applied
         self.after(10, self.deiconify)
@@ -219,6 +223,31 @@ class ArtemisApp(tk.Tk):
                   foreground=[("readonly", t["text"]), ("active", t["text"]), ("focus", t["text"])],
                   bordercolor=[("readonly", t["border"]), ("active", t["accent"]), ("focus", t["accent"])],
                   arrowcolor=[("readonly", t["accent"]), ("active", t.get("accent2", t["accent"])), ("focus", t["accent"])])
+
+        # Scrollbar styles (High-contrast, theme-adaptive dark styling)
+        sb_trough = t.get("scrollbar_trough", t.get("entry_bg", t.get("bg", "#070D0A")))
+        sb_thumb = t.get("scrollbar_thumb", t.get("border", "#1F573F"))
+        sb_border = t.get("scrollbar_border", t.get("border", sb_thumb))
+        sb_arrow = t.get("accent", t.get("text", "#ECFDF5"))
+
+        for sb_name in ("TScrollbar", "Vertical.TScrollbar", "Horizontal.TScrollbar"):
+            style.configure(sb_name,
+                            background=sb_thumb,
+                            troughcolor=sb_trough,
+                            bordercolor=sb_border,
+                            darkcolor=sb_thumb,
+                            lightcolor=sb_thumb,
+                            arrowcolor=sb_arrow,
+                            arrowsize=14,
+                            gripcount=0,
+                            relief="flat")
+            style.map(sb_name,
+                      background=[("active", t["accent"]), ("pressed", t.get("accent2", t["accent"]))],
+                      darkcolor=[("active", t["accent"]), ("pressed", t.get("accent2", t["accent"]))],
+                      lightcolor=[("active", t["accent"]), ("pressed", t.get("accent2", t["accent"]))],
+                      bordercolor=[("active", t["accent"]), ("pressed", t.get("accent2", t["accent"]))],
+                      arrowcolor=[("active", t.get("btn_accent_fg", "#070D0A")),
+                                  ("pressed", t.get("btn_accent_fg", "#070D0A"))])
 
         self._update_combobox_popdowns()
 
@@ -570,7 +599,7 @@ class ArtemisApp(tk.Tk):
         for widget in self.winfo_children():
             widget.destroy()
         self._build_ui()
-        self._check_pending_intake(silent=True)
+        self._auto_ingest_pending_batches(silent=True)
         self._refresh_queue_table()
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -744,6 +773,11 @@ class ArtemisApp(tk.Tk):
         brands_found = sorted({it.get("brand") for it in queue if it.get("brand")})
         self.filter_brand_cb["values"] = ["All Brands"] + brands_found
 
+        platforms_found = sorted({it.get("platform") for it in queue if it.get("platform")})
+        std_platforms = ["Amazon", "Walmart", "eBay", "Redbubble", "Printerval"]
+        all_platforms = sorted(set(std_platforms + platforms_found))
+        self.filter_platform_cb["values"] = ["All Platforms"] + all_platforms
+
         visible_count = 0
         for it in queue:
             qid = it.get("queue_id", "")
@@ -756,6 +790,8 @@ class ArtemisApp(tk.Tk):
                 continue
 
             sel_char = "✓" if qid in self.selected_queue_ids else "○"
+            if not qid or self.queue_tree.exists(qid):
+                qid = f"{qid}_{uuid.uuid4().hex[:4]}" if qid else f"q_{uuid.uuid4().hex[:6]}"
             self.queue_tree.insert(
                 "", "end", iid=qid,
                 values=(
@@ -826,23 +862,44 @@ class ArtemisApp(tk.Tk):
         self.rights_scroll = ttk.Scrollbar(container, orient="vertical", command=self.rights_canvas.yview)
         self.rights_frame = tk.Frame(self.rights_canvas, bg=t["bg"])
 
+        def _on_rights_canvas_cfg(e):
+            self.rights_canvas.itemconfig(win_id, width=e.width)
+
+        win_id = self.rights_canvas.create_window((0, 0), window=self.rights_frame, anchor="nw")
+        self.rights_canvas.bind("<Configure>", _on_rights_canvas_cfg)
         self.rights_frame.bind("<Configure>", lambda e: self.rights_canvas.configure(scrollregion=self.rights_canvas.bbox("all")))
-        self.rights_canvas.create_window((0, 0), window=self.rights_frame, anchor="nw", width=1180)
         self.rights_canvas.configure(yscrollcommand=self.rights_scroll.set)
 
         self.rights_canvas.pack(side="left", fill="both", expand=True)
         self.rights_scroll.pack(side="right", fill="y")
 
         # Mousewheel binding
-        self._bind_mousewheel(self.rights_canvas)
+        self._bind_mousewheel_recursive(container, self.rights_canvas)
+        self._bind_mousewheel_recursive(self.rights_canvas, self.rights_canvas)
+        self._bind_mousewheel_recursive(self.rights_frame, self.rights_canvas)
         self._refresh_rights_cards()
 
-    def _bind_mousewheel(self, widget):
+    def _bind_mousewheel_recursive(self, widget, canvas):
+        """Recursively bind mousewheel on widget and all descendants to scroll canvas."""
         def _on_mw(event):
-            delta = int(-1 * (event.delta / 120)) if event.delta else 1
-            self.rights_canvas.yview_scroll(delta, "units")
-        widget.bind("<MouseWheel>", _on_mw)
-        self.rights_frame.bind("<MouseWheel>", _on_mw)
+            try:
+                if not canvas.winfo_exists():
+                    return
+                delta = int(-1 * (event.delta / 120)) if event.delta else 1
+                canvas.yview_scroll(delta, "units")
+                return "break"
+            except Exception:
+                pass
+
+        def _walk(w):
+            try:
+                w.bind("<MouseWheel>", _on_mw, add="+")
+            except Exception:
+                pass
+            for child in w.winfo_children():
+                _walk(child)
+
+        _walk(widget)
 
     def _refresh_rights_cards(self):
         t = self.theme
@@ -906,6 +963,9 @@ class ArtemisApp(tk.Tk):
             else:
                 tk.Label(r4, text="⚠️ No LOA Document Attached", font=FONT_SM, bg=t["panel"], fg=t["warning"]).pack(side="left")
                 self._btn(r4, "📎 Attach LOA Document", lambda bn=b_name: self._attach_loa_quick(bn), padx=8, pady=2).pack(side="left", padx=(10, 0))
+
+        # Recursively bind mousewheel to all newly created brand cards, headers, labels, and buttons
+        self._bind_mousewheel_recursive(self.rights_frame, self.rights_canvas)
 
     def _open_loa_file(self, loa_path: str):
         if not loa_path or not os.path.exists(loa_path):
@@ -991,15 +1051,19 @@ class ArtemisApp(tk.Tk):
         batches = get_pending_artemis_batches()
         count = len(batches)
         total_items = sum(b.get("total_items", 0) for b in batches)
-        self.intake_btn.config(text=f"📥 Ingest Apollo Batches ({count})")
-        if count > 0 and not silent:
-            self._set_status(f"Found {count} incoming Apollo batch(es) with {total_items} items.")
+        if count > 0:
+            self.intake_btn.config(text=f"📥 Ingest Apollo Batches ({count})")
+            if not silent:
+                self._set_status(f"Found {count} incoming Apollo batch(es) with {total_items} items.")
+        else:
+            self.intake_btn.config(text="📥 Intake Synced (0)")
 
-    def _ingest_pending_batches(self):
+    def _auto_ingest_pending_batches(self, silent=True) -> int:
+        """Automatically ingest any pending batches dropped into the intake queue."""
         batches = get_pending_artemis_batches()
         if not batches:
-            self._show_themed_info("No Pending Batches", "There are currently no new intake batches from Apollo.", icon="ℹ")
-            return
+            self._check_pending_intake(silent=True)
+            return 0
 
         total_added = 0
         for b in batches:
@@ -1009,9 +1073,30 @@ class ArtemisApp(tk.Tk):
             total_added += added
 
         self._check_pending_intake(silent=True)
+        if total_added > 0 and not silent:
+            self._set_status(f"📥 Automatically ingested {total_added} new listing(s) from Apollo dispatch.")
+        return total_added
+
+    def _poll_intake_loop(self):
+        """Live background poller: checks for new Apollo batches every 1500ms and ingests them on the fly."""
+        try:
+            added = self._auto_ingest_pending_batches(silent=False)
+            if added > 0:
+                self._refresh_queue_table()
+        except Exception:
+            pass
+        finally:
+            self.after(1500, self._poll_intake_loop)
+
+    def _ingest_pending_batches(self):
+        batches = get_pending_artemis_batches()
+        if not batches:
+            self._show_themed_info("No Pending Batches", "There are currently no new intake batches from Apollo.\n\nAll dispatched listings are already synced into the queue.", icon="ℹ")
+            return
+
+        total_added = self._auto_ingest_pending_batches(silent=False)
         self._refresh_queue_table()
-        self._set_status(f"Successfully ingested {total_added} new items from {len(batches)} Apollo batch(es).")
-        self._show_themed_info("Intake Complete", f"Successfully ingested {total_added} items from {len(batches)} Apollo recon batch(es) into the Artemis enforcement queue!", icon="📥")
+        self._show_themed_info("Intake Complete", f"Successfully ingested {total_added} item(s) from {len(batches)} Apollo recon batch(es) into the Artemis enforcement queue!", icon="📥")
 
     def _engage_portal_automation(self):
         items = self._get_selected_items()
@@ -1270,6 +1355,28 @@ class BrandRightsModal(tk.Toplevel):
         def_stmt = self.initial_rec.get("statement", "The seller is offering products bearing unauthorized reproductions of registered trademarks, likely to cause consumer confusion.")
         self.stmt_txt.insert("1.0", def_stmt)
 
+        # Universally bind mousewheel on modal window and all child widgets
+        def _on_modal_mw(e):
+            try:
+                if not form_canvas.winfo_exists():
+                    return
+                delta = int(-1 * (e.delta / 120)) if e.delta else 1
+                form_canvas.yview_scroll(delta, "units")
+                return "break"
+            except Exception:
+                pass
+
+        def _walk_modal(w):
+            try:
+                w.bind("<MouseWheel>", _on_modal_mw, add="+")
+            except Exception:
+                pass
+            for ch in w.winfo_children():
+                _walk_modal(ch)
+
+        self.bind("<MouseWheel>", _on_modal_mw, add="+")
+        _walk_modal(self)
+
     def _add_field(self, parent, label_text: str, var: tk.StringVar, placeholder: str = ""):
         t = self.theme
         f = tk.Frame(parent, bg=t["bg"])
@@ -1522,10 +1629,17 @@ class ArtemisFieldGuideModal(tk.Toplevel):
         scrollbar.pack(side="right", fill="y")
 
         def _on_mw(e):
-            delta = int(-1 * (e.delta / 120)) if e.delta else 1
-            canvas.yview_scroll(delta, "units")
-        canvas.bind("<MouseWheel>", _on_mw)
-        scroll_frame.bind("<MouseWheel>", _on_mw)
+            try:
+                if not canvas.winfo_exists():
+                    return
+                delta = int(-1 * (e.delta / 120)) if e.delta else 1
+                canvas.yview_scroll(delta, "units")
+                return "break"
+            except Exception:
+                pass
+
+        canvas.bind("<MouseWheel>", _on_mw, add="+")
+        scroll_frame.bind("<MouseWheel>", _on_mw, add="+")
 
         for sec_title, sec_body in sections:
             card = tk.Frame(scroll_frame, bg=t["panel"], padx=14, pady=10, highlightbackground=t["border"], highlightthickness=1)
@@ -1534,6 +1648,16 @@ class ArtemisFieldGuideModal(tk.Toplevel):
             tk.Label(card, text=sec_title, font=FONT_HEAD, bg=t["panel"], fg=t.get("accent_gold", t["accent"])).pack(anchor="w")
             tk.Frame(card, bg=t["border"], height=1).pack(fill="x", pady=(4, 8))
             tk.Label(card, text=sec_body, font=FONT_NORM, bg=t["panel"], fg=t["text"], justify="left", wraplength=800).pack(anchor="w")
+
+        def _walk_guide(w):
+            try:
+                w.bind("<MouseWheel>", _on_mw, add="+")
+            except Exception:
+                pass
+            for ch in w.winfo_children():
+                _walk_guide(ch)
+
+        _walk_guide(scroll_frame)
 
 
 def main():

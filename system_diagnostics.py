@@ -216,24 +216,30 @@ class DiagnosticEngine:
         return results
 
     @staticmethod
-    def check_network_and_gateways() -> List[DiagnosticResult]:
+    def check_network_and_gateways(abort_event: Optional[threading.Event] = None) -> List[DiagnosticResult]:
+        import concurrent.futures
         results = []
 
-        # 1. Core Internet DNS & Socket Resolution
+        # 1. Core Internet DNS & Socket Resolution (Bounded 1.5s probe)
         try:
             t0 = time.perf_counter()
-            host = "1.1.1.1"
-            port = 53
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(2.5)
-            s.connect((host, port))
+            s.settimeout(1.5)
+            # Probe standard HTTPS gateway on Cloudflare 1.1.1.1 or Google 8.8.8.8
+            try:
+                s.connect(("1.1.1.1", 443))
+            except Exception:
+                s.connect(("8.8.8.8", 53))
             s.close()
             elapsed_ms = (time.perf_counter() - t0) * 1000.0
             results.append(DiagnosticResult("Network Telemetry", "DNS & WAN Gateway Latency", "PASS", "Direct Internet connection verified", latency_ms=elapsed_ms))
         except Exception as e:
-            results.append(DiagnosticResult("Network Telemetry", "DNS & WAN Gateway Latency", "WARN", f"DNS socket probe slow or offline: {str(e)}"))
+            results.append(DiagnosticResult("Network Telemetry", "DNS & WAN Gateway Latency", "WARN", f"DNS/WAN gateway probe slow or offline: {str(e)[:45]}"))
 
-        # 2. Marketplace Endpoint Probes (Lightweight HTTP HEAD/GET)
+        if abort_event and abort_event.is_set():
+            return results
+
+        # 2. Marketplace Endpoint Probes (Parallel Lightweight HTTP Checks)
         endpoints = [
             ("Amazon Marketplace", "https://www.amazon.com"),
             ("eBay Marketplace", "https://www.ebay.com"),
@@ -247,26 +253,41 @@ class DiagnosticEngine:
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         }
 
-        for name, url in endpoints:
+        def _probe_single_endpoint(name_url):
+            name, url = name_url
+            if abort_event and abort_event.is_set():
+                return None
             try:
                 t0 = time.perf_counter()
                 req = urllib.request.Request(url, headers=headers, method="GET")
-                # Using short timeout for fast diagnostic feedback
-                with urllib.request.urlopen(req, timeout=3.5) as resp:
+                with urllib.request.urlopen(req, timeout=2.5) as resp:
                     code = resp.getcode()
                     elapsed_ms = (time.perf_counter() - t0) * 1000.0
                     if code in (200, 301, 302):
-                        results.append(DiagnosticResult("Marketplace Endpoints", name, "PASS", f"HTTP {code} OK", latency_ms=elapsed_ms))
+                        return DiagnosticResult("Marketplace Endpoints", name, "PASS", f"HTTP {code} OK", latency_ms=elapsed_ms)
                     else:
-                        results.append(DiagnosticResult("Marketplace Endpoints", name, "WARN", f"HTTP {code} Response", latency_ms=elapsed_ms))
+                        return DiagnosticResult("Marketplace Endpoints", name, "WARN", f"HTTP {code} Response", latency_ms=elapsed_ms)
             except urllib.error.HTTPError as e:
-                # 403 bot challenges are expected for automated requests without full headers/proxies
                 if e.code == 403:
-                    results.append(DiagnosticResult("Marketplace Endpoints", name, "WARN", f"HTTP 403 (Standard Bot Challenge active - Apollo stealth routing required)"))
+                    return DiagnosticResult("Marketplace Endpoints", name, "WARN", "HTTP 403 (Standard Bot Challenge active - Apollo stealth routing required)")
                 else:
-                    results.append(DiagnosticResult("Marketplace Endpoints", name, "WARN", f"HTTP {e.code}"))
+                    return DiagnosticResult("Marketplace Endpoints", name, "WARN", f"HTTP {e.code}")
             except Exception as e:
-                results.append(DiagnosticResult("Marketplace Endpoints", name, "WARN", f"Connection timeout / rate limited ({str(e)[:45]}...)"))
+                return DiagnosticResult("Marketplace Endpoints", name, "WARN", f"Connection timeout / rate limited ({str(e)[:40]}...)")
+
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                futures = {executor.submit(_probe_single_endpoint, ep): ep for ep in endpoints}
+                done, _ = concurrent.futures.wait(futures.keys(), timeout=3.5)
+                for f in done:
+                    try:
+                        res = f.result()
+                        if res:
+                            results.append(res)
+                    except Exception:
+                        pass
+        except Exception as e:
+            results.append(DiagnosticResult("Marketplace Endpoints", "Endpoint Sweep", "WARN", f"Parallel probe pool interrupted: {e}"))
 
         return results
 
@@ -303,7 +324,7 @@ class SystemDiagnosticsModal(tk.Toplevel):
                 "btn_accent_fg": "#000000"
             }
 
-        self.title("🩺 Pre-Flight System Diagnostics & Health Check")
+        self.title("🩺 System Diagnostics & Telemetry")
         sw = self.winfo_screenwidth()
         sh = self.winfo_screenheight()
         w = min(860, int(sw * 0.85))
@@ -313,16 +334,25 @@ class SystemDiagnosticsModal(tk.Toplevel):
         self.configure(bg=self.theme["bg"])
         if parent:
             self.transient(parent)
-            self.grab_set()
 
         self._center_window(w, h)
         self._apply_dark_titlebar()
 
         self.all_results: List[DiagnosticResult] = []
         self.is_running = False
+        self.abort_event = threading.Event()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._build_ui()
         self.after(200, self.run_diagnostics)
+
+    def _on_close(self):
+        self.abort_event.set()
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        self.destroy()
 
     def _center_window(self, width: int, height: int):
         self.update_idletasks()
@@ -362,7 +392,7 @@ class SystemDiagnosticsModal(tk.Toplevel):
         title_row = tk.Frame(hdr, bg=t["panel"])
         title_row.pack(fill="x")
 
-        tk.Label(title_row, text="🩺 PRE-FLIGHT SYSTEM DIAGNOSTICS & TELEMETRY", font=("Segoe UI", 12, "bold"), bg=t["panel"], fg=t["accent"]).pack(side="left")
+        tk.Label(title_row, text="🩺 SYSTEM DIAGNOSTICS & TELEMETRY", font=("Segoe UI", 12, "bold"), bg=t["panel"], fg=t["accent"]).pack(side="left")
         
         self.verdict_badge = tk.Label(
             title_row,
@@ -444,7 +474,7 @@ class SystemDiagnosticsModal(tk.Toplevel):
             padx=14,
             pady=4,
             cursor="hand2",
-            command=self.destroy
+            command=self._on_close
         )
         self.close_btn.pack(side="right", padx=(6, 0))
 
@@ -480,6 +510,7 @@ class SystemDiagnosticsModal(tk.Toplevel):
         if self.is_running:
             return
         self.is_running = True
+        self.abort_event.clear()
         self.retest_btn.config(state="disabled")
         self.copy_btn.config(state="disabled")
         self.verdict_badge.config(text="DIAGNOSING...", bg=self.theme.get("border", "#1F2937"), fg=self.theme["text"])
@@ -503,10 +534,20 @@ class SystemDiagnosticsModal(tk.Toplevel):
         ]
 
         for step_name, probe_fn, target_prog in steps:
+            if self.abort_event.is_set():
+                break
             self._update_status(f"Testing {step_name}...")
             try:
-                results = probe_fn()
+                import inspect
+                sig = inspect.signature(probe_fn)
+                if "abort_event" in sig.parameters:
+                    results = probe_fn(abort_event=self.abort_event)
+                else:
+                    results = probe_fn()
+
                 for r in results:
+                    if self.abort_event.is_set():
+                        break
                     self.all_results.append(r)
                     self._insert_result(r)
             except Exception as e:
@@ -517,7 +558,8 @@ class SystemDiagnosticsModal(tk.Toplevel):
             self._set_progress(target_prog)
             time.sleep(0.05)
 
-        self._finalize_verdict()
+        if not self.abort_event.is_set():
+            self._finalize_verdict()
 
     def _insert_result(self, r: DiagnosticResult):
         def _insert():

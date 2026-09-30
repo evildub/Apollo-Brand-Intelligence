@@ -82,7 +82,9 @@ class TeePublicScraper:
         store_filter: Optional[str] = None,
         condition: str = "all",
         status_callback=None,
-        log_callback=None
+        log_callback=None,
+        stop_event=None,
+        pause_event=None
     ) -> List[Dict[str, Any]]:
         """
         Execute deep keyword search across TeePublic with multi-page pagination.
@@ -114,6 +116,12 @@ class TeePublicScraper:
                 page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
 
                 for page_num in range(1, depth_pages + 1):
+                    if stop_event and stop_event.is_set():
+                        _log("🛑 [TeePublic] Search stopped by user.")
+                        break
+                    if pause_event:
+                        pause_event.wait()
+
                     enc_q = urllib.parse.quote_plus(clean_q)
                     search_url = f"https://www.teepublic.com/t-shirts?query={enc_q}&page={page_num}"
                     if store_filter:
@@ -293,6 +301,8 @@ class TeePublicScraper:
         existing_item_ids: Optional[set] = None,
         progress_callback=None,
         stop_event=None,
+        pause_event=None,
+        on_variant_found=None,
         log_callback=None
     ) -> List[Dict[str, Any]]:
         """
@@ -322,6 +332,8 @@ class TeePublicScraper:
             if stop_event and stop_event.is_set():
                 _log("⏹ [TeePublic] Variant expansion cancelled by user.")
                 break
+            if pause_event:
+                pause_event.wait()
 
             base_url = base_item.get("url", "")
             base_title = base_item.get("title", "")
@@ -350,6 +362,11 @@ class TeePublicScraper:
 
             item_new_variants = []
             for idx, entry in enumerate(TEEPUBLIC_PRODUCT_LINES, 1):
+                if stop_event and stop_event.is_set():
+                    break
+                if pause_event:
+                    pause_event.wait()
+
                 prod_name = entry[0]
                 prod_slug = entry[1]
                 prod_price = entry[2]
@@ -383,6 +400,11 @@ class TeePublicScraper:
                 }
                 item_new_variants.append(v_record)
                 all_variants.append(v_record)
+                if on_variant_found:
+                    try:
+                        on_variant_found(v_record)
+                    except Exception:
+                        pass
 
             if progress_callback:
                 try:
@@ -396,7 +418,8 @@ class TeePublicScraper:
         self,
         items: List[Dict[str, Any]],
         progress_callback=None,
-        stop_event=None
+        stop_event=None,
+        pause_event=None
     ) -> List[Dict[str, Any]]:
         """
         Enrich real designer/artist names for TeePublic listings.
@@ -409,6 +432,8 @@ class TeePublicScraper:
         for idx, it in enumerate(items, 1):
             if stop_event and stop_event.is_set():
                 break
+            if pause_event:
+                pause_event.wait()
 
             current_seller = str(it.get("seller", "")).strip()
             if not current_seller or any(g in current_seller.lower() for g in ("teepublic artist", "unknown", "resolving...")):
@@ -419,5 +444,4 @@ class TeePublicScraper:
 
             if progress_callback:
                 progress_callback(idx, total, it)
-
         return items

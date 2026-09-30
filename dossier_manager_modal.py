@@ -26,7 +26,7 @@ class DossierManagerModal(tk.Toplevel):
         self.exporter = exporter or getattr(master, "exporter", None)
         self.on_restore_callback = on_restore_callback
 
-        self.title("📁 Multi-Dossier Investigation Vault Manager")
+        self.title("📁 Investigation Vault Manager")
         self.geometry("1060x720")
         self.minsize(920, 600)
         self.configure(bg=self._t("bg", "#121212"))
@@ -333,6 +333,8 @@ class DossierManagerModal(tk.Toplevel):
             return
         self.data_store.create_dossier(name, initial_items=[])
         self._populate_vault_list()
+        if hasattr(self.master, "_update_dossier_btn"):
+            self.master._update_dossier_btn()
 
     def _rename_selected_vault(self):
         if not self._selected_vault:
@@ -354,6 +356,8 @@ class DossierManagerModal(tk.Toplevel):
         self.data_store.rename_dossier(self._selected_vault, new_name)
         self._selected_vault = new_name
         self._populate_vault_list()
+        if hasattr(self.master, "_update_dossier_btn"):
+            self.master._update_dossier_btn()
 
     def _delete_selected_vault(self):
         if not self._selected_vault:
@@ -369,6 +373,8 @@ class DossierManagerModal(tk.Toplevel):
             return
         self.data_store.delete_dossier(self._selected_vault)
         self._populate_vault_list()
+        if hasattr(self.master, "_update_dossier_btn"):
+            self.master._update_dossier_btn()
 
     def _clear_selected_vault_items(self):
         if not self._selected_vault:
@@ -381,6 +387,8 @@ class DossierManagerModal(tk.Toplevel):
             return
         self.data_store.clear_dossier(self._selected_vault)
         self._populate_vault_list()
+        if hasattr(self.master, "_update_dossier_btn"):
+            self.master._update_dossier_btn()
 
     def _remove_selected_listings_from_vault(self):
         if not self._selected_vault:
@@ -397,6 +405,8 @@ class DossierManagerModal(tk.Toplevel):
         self.data_store.save_dossier(self._selected_vault, new_items)
         self._on_vault_selected()
         self._populate_vault_list()
+        if hasattr(self.master, "_update_dossier_btn"):
+            self.master._update_dossier_btn()
 
     # ── Restore & Merge Actions ───────────────────────────────────────────────
     def _restore_active_vault(self):
@@ -404,7 +414,16 @@ class DossierManagerModal(tk.Toplevel):
             return
         items = self.data_store.get_dossier(self._selected_vault)
         if not items:
-            messagebox.showinfo("Empty Vault", f"Vault '{self._selected_vault}' contains no listings to restore.", parent=self)
+            if not messagebox.askyesno(
+                "Switch to Empty Vault",
+                f"Vault '{self._selected_vault}' contains 0 listings.\n\nSwitch active workspace to this empty vault?\n\n(This will clear the Live Results Table so you can harvest a fresh sweep directly into '{self._selected_vault}')",
+                parent=self
+            ):
+                return
+
+            if self.on_restore_callback:
+                self.on_restore_callback([], mode="replace", vault_name=self._selected_vault)
+            self.destroy()
             return
 
         if not messagebox.askyesno(
@@ -486,3 +505,11 @@ class DossierManagerModal(tk.Toplevel):
             )
         except Exception as e:
             messagebox.showerror("Export Error", f"Failed to export Master Dossiers to Excel:\n{e}", parent=self)
+
+    def destroy(self):
+        if hasattr(self.master, "_update_dossier_btn"):
+            try:
+                self.master._update_dossier_btn()
+            except Exception:
+                pass
+        super().destroy()

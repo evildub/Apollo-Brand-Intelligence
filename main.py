@@ -19,7 +19,7 @@ from PIL import Image, ImageTk
 import ctypes
 
 logger = logging.getLogger("Apollo")
-APP_VERSION = "3.3.2"
+APP_VERSION = "3.3.3"
 VERSION = APP_VERSION
 
 from scraper import EbayScraper
@@ -1588,7 +1588,7 @@ class EbayTool(tk.Tk):
         )
         self.settings_menu.add_separator()
         self.settings_menu.add_command(
-            label="🩺 Pre-Flight System Diagnostics...",
+            label="🩺 System Diagnostics...",
             command=self._open_system_diagnostics
         )
         self.settings_menu.add_command(
@@ -6541,7 +6541,7 @@ class EbayTool(tk.Tk):
         purged = initial_len - len(unique_items)
         if purged > 0:
             self.results = unique_items
-            self.seen_item_ids = {str(it.get("url", "")).split("?")[0] for it in self.results if it.get("url")}
+            self.seen_item_ids = {self._normalize_item_url(it.get("url", "")) for it in self.results if it.get("url")}
             self._repopulate_results_table()
             self._log(f"🧹 Purged {purged} duplicate listings from results table.")
             self._show_themed_info("Deduplication Complete", f"Removed {purged} duplicate listings.\n\n{len(self.results)} unique listings remain.", icon="🧹")
@@ -6551,10 +6551,10 @@ class EbayTool(tk.Tk):
     def _get_dossier_btn_label(self) -> str:
         """Return dynamic label for Dossiers toolbar button."""
         if not hasattr(self, "data_store") or not self.data_store:
-            return "📁 Dossiers (0)"
+            return "📁 Vault Manager (0)"
         total = self.data_store.get_total_staged_count()
         vaults = len(self.data_store.get_dossier_names())
-        return f"📁 Dossiers ({vaults} Vaults / {total})"
+        return f"📁 Vault Manager ({vaults} | {total})"
 
     def _update_dossier_btn(self):
         """Update Dossier button label text with current counts."""
@@ -6562,7 +6562,7 @@ class EbayTool(tk.Tk):
             self.btn_view_dossier.config(text=self._get_dossier_btn_label())
 
     def _prompt_stash_target(self, count: int) -> str | None:
-        """Prompt analyst to select or name a Dossier Vault to stash listings into."""
+        """Prompt analyst to select or name an Investigation Vault to save listings into."""
         vault_names = self.data_store.get_dossier_names()
         default_vault = getattr(self, "_last_used_vault", "Main Dossier")
         if default_vault not in vault_names and vault_names:
@@ -6570,7 +6570,7 @@ class EbayTool(tk.Tk):
 
         t = self.theme
         win = tk.Toplevel(self)
-        win.title("📥 Stash to Investigation Vault")
+        win.title("📥 Save to Investigation Vault")
         win.configure(bg=t["bg"])
         win.resizable(False, False)
         win.transient(self)
@@ -6587,11 +6587,11 @@ class EbayTool(tk.Tk):
         hdr = tk.Frame(card, bg=t["panel"])
         hdr.pack(fill="x", pady=(0, 8))
         tk.Label(hdr, text="📥", font=("Segoe UI", 14), bg=t["panel"], fg=t["accent"]).pack(side="left", padx=(0, 6))
-        tk.Label(hdr, text=f"Stash {count} Verified Listing(s)", font=FONT_HEAD, bg=t["panel"], fg=t["text"]).pack(side="left")
+        tk.Label(hdr, text=f"Save {count} Verified Listing(s)", font=FONT_HEAD, bg=t["panel"], fg=t["text"]).pack(side="left")
 
         tk.Label(
             card,
-            text="Choose an existing Investigation Vault or type a new name to park these listings and clear the active table for your next sweep wave:",
+            text="Choose an existing Investigation Vault or type a new name to save these listings and clear the active table for your next sweep wave:",
             font=FONT_SM, bg=t["panel"], fg=t["subtext"], justify="left", wraplength=420
         ).pack(anchor="w", pady=(0, 10))
 
@@ -6611,7 +6611,7 @@ class EbayTool(tk.Tk):
         btn_row.pack(fill="x")
 
         self._btn(btn_row, "Cancel", win.destroy).pack(side="right", padx=(4, 0))
-        self._btn(btn_row, "📥 Stash & Clear Table", _confirm, accent=True).pack(side="right")
+        self._btn(btn_row, "📥 Save & Clear Table", _confirm, accent=True).pack(side="right")
 
         win.bind("<Return>", lambda e: _confirm())
         win.bind("<Escape>", lambda e: win.destroy())
@@ -6624,7 +6624,7 @@ class EbayTool(tk.Tk):
         return result["vault"]
 
     def _stash_to_dossier(self):
-        """Move verified/triaged listings from active table into a persistent Dossier Vault."""
+        """Move verified/triaged listings from active table into a persistent Investigation Vault."""
         selected_iids = self.result_tree.selection()
         if selected_iids:
             target_urls = {str(self.result_tree.set(iid, "url")).strip().lower() for iid in selected_iids if self.result_tree.set(iid, "url")}
@@ -6640,7 +6640,7 @@ class EbayTool(tk.Tk):
             visible_urls = {str(self.result_tree.set(iid, "url")).strip().lower() for iid in self.result_tree.get_children() if self.result_tree.set(iid, "url")}
             visible_ids = {str(self.result_tree.set(iid, "item_id")).strip() for iid in self.result_tree.get_children() if self.result_tree.set(iid, "item_id")}
             if not visible_urls and not visible_ids:
-                messagebox.showinfo("Dossier Staging Vault", "No listings in results table to stash into dossier.")
+                messagebox.showinfo("Investigation Vault", "No listings in results table to save into vault.")
                 return
             to_stash = [
                 it for it in self.results
@@ -6680,15 +6680,15 @@ class EbayTool(tk.Tk):
                 added_count += 1
 
         self.data_store.save_dossier(target_vault, current_vault_items)
-        self.seen_item_ids = {str(it.get("url", "")).split("?")[0] for it in self.results if it.get("url")}
+        self.seen_item_ids = {self._normalize_item_url(it.get("url", "")) for it in self.results if it.get("url")}
         self._repopulate_results_table()
         self._update_dossier_btn()
 
-        self._log(f"📥 [STAGING VAULT] Moved {added_count} target(s) into Dossier Vault '{target_vault}' (Vault Total: {len(current_vault_items)}). Active table cleared.")
-        self._status(f"📥 Stashed {added_count} listings into '{target_vault}'. Active table cleared.")
+        self._log(f"📥 [INVESTIGATION VAULT] Saved {added_count} target(s) into Vault '{target_vault}' (Vault Total: {len(current_vault_items)}). Active table cleared.")
+        self._status(f"📥 Saved {added_count} listings into '{target_vault}'. Active table cleared.")
         self._show_themed_info(
-            "Stashed to Dossier",
-            f"Successfully moved {added_count} listing(s) into vault '{target_vault}'!\n\n• Vault Total: {len(current_vault_items)} listings\n• Live Table: Cleared and ready for your next sweep.\n\nClick '📁 Dossiers' anytime to review or export!",
+            "Saved to Vault",
+            f"Successfully moved {added_count} listing(s) into vault '{target_vault}'!\n\n• Vault Total: {len(current_vault_items)} listings\n• Live Table: Cleared and ready for your next sweep.\n\nClick '📁 Vault Manager' anytime to review or export!",
             icon="📥"
         )
 
@@ -6703,16 +6703,16 @@ class EbayTool(tk.Tk):
             if mode == "replace":
                 self.results = list(items)
             else:
-                existing_urls = {str(it.get("url", "")).split("?")[0].lower() for it in self.results if it.get("url")}
+                existing_urls = {self._normalize_item_url(it.get("url", "")) for it in self.results if it.get("url")}
                 existing_ids = {str(it.get("item_id", "")).strip() for it in self.results if it.get("item_id")}
                 for it in items:
-                    u = str(it.get("url", "")).split("?")[0].lower()
+                    u = self._normalize_item_url(it.get("url", ""))
                     iid = str(it.get("item_id", "")).strip()
                     if (u and u not in existing_urls) or (iid and iid not in existing_ids) or (not u and not iid):
                         self.results.append(it)
                         if u: existing_urls.add(u)
                         if iid: existing_ids.add(iid)
-            self.seen_item_ids = {str(it.get("url", "")).split("?")[0] for it in self.results if it.get("url")}
+            self.seen_item_ids = {self._normalize_item_url(it.get("url", "")) for it in self.results if it.get("url")}
             self._repopulate_results_table()
             self._update_dossier_btn()
             action_desc = "Restored" if mode == "replace" else "Merged"
@@ -6728,8 +6728,13 @@ class EbayTool(tk.Tk):
         )
 
     def _on_filter_changed(self, *args):
-        """Triggered on keystroke in live search filter entry."""
-        self._repopulate_results_table()
+        """Triggered on keystroke in live search filter entry (debounced by 180ms)."""
+        if hasattr(self, "_filter_after_id") and self._filter_after_id:
+            try:
+                self.after_cancel(self._filter_after_id)
+            except Exception:
+                pass
+        self._filter_after_id = self.after(180, self._repopulate_results_table)
 
     def _apply_bulk_tag(self):
         """Apply selected Brand and/or Product Type to all highlighted rows."""
@@ -7204,6 +7209,77 @@ class EbayTool(tk.Tk):
 
         self._update_result_count()
         self._trigger_session_autosave()
+
+    def _insert_single_result(self, item: dict):
+        """Append a newly discovered variant or live listing directly into result_tree in real-time."""
+        try:
+            # Check Marketplace filter dropdown
+            mkt_filter = getattr(self, "mkt_filter_var", None)
+            mkt_val = mkt_filter.get() if mkt_filter else "All Marketplaces"
+            if mkt_val and mkt_val != "All Marketplaces":
+                item_mkt = self._get_item_marketplace(item)
+                if item_mkt.lower() != mkt_val.lower() and mkt_val.lower() not in item_mkt.lower():
+                    self._update_result_count()
+                    return
+
+            # Check Brand filter dropdown
+            brand_filter = getattr(self, "brand_filter_var", None)
+            brand_val = brand_filter.get() if brand_filter else "All Brands"
+            if brand_val and brand_val != "All Brands":
+                if str(item.get("brand", "")).strip().lower() != brand_val.lower():
+                    self._update_result_count()
+                    return
+
+            # Check search filter
+            filter_var = getattr(self, "filter_var", None)
+            query = filter_var.get().strip().lower() if filter_var else ""
+            target_col = getattr(self, "filter_col_var", None)
+            target_col_val = target_col.get() if target_col else "All Columns"
+            if query and not self._item_matches_filter(item, query, target_col_val):
+                self._update_result_count()
+                return
+
+            threat_badge = item.get("threat_badge", "")
+            threat_display = f"{threat_badge} Threat" if threat_badge else "Safe"
+            orig = item.get("seller_origin", "")
+            orig_display = f"🇨🇳 {orig}" if "china" in orig.lower() else orig
+
+            is_thumbs = self.show_thumbnails.get() if hasattr(self, "show_thumbnails") else False
+            ph = getattr(self, "_empty_ph", None)
+            size_key = getattr(self, "current_thumb_size", "medium")
+
+            img_url = item.get("image_url", "")
+            iid = self.result_tree.insert("", "end", text="", image=ph, values=(
+                item.get("brand", ""),
+                item.get("product_type", ""),
+                item.get("title", ""),
+                item.get("item_id", ""),
+                normalize_price_string(item.get("price", "")),
+                item.get("seller", ""),
+                orig_display,
+                threat_display,
+                item.get("location", ""),
+                img_url,
+                item.get("url", ""),
+            ))
+
+            if img_url:
+                if not hasattr(self, "_url_to_iids"):
+                    self._url_to_iids = {}
+                if img_url not in self._url_to_iids:
+                    self._url_to_iids[img_url] = set()
+                self._url_to_iids[img_url].add(iid)
+
+            if is_thumbs and img_url:
+                cache_key = (size_key, img_url)
+                if cache_key in self.inline_img_cache:
+                    self.result_tree.item(iid, image=self.inline_img_cache[cache_key])
+                else:
+                    self._fetch_inline_thumbnail(iid, img_url)
+
+            self._update_result_count()
+        except Exception as e:
+            logger.debug(f"Error inserting single result: {e}")
 
     def _sort_by_column(self, col):
         """Sort self.results by column with numeric/price intelligence and update headers."""
@@ -9177,6 +9253,32 @@ class EbayTool(tk.Tk):
 
         return mkt or "unknown"
 
+    @staticmethod
+    def _normalize_item_url(raw_url: str) -> str:
+        """
+        Normalize item URL for deduplication. Strips transient marketing query params
+        (utm_*, ref, fbclid) while strictly preserving functional variant identifiers
+        (template=, variant=, sku=, color=, style=, model=, product_id=).
+        """
+        if not raw_url:
+            return ""
+        u = str(raw_url).strip().lower()
+        if "?" not in u:
+            return u
+        parts = u.split("?", 1)
+        base = parts[0]
+        query = parts[1]
+        keep_params = []
+        for param in query.split("&"):
+            if not param:
+                continue
+            k = param.split("=")[0].lower()
+            if any(k == v or k.startswith(v) for v in ("template", "variant", "sku", "color", "style", "model", "product_id")):
+                keep_params.append(param)
+        if keep_params:
+            return base + "?" + "&".join(sorted(keep_params))
+        return base
+
     def _propagate_enriched_seller(self, item: dict, s_name: str) -> int:
         """
         Auto-update sibling listings in current results that share the same store/seller
@@ -9201,6 +9303,8 @@ class EbayTool(tk.Tk):
         item["seller"] = s_name_clean
         store_id = str(item.get("store_id", "")).strip()
         store_url = str(item.get("store_url", "")).strip()
+        sibling_ids = set(str(sid).strip() for sid in item.get("sibling_ids", []) if sid)
+        sibling_urls = set(str(u).split("?")[0].strip().lower() for u in item.get("sibling_urls", []) if u)
         seller_origin = item.get("seller_origin")
         location = item.get("location")
         business_entity = item.get("business_entity")
@@ -9221,6 +9325,12 @@ class EbayTool(tk.Tk):
             if store_id and str(other.get("store_id", "")).strip() == store_id:
                 is_match = True
             elif store_url and str(other.get("store_url", "")).strip() == store_url:
+                is_match = True
+            elif sibling_ids and ((other_id_val and other_id_val in sibling_ids) or any(sid in other_url_norm for sid in sibling_ids)):
+                is_match = True
+            elif sibling_urls and (other_url_norm in sibling_urls or any(other_url_norm in su or su in other_url_norm for su in sibling_urls)):
+                is_match = True
+            elif other.get("sibling_ids") and item_id_val and item_id_val in [str(s).strip() for s in other.get("sibling_ids", [])]:
                 is_match = True
             elif not is_match and item.get("url") and other.get("url"):
                 u1, u2 = str(item.get("url", "")).lower(), str(other.get("url", "")).lower()
@@ -9247,6 +9357,10 @@ class EbayTool(tk.Tk):
 
             if is_match:
                 other["seller"] = s_name_clean
+                if store_id and not other.get("store_id"):
+                    other["store_id"] = store_id
+                if store_url and not other.get("store_url"):
+                    other["store_url"] = store_url
                 if seller_origin and not other.get("seller_origin"):
                     other["seller_origin"] = seller_origin
                 if location and not other.get("location"):
@@ -9377,70 +9491,7 @@ class EbayTool(tk.Tk):
                 s_name = str(item.get("seller", "")).strip()
                 if s_name and not any(g in s_name.lower() for g in ("ebay seller", "global search", "aliexpress global", "unknown", "tiktok shop merchant", "mercado libre seller", "ir para", "ir a la", "pagina do vendedor", "página do vendedor")):
                     enriched_count += 1
-                    
-                    # Auto-update sibling listings in current results that share the same store/seller or identical standalone item
-                    store_id = str(item.get("store_id", "")).strip()
-                    store_url = str(item.get("store_url", "")).strip()
-                    seller_origin = item.get("seller_origin")
-                    location = item.get("location")
-                    business_entity = item.get("business_entity")
-                    threat_badge = item.get("threat_badge")
-                    threat_score = item.get("threat_score")
-                    item_url_norm = str(item.get("url", "")).split("?")[0].strip().lower()
-                    item_id_val = str(item.get("item_id", "")).strip()
-                    is_catalog_item = "/p/" in item_url_norm
-                    
-                    for other in self.results:
-                        if other is item:
-                            continue
-                        is_match = False
-                        other_url_norm = str(other.get("url", "")).split("?")[0].strip().lower()
-                        other_id_val = str(other.get("item_id", "")).strip()
-
-                        if store_id and str(other.get("store_id", "")).strip() == store_id:
-                            is_match = True
-                        elif store_url and str(other.get("store_url", "")).strip() == store_url:
-                            is_match = True
-                        elif not is_match and item.get("url") and other.get("url"):
-                            u1, u2 = str(item.get("url", "")).lower(), str(other.get("url", "")).lower()
-                            if "/pagina/" in u1 and "/pagina/" in u2:
-                                p1 = u1.split("/pagina/")[1].split("?")[0].split("/")[0]
-                                p2 = u2.split("/pagina/")[1].split("?")[0].split("/")[0]
-                                if p1 and p1 == p2:
-                                    is_match = True
-                            elif "/loja/" in u1 and "/loja/" in u2:
-                                l1 = u1.split("/loja/")[1].split("?")[0].split("/")[0]
-                                l2 = u2.split("/loja/")[1].split("?")[0].split("/")[0]
-                                if l1 and l1 == l2:
-                                    is_match = True
-                            elif "_custid_" in u1 and "_custid_" in u2:
-                                c1 = u1.split("_custid_")[1].split("?")[0].split("&")[0]
-                                c2 = u2.split("_custid_")[1].split("?")[0].split("&")[0]
-                                if c1 and c1 == c2:
-                                    is_match = True
-                        elif s_name and other.get("seller") == s_name:
-                            GENERIC_SELLER_PLACEHOLDERS = {"ebay seller", "unknown", "resolving...", "global search", "aliexpress global", "printerval creator", "printerval seller", "printblur creator", "printblur seller", "mercado libre seller", "mercado libre merchant", "tiktok shop merchant", "redbubble artist", "vinted user", "meli_seller_"}
-                            if not any(g in s_name.lower() for g in GENERIC_SELLER_PLACEHOLDERS):
-                                is_match = True
-                        elif not is_catalog_item:
-                            # Standalone items sharing exact URL or Item ID
-                            if item_url_norm and other_url_norm and item_url_norm == other_url_norm:
-                                is_match = True
-                            elif item_id_val and other_id_val and item_id_val == other_id_val:
-                                is_match = True
-
-                        if is_match:
-                            other["seller"] = s_name
-                            if seller_origin and not other.get("seller_origin"):
-                                other["seller_origin"] = seller_origin
-                            if location and not other.get("location"):
-                                other["location"] = location
-                            if business_entity and not other.get("business_entity"):
-                                other["business_entity"] = business_entity
-                            if threat_badge:
-                                other["threat_badge"] = threat_badge
-                            if threat_score:
-                                other["threat_score"] = threat_score
+                    self._propagate_enriched_seller(item, s_name)
 
                 pct = int((current / total) * 100) if total else 0
                 self.after(0, lambda: self._status(f"🏪 Enriching Sellers [{current}/{total}] ({pct}%) -> '{s_name}'"))
@@ -9448,6 +9499,7 @@ class EbayTool(tk.Tk):
                 self.after(0, lambda: self._repopulate_results_table())
 
             try:
+                import inspect
                 for matcher, s_attr, m_name in enrichment_registry:
                     if self.stop_event.is_set():
                         break
@@ -9462,11 +9514,13 @@ class EbayTool(tk.Tk):
                         continue
 
                     try:
-                        m_fn(
-                            mkt_items,
-                            progress_callback=_on_prog,
-                            stop_event=self.stop_event
-                        )
+                        sig = inspect.signature(m_fn)
+                        kwargs = {"progress_callback": _on_prog}
+                        if "stop_event" in sig.parameters:
+                            kwargs["stop_event"] = self.stop_event
+                        if "pause_event" in sig.parameters:
+                            kwargs["pause_event"] = self.pause_event
+                        m_fn(mkt_items, **kwargs)
                     except Exception as ex:
                         logger.error(f"Error enriching {s_attr}: {ex}")
                         self.after(0, lambda e=ex, a=s_attr: self._log(f"⚠ Warning: {a} enrichment error: {e}", error=True))
@@ -9568,6 +9622,46 @@ class EbayTool(tk.Tk):
             def _on_prog(current, total, new_count, item):
                 self.after(0, lambda: self._status(f"👕 Expanding POD Variants: {current}/{total} -> +{new_count} items found"))
 
+            def _on_variant_found(v, market_prefix="POD"):
+                nonlocal total_added
+                vid = str(v.get("item_id", "")).strip()
+                vurl = self._normalize_item_url(v.get("url", ""))
+                v_seller = str(v.get("seller", "")).strip()
+
+                if (vid and vid in existing_ids) or (vurl and vurl in self.seen_item_ids):
+                    if v_seller and not any(g in v_seller.lower() for g in ("unknown", "generic", "creator", "printerval creator", "printblur creator", "redbubble artist", "resolving...")):
+                        for it in self.results:
+                            cur_id = str(it.get("item_id", "")).strip()
+                            cur_url = self._normalize_item_url(it.get("url", ""))
+                            if (vid and cur_id == vid) or (vurl and cur_url == vurl):
+                                cur_seller = str(it.get("seller", "")).strip()
+                                if not cur_seller or any(g in cur_seller.lower() for g in ("unknown", "generic", "creator", "printerval creator", "printblur creator", "redbubble artist", "resolving...")):
+                                    it["seller"] = v_seller
+                                    if v.get("store_url") and not it.get("store_url"):
+                                        it["store_url"] = v["store_url"]
+                                    if v.get("store_id") and not it.get("store_id"):
+                                        it["store_id"] = v["store_id"]
+                                    if hasattr(self, "data_store"):
+                                        try: self.data_store.add_or_update_listing(it)
+                                        except Exception: pass
+                                    self._log(f"⚡ Auto-enriched existing listing '{it.get('title', '')[:30]}' with seller '{v_seller}'")
+                                    self.after(0, lambda: self._repopulate_results_table())
+                                break
+                    return
+
+                if vid:
+                    existing_ids.add(vid)
+                self.results.append(v)
+                if vurl: self.seen_item_ids.add(vurl)
+                if vid: self.seen_item_ids.add(f"{market_prefix}_{vid}")
+                try:
+                    if hasattr(self, "data_store"):
+                        self.data_store.add_or_update_listing(v)
+                except Exception:
+                    pass
+                total_added += 1
+                self.after(0, lambda item=v: self._insert_single_result(item))
+
             try:
                 printerval_targets = [
                     it for it in pod_targets
@@ -9584,22 +9678,13 @@ class EbayTool(tk.Tk):
                         existing_item_ids=existing_ids,
                         progress_callback=_on_prog,
                         stop_event=self.stop_event,
+                        pause_event=self.pause_event,
+                        on_variant_found=lambda v: _on_variant_found(v, "Printerval"),
                         log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                     )
-
                     if new_variants:
                         for v in new_variants:
-                            self.results.append(v)
-                            vid = str(v.get("item_id", "")).strip()
-                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
-                            if vurl: self.seen_item_ids.add(vurl)
-                            if vid: self.seen_item_ids.add(f"Printerval_{vid}")
-                            try:
-                                if hasattr(self, "data_store"):
-                                    self.data_store.add_or_update_listing(v)
-                            except Exception:
-                                pass
-                        total_added += len(new_variants)
+                            _on_variant_found(v, "Printerval")
 
                 printblur_targets = [
                     it for it in pod_targets
@@ -9612,22 +9697,13 @@ class EbayTool(tk.Tk):
                         existing_item_ids=existing_ids,
                         progress_callback=_on_prog,
                         stop_event=self.stop_event,
+                        pause_event=self.pause_event,
+                        on_variant_found=lambda v: _on_variant_found(v, "Printblur"),
                         log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                     )
-
                     if new_pb_variants:
                         for v in new_pb_variants:
-                            self.results.append(v)
-                            vid = str(v.get("item_id", "")).strip()
-                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
-                            if vurl: self.seen_item_ids.add(vurl)
-                            if vid: self.seen_item_ids.add(f"Printblur_{vid}")
-                            try:
-                                if hasattr(self, "data_store"):
-                                    self.data_store.add_or_update_listing(v)
-                            except Exception:
-                                pass
-                        total_added += len(new_pb_variants)
+                            _on_variant_found(v, "Printblur")
 
                 if redbubble_targets and not self.stop_event.is_set():
                     new_rb_variants = self.redbubble_scraper.expand_design_variants(
@@ -9635,22 +9711,13 @@ class EbayTool(tk.Tk):
                         existing_item_ids=existing_ids,
                         progress_callback=_on_prog,
                         stop_event=self.stop_event,
+                        pause_event=self.pause_event,
+                        on_variant_found=lambda v: _on_variant_found(v, "Redbubble"),
                         log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                     )
-
                     if new_rb_variants:
                         for v in new_rb_variants:
-                            self.results.append(v)
-                            vid = str(v.get("item_id", "")).strip()
-                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
-                            if vurl: self.seen_item_ids.add(vurl)
-                            if vid: self.seen_item_ids.add(f"Redbubble_{vid}")
-                            try:
-                                if hasattr(self, "data_store"):
-                                    self.data_store.add_or_update_listing(v)
-                            except Exception:
-                                pass
-                        total_added += len(new_rb_variants)
+                            _on_variant_found(v, "Redbubble")
 
                 teepublic_targets = [
                     it for it in pod_targets
@@ -9662,21 +9729,13 @@ class EbayTool(tk.Tk):
                         existing_item_ids=existing_ids,
                         progress_callback=_on_prog,
                         stop_event=self.stop_event,
+                        pause_event=self.pause_event,
+                        on_variant_found=lambda v: _on_variant_found(v, "TeePublic"),
                         log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                     )
                     if new_tp_variants:
                         for v in new_tp_variants:
-                            self.results.append(v)
-                            vid = str(v.get("item_id", "")).strip()
-                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
-                            if vurl: self.seen_item_ids.add(vurl)
-                            if vid: self.seen_item_ids.add(f"TeePublic_{vid}")
-                            try:
-                                if hasattr(self, "data_store"):
-                                    self.data_store.add_or_update_listing(v)
-                            except Exception:
-                                pass
-                        total_added += len(new_tp_variants)
+                            _on_variant_found(v, "TeePublic")
 
                 spreadshirt_targets = [
                     it for it in pod_targets
@@ -9688,21 +9747,13 @@ class EbayTool(tk.Tk):
                         existing_item_ids=existing_ids,
                         progress_callback=_on_prog,
                         stop_event=self.stop_event,
+                        pause_event=self.pause_event,
+                        on_variant_found=lambda v: _on_variant_found(v, "Spreadshirt"),
                         log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                     )
                     if new_sp_variants:
                         for v in new_sp_variants:
-                            self.results.append(v)
-                            vid = str(v.get("item_id", "")).strip()
-                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
-                            if vurl: self.seen_item_ids.add(vurl)
-                            if vid: self.seen_item_ids.add(f"Spreadshirt_{vid}")
-                            try:
-                                if hasattr(self, "data_store"):
-                                    self.data_store.add_or_update_listing(v)
-                            except Exception:
-                                pass
-                        total_added += len(new_sp_variants)
+                            _on_variant_found(v, "Spreadshirt")
 
                 # Zazzle POD Expansion
                 zazzle_targets = [
@@ -9713,17 +9764,14 @@ class EbayTool(tk.Tk):
                     if self.stop_event.is_set(): break
                     new_z_variants = self.zazzle_scraper.expand_design_variants(
                         p_item,
+                        stop_event=self.stop_event,
+                        pause_event=self.pause_event,
+                        on_variant_found=lambda v: _on_variant_found(v, "Zazzle"),
                         log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                     )
-                    for v in new_z_variants:
-                        vid = str(v.get("item_id", "")).strip()
-                        if vid and vid not in existing_ids:
-                            existing_ids.add(vid)
-                            self.results.append(v)
-                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
-                            if vurl: self.seen_item_ids.add(vurl)
-                            if vid: self.seen_item_ids.add(f"Zazzle_{vid}")
-                            total_added += 1
+                    if new_z_variants:
+                        for v in new_z_variants:
+                            _on_variant_found(v, "Zazzle")
 
                 # CafePress POD Expansion
                 cafepress_targets = [
@@ -9734,17 +9782,14 @@ class EbayTool(tk.Tk):
                     if self.stop_event.is_set(): break
                     new_cp_variants = self.cafepress_scraper.expand_design_variants(
                         p_item,
+                        stop_event=self.stop_event,
+                        pause_event=self.pause_event,
+                        on_variant_found=lambda v: _on_variant_found(v, "CafePress"),
                         log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                     )
-                    for v in new_cp_variants:
-                        vid = str(v.get("item_id", "")).strip()
-                        if vid and vid not in existing_ids:
-                            existing_ids.add(vid)
-                            self.results.append(v)
-                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
-                            if vurl: self.seen_item_ids.add(vurl)
-                            if vid: self.seen_item_ids.add(f"CafePress_{vid}")
-                            total_added += 1
+                    if new_cp_variants:
+                        for v in new_cp_variants:
+                            _on_variant_found(v, "CafePress")
 
                 # Threadless POD Expansion
                 threadless_targets = [
@@ -9755,17 +9800,14 @@ class EbayTool(tk.Tk):
                     if self.stop_event.is_set(): break
                     new_th_variants = self.threadless_scraper.expand_design_variants(
                         p_item,
+                        stop_event=self.stop_event,
+                        pause_event=self.pause_event,
+                        on_variant_found=lambda v: _on_variant_found(v, "Threadless"),
                         log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                     )
-                    for v in new_th_variants:
-                        vid = str(v.get("item_id", "")).strip()
-                        if vid and vid not in existing_ids:
-                            existing_ids.add(vid)
-                            self.results.append(v)
-                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
-                            if vurl: self.seen_item_ids.add(vurl)
-                            if vid: self.seen_item_ids.add(f"Threadless_{vid}")
-                            total_added += 1
+                    if new_th_variants:
+                        for v in new_th_variants:
+                            _on_variant_found(v, "Threadless")
 
                 # TeeSpring POD Expansion
                 teespring_targets = [
@@ -9776,17 +9818,14 @@ class EbayTool(tk.Tk):
                     if self.stop_event.is_set(): break
                     new_ts_variants = self.teespring_scraper.expand_design_variants(
                         p_item,
+                        stop_event=self.stop_event,
+                        pause_event=self.pause_event,
+                        on_variant_found=lambda v: _on_variant_found(v, "TeeSpring"),
                         log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                     )
-                    for v in new_ts_variants:
-                        vid = str(v.get("item_id", "")).strip()
-                        if vid and vid not in existing_ids:
-                            existing_ids.add(vid)
-                            self.results.append(v)
-                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
-                            if vurl: self.seen_item_ids.add(vurl)
-                            if vid: self.seen_item_ids.add(f"TeeSpring_{vid}")
-                            total_added += 1
+                    if new_ts_variants:
+                        for v in new_ts_variants:
+                            _on_variant_found(v, "TeeSpring")
 
                 # Fine Art America POD Expansion
                 faa_targets = [
@@ -9797,17 +9836,14 @@ class EbayTool(tk.Tk):
                     if self.stop_event.is_set(): break
                     new_faa_variants = self.fineartamerica_scraper.expand_design_variants(
                         p_item,
+                        stop_event=self.stop_event,
+                        pause_event=self.pause_event,
+                        on_variant_found=lambda v: _on_variant_found(v, "FineArtAmerica"),
                         log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                     )
-                    for v in new_faa_variants:
-                        vid = str(v.get("item_id", "")).strip()
-                        if vid and vid not in existing_ids:
-                            existing_ids.add(vid)
-                            self.results.append(v)
-                            vurl = str(v.get("url", "")).strip().lower().split("?")[0]
-                            if vurl: self.seen_item_ids.add(vurl)
-                            if vid: self.seen_item_ids.add(f"FineArtAmerica_{vid}")
-                            total_added += 1
+                    if new_faa_variants:
+                        for v in new_faa_variants:
+                            _on_variant_found(v, "FineArtAmerica")
 
             finally:
                 if hasattr(self, "data_store"):
@@ -9913,17 +9949,40 @@ class EbayTool(tk.Tk):
             def _register_variant(v, market_prefix="POD"):
                 nonlocal variants_added
                 vid = str(v.get("item_id", "")).strip()
-                if vid and vid not in existing_ids:
+                vurl = self._normalize_item_url(v.get("url", ""))
+                v_seller = str(v.get("seller", "")).strip()
+
+                if (vid and vid in existing_ids) or (vurl and vurl in self.seen_item_ids):
+                    if v_seller and not _is_unresolved(v_seller):
+                        for it in self.results:
+                            cur_id = str(it.get("item_id", "")).strip()
+                            cur_url = self._normalize_item_url(it.get("url", ""))
+                            if (vid and cur_id == vid) or (vurl and cur_url == vurl):
+                                if _is_unresolved(it.get("seller")):
+                                    it["seller"] = v_seller
+                                    if v.get("store_url") and not it.get("store_url"):
+                                        it["store_url"] = v["store_url"]
+                                    if v.get("store_id") and not it.get("store_id"):
+                                        it["store_id"] = v["store_id"]
+                                    if hasattr(self, "data_store"):
+                                        try: self.data_store.add_or_update_listing(it)
+                                        except Exception: pass
+                                    self._log(f"⚡ [Pipeline 1/3] Auto-enriched existing listing '{it.get('title', '')[:30]}' with seller '{v_seller}'")
+                                    self.after(0, lambda: self._repopulate_results_table())
+                                break
+                    return
+
+                if vid:
                     existing_ids.add(vid)
-                    self.results.append(v)
-                    active_items.append(v)
-                    vurl = str(v.get("url", "")).strip().lower().split("?")[0]
-                    if vurl: self.seen_item_ids.add(vurl)
-                    if vid: self.seen_item_ids.add(f"{market_prefix}_{vid}")
-                    if hasattr(self, "data_store"):
-                        try: self.data_store.add_or_update_listing(v)
-                        except Exception: pass
-                    variants_added += 1
+                self.results.append(v)
+                active_items.append(v)
+                if vurl: self.seen_item_ids.add(vurl)
+                if vid: self.seen_item_ids.add(f"{market_prefix}_{vid}")
+                if hasattr(self, "data_store"):
+                    try: self.data_store.add_or_update_listing(v)
+                    except Exception: pass
+                variants_added += 1
+                self.after(0, lambda item=v: self._insert_single_result(item))
 
             try:
                 # ── STAGE 1: POD VARIANT EXPANSION & CREATOR ATTRIBUTION ──
@@ -9950,6 +10009,8 @@ class EbayTool(tk.Tk):
                             existing_item_ids=existing_ids,
                             progress_callback=_on_pod_prog,
                             stop_event=self.stop_event,
+                            pause_event=self.pause_event,
+                            on_variant_found=lambda v: _register_variant(v, "Printerval"),
                             log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                         )
                         if new_pv:
@@ -9967,6 +10028,8 @@ class EbayTool(tk.Tk):
                             existing_item_ids=existing_ids,
                             progress_callback=_on_pod_prog,
                             stop_event=self.stop_event,
+                            pause_event=self.pause_event,
+                            on_variant_found=lambda v: _register_variant(v, "Printblur"),
                             log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                         )
                         if new_pb:
@@ -9984,6 +10047,8 @@ class EbayTool(tk.Tk):
                             existing_item_ids=existing_ids,
                             progress_callback=_on_pod_prog,
                             stop_event=self.stop_event,
+                            pause_event=self.pause_event,
+                            on_variant_found=lambda v: _register_variant(v, "Redbubble"),
                             log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                         )
                         if new_rb:
@@ -10001,6 +10066,8 @@ class EbayTool(tk.Tk):
                             existing_item_ids=existing_ids,
                             progress_callback=_on_pod_prog,
                             stop_event=self.stop_event,
+                            pause_event=self.pause_event,
+                            on_variant_found=lambda v: _register_variant(v, "TeePublic"),
                             log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                         )
                         if new_tp:
@@ -10018,6 +10085,8 @@ class EbayTool(tk.Tk):
                             existing_item_ids=existing_ids,
                             progress_callback=_on_pod_prog,
                             stop_event=self.stop_event,
+                            pause_event=self.pause_event,
+                            on_variant_found=lambda v: _register_variant(v, "Spreadshirt"),
                             log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                         )
                         if new_sp:
@@ -10033,6 +10102,9 @@ class EbayTool(tk.Tk):
                         if self.stop_event.is_set(): break
                         new_z = self.zazzle_scraper.expand_design_variants(
                             p_item,
+                            stop_event=self.stop_event,
+                            pause_event=self.pause_event,
+                            on_variant_found=lambda v: _register_variant(v, "Zazzle"),
                             log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                         )
                         if new_z:
@@ -10048,6 +10120,9 @@ class EbayTool(tk.Tk):
                         if self.stop_event.is_set(): break
                         new_cp = self.cafepress_scraper.expand_design_variants(
                             p_item,
+                            stop_event=self.stop_event,
+                            pause_event=self.pause_event,
+                            on_variant_found=lambda v: _register_variant(v, "CafePress"),
                             log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                         )
                         if new_cp:
@@ -10063,6 +10138,9 @@ class EbayTool(tk.Tk):
                         if self.stop_event.is_set(): break
                         new_th = self.threadless_scraper.expand_design_variants(
                             p_item,
+                            stop_event=self.stop_event,
+                            pause_event=self.pause_event,
+                            on_variant_found=lambda v: _register_variant(v, "Threadless"),
                             log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                         )
                         if new_th:
@@ -10078,6 +10156,9 @@ class EbayTool(tk.Tk):
                         if self.stop_event.is_set(): break
                         new_ts = self.teespring_scraper.expand_design_variants(
                             p_item,
+                            stop_event=self.stop_event,
+                            pause_event=self.pause_event,
+                            on_variant_found=lambda v: _register_variant(v, "TeeSpring"),
                             log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                         )
                         if new_ts:
@@ -10093,6 +10174,9 @@ class EbayTool(tk.Tk):
                         if self.stop_event.is_set(): break
                         new_faa = self.fineartamerica_scraper.expand_design_variants(
                             p_item,
+                            stop_event=self.stop_event,
+                            pause_event=self.pause_event,
+                            on_variant_found=lambda v: _register_variant(v, "FineArtAmerica"),
                             log_callback=lambda msg: self.after(0, lambda: self._log(msg))
                         )
                         if new_faa:
@@ -10154,6 +10238,7 @@ class EbayTool(tk.Tk):
                             ("teespring", "teespring_scraper", "enrich_seller_info", "TeeSpring"),
                         ]
 
+                        import inspect
                         for mkt_key, s_attr, m_name, mkt_label in ENRICHMENT_DISPATCH:
                             if self.stop_event.is_set():
                                 break
@@ -10171,11 +10256,13 @@ class EbayTool(tk.Tk):
 
                             self._log(f"🏪 [Pipeline 2/3] Resolving merchant store names for {len(unresolved_mkt)} {mkt_label} listing(s)...")
                             try:
-                                m_fn(
-                                    unresolved_mkt,
-                                    progress_callback=_on_enrich_prog,
-                                    stop_event=self.stop_event
-                                )
+                                sig = inspect.signature(m_fn)
+                                kwargs = {"progress_callback": _on_enrich_prog}
+                                if "stop_event" in sig.parameters:
+                                    kwargs["stop_event"] = self.stop_event
+                                if "pause_event" in sig.parameters:
+                                    kwargs["pause_event"] = self.pause_event
+                                m_fn(unresolved_mkt, **kwargs)
                             except Exception as ex:
                                 logger.error(f"Error enriching {mkt_label} in pipeline: {ex}")
                                 self.after(0, lambda e=ex, m=mkt_label: self._log(f"⚠ Warning: {m} enrichment error: {e}", error=True))
@@ -10213,7 +10300,8 @@ class EbayTool(tk.Tk):
                         self.etsy_scraper.batch_verify_highlights(
                             etsy_targets,
                             progress_callback=_on_etsy_pipe_prog,
-                            stop_event=self.stop_event
+                            stop_event=self.stop_event,
+                            pause_event=self.pause_event
                         )
                     except Exception as e_err:
                         logger.error(f"Error in Etsy highlights verification: {e_err}")
@@ -10518,9 +10606,9 @@ class EbayTool(tk.Tk):
                             if c and self.thumb_size_var.get() != "Off (Text Only)" and self.thumb_size_var.get() == size_k:
                                 try:
                                     photo = ImageTk.PhotoImage(c)
-                                    # LRU bound on photo cache
-                                    if len(self.inline_img_cache) > 600:
-                                        for k in list(self.inline_img_cache.keys())[:150]:
+                                    # Memory bound on photo cache (generous 10,000 items to prevent cache thrashing / disappearing thumbnails)
+                                    if len(self.inline_img_cache) > 10000:
+                                        for k in list(self.inline_img_cache.keys())[:500]:
                                             self.inline_img_cache.pop(k, None)
                                     self.inline_img_cache[(size_k, target_url)] = photo
                                     self.inline_img_cache[(size_k, image_url)] = photo
@@ -10766,7 +10854,7 @@ class EbayTool(tk.Tk):
                                      confirm_text="Yes",
                                      cancel_text="No"):
             self.results = session["results"]
-            self.seen_item_ids = {str(it.get("url", "")).split("?")[0] for it in self.results if it.get("url")}
+            self.seen_item_ids = {self._normalize_item_url(it.get("url", "")) for it in self.results if it.get("url")}
             for it in self.results:
                 vid = str(it.get("item_id", "")).strip()
                 if vid:
@@ -14966,6 +15054,17 @@ class ConnectedNetworkModal(tk.Toplevel):
                     
                     def _prog(cur, tot, it):
                         s_name = it.get("seller", "")
+                        if s_name and hasattr(self.parent, "_propagate_enriched_seller"):
+                            self.parent._propagate_enriched_seller(it, s_name)
+                        sibs = set(str(s).strip() for s in it.get("sibling_ids", []) if s)
+                        sib_urls = set(str(u).split("?")[0].strip().lower() for u in it.get("sibling_urls", []) if u)
+                        if sibs or sib_urls:
+                            for other in self.discovered_items:
+                                if other is it: continue
+                                oid = str(other.get("item_id", "")).strip()
+                                ourl = str(other.get("url", "")).split("?")[0].strip().lower()
+                                if (oid and oid in sibs) or (ourl and ourl in sib_urls) or any(s in ourl for s in sibs):
+                                    other["seller"] = s_name
                         self.after(0, lambda: self.status_lbl.configure(text=f"🏪 Enriching Sellers [{cur}/{tot}] -> '{s_name}'"))
                         self.after(0, self._populate_tree)
 
@@ -14978,6 +15077,17 @@ class ConnectedNetworkModal(tk.Toplevel):
                     
                     def _prog(cur, tot, it):
                         s_name = it.get("seller", "")
+                        if s_name and hasattr(self.parent, "_propagate_enriched_seller"):
+                            self.parent._propagate_enriched_seller(it, s_name)
+                        sibs = set(str(s).strip() for s in it.get("sibling_ids", []) if s)
+                        sib_urls = set(str(u).split("?")[0].strip().lower() for u in it.get("sibling_urls", []) if u)
+                        if sibs or sib_urls:
+                            for other in self.discovered_items:
+                                if other is it: continue
+                                oid = str(other.get("item_id", "")).strip()
+                                ourl = str(other.get("url", "")).split("?")[0].strip().lower()
+                                if (oid and oid in sibs) or (ourl and ourl in sib_urls) or any(s in ourl for s in sibs):
+                                    other["seller"] = s_name
                         self.after(0, lambda: self.status_lbl.configure(text=f"🏪 Enriching Creators [{cur}/{tot}] -> '{s_name}'"))
                         self.after(0, self._populate_tree)
 
@@ -16218,6 +16328,17 @@ class AnalystGuideModal(tk.Toplevel):
 
 
 if __name__ == "__main__":
+    if "--artemis" in sys.argv:
+        from artemis import ArtemisApp
+        theme_k = None
+        for i, a in enumerate(sys.argv):
+            if a == "--theme" and i + 1 < len(sys.argv):
+                theme_k = sys.argv[i + 1]
+                break
+        artemis_app = ArtemisApp(initial_theme_key=theme_k)
+        artemis_app.mainloop()
+        sys.exit(0)
+
     app = EbayTool()
     app.mainloop()
 

@@ -259,6 +259,7 @@ class VintedScraper:
         exclusions: Optional[List[str]] = None,
         max_pages: int = 4,
         stop_event=None,
+        pause_event=None,
         log_callback=None,
         status_callback=None,
         region_code: Optional[str] = None
@@ -311,6 +312,8 @@ class VintedScraper:
             if stop_event and stop_event.is_set():
                 _log("⏹ Vinted harvest stopped by user.")
                 break
+            if pause_event:
+                pause_event.wait()
 
             _status(f"Harvesting Vinted {flag} {country_name} — Page {page_num}/{max_pages}...")
 

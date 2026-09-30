@@ -22,7 +22,10 @@ THEMES = {
         "btn_accent_fg": "#070D0A",
         "select_bg": "#10B981",
         "select_fg": "#070D0A",
-        "check_select_bg": "#09120E"
+        "check_select_bg": "#09120E",
+        "scrollbar_thumb": "#1F573F",
+        "scrollbar_trough": "#09120E",
+        "scrollbar_border": "#164E33"
     },
     "apollo_exec": {
         "name": "🌟 Apollo Executive",

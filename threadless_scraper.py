@@ -188,7 +188,9 @@ class ThreadlessScraper:
         store_filter: Optional[str] = None,
         condition: str = "all",
         status_callback=None,
-        log_callback=None
+        log_callback=None,
+        stop_event=None,
+        pause_event=None
     ) -> List[Dict[str, Any]]:
         """
         Execute deep keyword search across Threadless with multi-page pagination.
@@ -223,6 +225,12 @@ class ThreadlessScraper:
                 """)
 
                 for page_num in range(1, depth_pages + 1):
+                    if stop_event and stop_event.is_set():
+                        _log("🛑 [Threadless] Search stopped by user.")
+                        break
+                    if pause_event:
+                        pause_event.wait()
+
                     enc_q = urllib.parse.quote_plus(clean_q)
                     if store_filter:
                         clean_store = store_filter.strip().lstrip("@")
@@ -514,7 +522,10 @@ class ThreadlessScraper:
     def expand_design_variants(
         self,
         parent_item: Dict[str, Any],
-        log_callback=None
+        log_callback=None,
+        stop_event=None,
+        pause_event=None,
+        on_variant_found=None
     ) -> List[Dict[str, Any]]:
         """
         1-to-20 POD Variant Matrix Expansion for Threadless designs.
@@ -539,22 +550,34 @@ class ThreadlessScraper:
         _log(f"🧵 [Threadless] Expanding POD Matrix for design '{clean_title[:35]}...'")
 
         for prod_name, slug_code, est_price, category in THREADLESS_PRODUCT_LINES:
+            if stop_event and stop_event.is_set():
+                break
+            if pause_event:
+                pause_event.wait()
+
             var_url = f"{base_url}?style={slug_code}"
             var_title = f"{clean_title} - {prod_name}"
             var_id = f"{parent_id}_{slug_code}" if parent_id else slug_code
 
-            variants.append({
+            v_record = {
                 "title": var_title,
                 "url": var_url,
                 "price": f"${est_price:.2f}",
                 "item_id": var_id,
                 "seller": seller,
                 "platform": "threadless",
+                "marketplace": "threadless.com",
                 "thumbnail": base_image,
                 "image_url": base_image,
                 "source": f"Threadless POD ({category})",
                 "status": "New"
-            })
+            }
+            variants.append(v_record)
+            if on_variant_found:
+                try:
+                    on_variant_found(v_record)
+                except Exception:
+                    pass
 
         _log(f"🧵 [Threadless] Generated +{len(variants)} POD commercial variants.")
         return variants

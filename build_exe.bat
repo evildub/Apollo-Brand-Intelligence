@@ -1,14 +1,16 @@
 @echo off
-echo ===================================================
-echo   Building Apollo Brand Intelligence Standalone EXE
-echo ===================================================
+echo ===================================================================
+echo   Building Apollo Brand Intelligence & Artemis Dual Executables
+echo ===================================================================
 
-echo [1/5] Closing any running Apollo Brand Intelligence instances...
+echo [1/5] Closing any running Apollo / Artemis instances...
 taskkill /F /IM "Apollo Brand Intelligence.exe" 2>nul
 taskkill /F /IM ApolloBrandIntelligence.exe 2>nul
+taskkill /F /IM Artemis.exe 2>nul
 timeout /t 1 /nobreak >nul
 
-python -m PyInstaller --onedir --noconsole --noconfirm --name "Apollo Brand Intelligence" --icon="%~dp0apollo.ico" --add-data "data.json;." --add-data "apollo.ico;." --add-data "apollo.png;." --add-data "artemis.ico;." --add-data "artemis.png;." --hidden-import "PIL" --hidden-import "PIL.ImageTk" --hidden-import "openpyxl" --hidden-import "bs4" --hidden-import "requests" --hidden-import "curl_cffi" --hidden-import "curl_cffi.requests" --hidden-import "playwright" --hidden-import "playwright.sync_api" --hidden-import "visual_catalog" --hidden-import "visual_catalog_modal" --hidden-import "visual_harvester" --hidden-import "syndicate_graph" --hidden-import "syndicate_hunter_modal" --hidden-import "vinted_scraper" --hidden-import "tiktok_scraper" --hidden-import "manomano_scraper" --hidden-import "printerval_scraper" --hidden-import "printblur_scraper" --hidden-import "redbubble_scraper" --hidden-import "mercadolibre_scraper" --hidden-import "temu_scraper" --hidden-import "scribd_scraper" --hidden-import "shopify_scraper" --hidden-import "system_diagnostics" --hidden-import "theme_definitions" --hidden-import "artemis_bridge" --hidden-import "artemis_data_store" --hidden-import "artemis_engine" --hidden-import "vero_pdf_parser" --hidden-import "vero_disclosure_modal" --hidden-import "pypdf" --hidden-import "intel_pack_manager" --hidden-import "field_guide_modal" --hidden-import "product_type_modal" --hidden-import "tooltip" --hidden-import "batch_importer" --hidden-import "exporter" --hidden-import "aliexpress_scraper" --hidden-import "wish_scraper" --hidden-import "teepublic_scraper" --hidden-import "etsy_scraper" --hidden-import "spreadshirt_scraper" --hidden-import "zazzle_scraper" --hidden-import "cafepress_scraper" --hidden-import "threadless_scraper" --hidden-import "teespring_scraper" --hidden-import "fineartamerica_scraper" --hidden-import "session_vault" --hidden-import "session_vault_modal" --hidden-import "multi_sector_modal" main.py
+echo [2/5] Compiling binaries via PyInstaller Spec...
+python -m PyInstaller --noconfirm "Apollo Brand Intelligence.spec"
 
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] PyInstaller build failed with exit code %ERRORLEVEL%
@@ -23,6 +25,6 @@ echo [4/5] Bundling Security Audit and Analyst Documentation...
 copy /Y "SECURITY_AUDIT.md" "dist\Apollo Brand Intelligence\SECURITY_AUDIT.md" >nul
 copy /Y "EXE_README.md" "dist\Apollo Brand Intelligence\README.md" >nul
 
-echo [5/5] Build complete! Starting application...
-start "" "dist\Apollo Brand Intelligence\Apollo Brand Intelligence.exe"
+echo [5/5] Build complete! Verified distribution ready:
+dir /b "dist\Apollo Brand Intelligence\*.exe"
 echo Done!

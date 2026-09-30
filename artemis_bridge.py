@@ -96,23 +96,40 @@ def launch_artemis_process(theme_key: Optional[str] = None) -> bool:
     if theme_key:
         cmd_args = ["--theme", str(theme_key)]
 
-    # 1. Look for compiled Artemis.exe in executable directory
-    base_dir = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else __file__)
-    exe_path = os.path.join(base_dir, "Artemis.exe")
-    if os.path.exists(exe_path):
+    # 1. If running as a frozen executable (PyInstaller bundle)
+    if getattr(sys, "frozen", False):
+        base_dir = os.path.dirname(sys.executable)
+        exe_path = os.path.join(base_dir, "Artemis.exe")
+        if os.path.exists(exe_path):
+            try:
+                subprocess.Popen([exe_path] + cmd_args)
+                return True
+            except Exception:
+                pass
+        # Launch using self with --artemis flag
         try:
-            subprocess.Popen([exe_path] + cmd_args, close_fds=True)
+            subprocess.Popen([sys.executable, "--artemis"] + cmd_args)
             return True
         except Exception:
             pass
 
-    # 2. Look for artemis.py in current directory
+    # 2. Look for standalone artemis.py in project directory
+    base_dir = os.path.dirname(__file__)
     py_path = os.path.join(base_dir, "artemis.py")
     if os.path.exists(py_path):
         try:
-            # Use current python interpreter
             python_exe = sys.executable
-            subprocess.Popen([python_exe, py_path] + cmd_args, close_fds=True)
+            subprocess.Popen([python_exe, py_path] + cmd_args)
+            return True
+        except Exception:
+            pass
+
+    # 3. Fallback: try python main.py --artemis
+    main_path = os.path.join(base_dir, "main.py")
+    if os.path.exists(main_path):
+        try:
+            python_exe = sys.executable
+            subprocess.Popen([python_exe, main_path, "--artemis"] + cmd_args)
             return True
         except Exception:
             pass

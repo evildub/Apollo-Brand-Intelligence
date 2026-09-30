@@ -80,7 +80,9 @@ class TeeSpringScraper:
         store_filter: Optional[str] = None,
         condition: str = "all",
         status_callback=None,
-        log_callback=None
+        log_callback=None,
+        stop_event=None,
+        pause_event=None
     ) -> List[Dict[str, Any]]:
         """
         Execute deep keyword search across TeeSpring / Spring with multi-page pagination.
@@ -111,6 +113,12 @@ class TeeSpringScraper:
                 page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
 
                 for page_num in range(1, depth_pages + 1):
+                    if stop_event and stop_event.is_set():
+                        _log("🛑 [TeeSpring] Search cancelled by user.")
+                        break
+                    if pause_event:
+                        pause_event.wait()
+
                     enc_q = urllib.parse.quote_plus(clean_q)
                     if store_filter:
                         clean_store = store_filter.strip().lstrip("@")
@@ -329,7 +337,10 @@ class TeeSpringScraper:
     def expand_design_variants(
         self,
         parent_item: Dict[str, Any],
-        log_callback=None
+        log_callback=None,
+        stop_event=None,
+        pause_event=None,
+        on_variant_found=None
     ) -> List[Dict[str, Any]]:
         """
         1-to-20 POD Variant Matrix Expansion for TeeSpring designs.
@@ -354,22 +365,34 @@ class TeeSpringScraper:
         _log(f"🌱 [TeeSpring] Expanding POD Matrix for design '{clean_title[:35]}...'")
 
         for prod_name, slug_code, est_price, category in TEESPRING_PRODUCT_LINES:
+            if stop_event and stop_event.is_set():
+                break
+            if pause_event:
+                pause_event.wait()
+
             var_url = f"{base_url}?prop={slug_code}"
             var_title = f"{clean_title} - {prod_name}"
             var_id = f"{parent_id}_{slug_code}" if parent_id else slug_code
 
-            variants.append({
+            v_record = {
                 "title": var_title,
                 "url": var_url,
                 "price": f"${est_price:.2f}",
                 "item_id": var_id,
                 "seller": seller,
                 "platform": "teespring",
+                "marketplace": "spring.com",
                 "thumbnail": base_image,
                 "image_url": base_image,
                 "source": f"TeeSpring POD ({category})",
                 "status": "New"
-            })
+            }
+            variants.append(v_record)
+            if on_variant_found:
+                try:
+                    on_variant_found(v_record)
+                except Exception:
+                    pass
 
         _log(f"🌱 [TeeSpring] Generated +{len(variants)} POD commercial variants.")
         return variants
@@ -378,7 +401,8 @@ class TeeSpringScraper:
         self,
         items: List[Dict[str, Any]],
         progress_callback=None,
-        stop_event=None
+        stop_event=None,
+        pause_event=None
     ) -> List[Dict[str, Any]]:
         """
         Enrich real creator/store names for TeeSpring / Spring listings.
@@ -391,6 +415,8 @@ class TeeSpringScraper:
         for idx, it in enumerate(items, 1):
             if stop_event and stop_event.is_set():
                 break
+            if pause_event:
+                pause_event.wait()
 
             current_seller = str(it.get("seller", "")).strip()
             if not current_seller or any(g in current_seller.lower() for g in ("spring creator", "teespring creator", "unknown", "resolving...")):

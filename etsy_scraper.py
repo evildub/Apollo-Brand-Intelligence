@@ -77,7 +77,9 @@ class EtsyScraper:
         store_filter: Optional[str] = None,
         condition: str = "all",
         status_callback=None,
-        log_callback=None
+        log_callback=None,
+        stop_event=None,
+        pause_event=None
     ) -> List[Dict[str, Any]]:
         """
         Execute deep keyword search across Etsy with commercial scale filtering.
@@ -109,6 +111,12 @@ class EtsyScraper:
                 page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
 
                 for page_num in range(1, depth_pages + 1):
+                    if stop_event and stop_event.is_set():
+                        _log("🛑 [Etsy] Search stopped by user.")
+                        break
+                    if pause_event:
+                        pause_event.wait()
+
                     enc_q = urllib.parse.quote_plus(clean_q)
                     search_url = f"https://www.etsy.com/search?q={enc_q}&page={page_num}&ref=pagination"
                     if store_filter:
@@ -514,7 +522,8 @@ class EtsyScraper:
         self,
         listings: List[Dict[str, Any]],
         progress_callback=None,
-        stop_event=None
+        stop_event=None,
+        pause_event=None
     ) -> List[Dict[str, Any]]:
         """
         Batch inspect a target list of Etsy items with stealth browser reuse and natural jitter.
@@ -534,6 +543,8 @@ class EtsyScraper:
                 for idx, it in enumerate(listings):
                     if stop_event and stop_event.is_set():
                         break
+                    if pause_event:
+                        pause_event.wait()
 
                     url = it.get("url", "")
                     if not url or "etsy.com/listing" not in url:

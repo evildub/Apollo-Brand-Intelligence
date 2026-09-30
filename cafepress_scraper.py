@@ -81,7 +81,9 @@ class CafePressScraper:
         store_filter: Optional[str] = None,
         condition: str = "all",
         status_callback=None,
-        log_callback=None
+        log_callback=None,
+        stop_event=None,
+        pause_event=None
     ) -> List[Dict[str, Any]]:
         """
         Execute deep keyword search across CafePress with multi-page pagination.
@@ -114,6 +116,12 @@ class CafePressScraper:
                 page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
 
                 for page_num in range(1, depth_pages + 1):
+                    if stop_event and stop_event.is_set():
+                        _log("🛑 [CafePress] Search stopped by user.")
+                        break
+                    if pause_event:
+                        pause_event.wait()
+
                     enc_q = clean_q.replace(" ", "+")
                     if store_filter:
                         clean_store = store_filter.strip().lstrip("@")
@@ -321,7 +329,8 @@ class CafePressScraper:
         self,
         items: List[Dict[str, Any]],
         progress_callback=None,
-        stop_event=None
+        stop_event=None,
+        pause_event=None
     ):
         """
         High-speed seller/designer name & store link enrichment for CafePress listings.
@@ -342,6 +351,8 @@ class CafePressScraper:
                 for idx, item in enumerate(items):
                     if stop_event and stop_event.is_set():
                         break
+                    if pause_event:
+                        pause_event.wait()
 
                     url = item.get("url", "").strip()
                     if not url:
@@ -478,7 +489,10 @@ class CafePressScraper:
     def expand_design_variants(
         self,
         parent_item: Dict[str, Any],
-        log_callback=None
+        log_callback=None,
+        stop_event=None,
+        pause_event=None,
+        on_variant_found=None
     ) -> List[Dict[str, Any]]:
         """
         1-to-20 POD Variant Matrix Expansion for CafePress designs.
@@ -503,11 +517,16 @@ class CafePressScraper:
         _log(f"☕ [CafePress] Expanding POD Matrix for design '{clean_title[:35]}...'")
 
         for prod_name, slug_code, est_price, category in CAFEPRESS_PRODUCT_LINES:
+            if stop_event and stop_event.is_set():
+                break
+            if pause_event:
+                pause_event.wait()
+
             var_url = f"{base_url}?product_line={slug_code}"
             var_title = f"{clean_title} - {prod_name}"
             var_id = f"{parent_id}_{slug_code}" if parent_id else slug_code
 
-            variants.append({
+            v_record = {
                 "title": var_title,
                 "url": var_url,
                 "price": f"${est_price:.2f}",
@@ -525,7 +544,13 @@ class CafePressScraper:
                 "brand": "Unknown",
                 "source": f"CafePress POD ({category})",
                 "status": "New"
-            })
+            }
+            variants.append(v_record)
+            if on_variant_found:
+                try:
+                    on_variant_found(v_record)
+                except Exception:
+                    pass
 
         _log(f"☕ [CafePress] Generated +{len(variants)} POD commercial variants.")
         return variants

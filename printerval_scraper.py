@@ -57,12 +57,6 @@ class PrintervalScraper:
 
         var_text = f"{variant_title.lower()} {variant_slug.lower()}"
 
-        # If brand was searched for or exists in parent title, variant must not omit or conflict with it
-        target_b = (brand or keyword or "").lower().strip()
-        if target_b and target_b not in ("adhoc request", "full store sweep", ""):
-            if target_b in parent_title.lower() and target_b not in var_text:
-                return False
-
         if not core_parent_tokens:
             core_parent_tokens = [t for t in raw_tokens if t not in ("the", "and", "for", "with")]
 
@@ -70,32 +64,36 @@ class PrintervalScraper:
             return True
 
         matched = [t for t in core_parent_tokens if t in var_text]
-        match_ratio = len(matched) / len(core_parent_tokens)
-
-        if len(core_parent_tokens) == 1:
-            return len(matched) >= 1
-        elif len(core_parent_tokens) == 2:
-            return len(matched) >= 1
-        else:
-            return len(matched) >= 2 or match_ratio >= 0.5
+        return len(matched) >= 1
 
     def _synthesize_variant_title(self, parent_title: str, slug: str, card_title: str = "") -> str:
         """
         Synthesize the full, accurate listing title for a Printerval variant using the URL slug,
-        parent title, and card text, preventing partial/truncated category-only titles like 'Baby Blankets'.
+        parent title, and card text, ensuring the artwork title and product type are both preserved.
         """
+        # Clean parent artwork title by removing trailing apparel product types
+        clean_parent = re.sub(
+            r'\s*-\s*(?:T-?Shirt|Classic Tee|Heavyweight Tee|Tee|Sweatshirt|Pullover Hoodie|Hoodie|Coffee Mug|Mug|Sticker|Poster|Canvas|Baby Blanket|Tote Bag).*$',
+            '',
+            parent_title,
+            flags=re.IGNORECASE
+        ).strip()
+        if not clean_parent:
+            clean_parent = parent_title.strip()
+
         # If card_title is already a full product title with design name (e.g. >= 4 words and contains parent tokens)
         if card_title and len(card_title.split()) >= 4:
-            p_toks = set(re.findall(r'[a-zA-Z0-9]{3,}', parent_title.lower())) if parent_title else set()
+            p_toks = set(re.findall(r'[a-zA-Z0-9]{3,}', clean_parent.lower())) if clean_parent else set()
             c_toks = set(re.findall(r'[a-zA-Z0-9]{3,}', card_title.lower()))
             if len(p_toks & c_toks) >= 2 or not p_toks:
                 return card_title
 
         if not slug:
-            return parent_title or card_title or "Merchandise"
+            pt = card_title or "Merchandise"
+            return f"{clean_parent} - {pt}" if clean_parent else pt
 
         slug_words = [w for w in slug.split("-") if w]
-        parent_tokens = re.findall(r'[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*', parent_title) if parent_title else []
+        parent_tokens = re.findall(r'[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*', clean_parent) if clean_parent else []
         parent_map = {t.lower(): t for t in parent_tokens}
 
         formatted_words = []
@@ -129,6 +127,13 @@ class PrintervalScraper:
             if pref_len > 0 and [w.lower() for w in formatted_words[:pref_len]] == [p.lower() for p in pref_tokens]:
                 rem_words = formatted_words[pref_len:]
                 raw_res = prefix + " - " + " ".join(rem_words)
+
+        # Check if the formatted slug already contains parent tokens
+        p_toks = set(re.findall(r'[a-zA-Z0-9]{3,}', clean_parent.lower())) if clean_parent else set()
+        r_toks = set(re.findall(r'[a-zA-Z0-9]{3,}', raw_res.lower()))
+        if p_toks and not (p_toks & r_toks):
+            # The slug was only the physical product category (e.g. "Pullover Hoodie")
+            return f"{clean_parent} - {raw_res}"
 
         return raw_res
 
@@ -333,15 +338,19 @@ class PrintervalScraper:
             "original": f"https://printerval.com/shop/{clean_name}"
         }
 
-    def search(self, query: str, max_items: int = 50, condition: str = "all", log_callback=None) -> List[Dict]:
+    def search(self, query: str, max_items: int = 50, condition: str = "all", log_callback=None,
+               stop_event: Optional[threading.Event] = None, pause_event: Optional[threading.Event] = None) -> List[Dict]:
         """
         Execute search on Printerval using stealth automation.
+        Supports real-time cancellation and pause events.
         
         Args:
             query: Keyword string (e.g., 'Toyota TRD')
             max_items: Maximum listings to return
             condition: 'all', 'new', or 'used'
             log_callback: Optional callable for live UI logging
+            stop_event: Optional threading.Event to abort early
+            pause_event: Optional threading.Event to pause execution
             
         Returns:
             List of normalized listing dicts.
@@ -374,6 +383,12 @@ class PrintervalScraper:
                 try:
                     max_pages = max(10, min(30, (max_items + 39) // 40))
                     while len(results) < max_items and page_num <= max_pages:
+                        if stop_event and stop_event.is_set():
+                            _log("⏹ [Printerval] Search cancelled by user.")
+                            break
+                        if pause_event:
+                            pause_event.wait()
+
                         target_url = f"https://printerval.com/search/?q={encoded_q}&page_id={page_num}"
 
                         _log(f"🌐 [Printerval] Loading page {page_num}...")
@@ -509,10 +524,12 @@ class PrintervalScraper:
     def enrich_seller_info(self, items: List[Dict],
                            progress_callback=None,
                            stop_event: threading.Event = None,
+                           pause_event: threading.Event = None,
                            chunk_size: int = 15) -> List[Dict]:
         """
         Enrich real creator / artist / shop names and exact pricing for Printerval items.
         Uses persistent disk cache to resolve previously seen items in 0ms.
+        Supports live pause events and cross-enriches sibling items sharing the same design/storefront.
         """
         if not items:
             return items
@@ -535,6 +552,10 @@ class PrintervalScraper:
                     it["title"] = cached.get("title")
                 if cached.get("image_url") and not it.get("image_url"):
                     it["image_url"] = cached.get("image_url")
+                if cached.get("store_url"):
+                    it["store_url"] = cached.get("store_url")
+                if cached.get("store_id"):
+                    it["store_id"] = cached.get("store_id")
                 if progress_callback:
                     progress_callback(idx + 1, len(items), it)
             else:
@@ -561,6 +582,15 @@ class PrintervalScraper:
                     for fetch_idx, (orig_idx, it) in enumerate(items_to_fetch):
                         if stop_event and stop_event.is_set():
                             break
+                        if pause_event:
+                            pause_event.wait()
+
+                        # Skip if already enriched via sibling cross-linking from an earlier design on the same run
+                        curr_seller = str(it.get("seller", "")).strip().lower()
+                        if curr_seller and not any(g in curr_seller for g in generic_placeholders):
+                            if progress_callback:
+                                progress_callback(orig_idx + 1, len(items), it)
+                            continue
 
                         if processed_in_chunk >= chunk_size:
                             time.sleep(random.uniform(0.6, 1.2))
@@ -574,11 +604,13 @@ class PrintervalScraper:
                             page.goto(url, wait_until="domcontentloaded", timeout=15000)
                             page.wait_for_timeout(400)
 
-                            # Extract exact creator, price, and canonical title
-                            res = page.evaluate("""() => {
+                            # Extract exact creator, price, canonical title, storefront, and sibling design variant IDs
+                            res = page.evaluate("""(curId) => {
                                 let seller = '';
                                 let price = '';
                                 let title = '';
+                                let store_url = '';
+                                let store_id = '';
 
                                 // 0. High-accuracy Document Title extraction (e.g. "Product Title sold by <Artist> | SKU ...")
                                 if (document.title) {
@@ -592,19 +624,23 @@ class PrintervalScraper:
                                 }
 
                                 // 1. Direct Storefront link extraction (e.g. <a href="https://printerval.com/shops/artist-name">Artist Name</a>)
-                                if (!seller) {
-                                    const shopA = document.querySelector('a[href*="/shops/"], a[href*="/shop/"]');
-                                    if (shopA) {
+                                const shopA = document.querySelector('a[href*="/shops/"], a[href*="/shop/"]');
+                                if (shopA) {
+                                    if (shopA.href) {
+                                        store_url = shopA.href.split('?')[0];
+                                        const parts = store_url.split(/[/]shops?[/]([^/?#]+)/);
+                                        if (parts && parts.length > 1) {
+                                            store_id = parts[1].trim();
+                                        }
+                                    }
+                                    if (!seller) {
                                         let t = (shopA.innerText || '').trim();
                                         if (t && !t.toLowerCase().includes('printerval') && t.length > 1) {
                                             seller = t;
-                                        } else if (shopA.href && (shopA.href.includes('/shops/') || shopA.href.includes('/shop/'))) {
-                                            const parts = shopA.href.split(/[/]shops?[/]([^/?#]+)/);
-                                            if (parts && parts.length > 1) {
-                                                const slug = parts[1].replace(/[-_]/g, ' ').trim();
-                                                if (slug && !slug.toLowerCase().includes('printerval')) {
-                                                    seller = slug.charAt(0).toUpperCase() + slug.slice(1);
-                                                }
+                                        } else if (store_id) {
+                                            const slugClean = store_id.replace(/[-_]/g, ' ').trim();
+                                            if (slugClean && !slugClean.toLowerCase().includes('printerval')) {
+                                                seller = slugClean.charAt(0).toUpperCase() + slugClean.slice(1);
                                             }
                                         }
                                     }
@@ -741,17 +777,47 @@ class PrintervalScraper:
                                     }
                                 }
 
-                                return { seller: seller, price: price, title: title, image_url: img };
-                            }""")
+                                const sibling_ids = [];
+                                const sibling_urls = [];
+                                const links = document.querySelectorAll('a[href*="-p"]');
+                                for (let a of links) {
+                                    const rawHref = a.getAttribute('href') || a.href || '';
+                                    const m = rawHref.match(/-p(\\d+)/);
+                                    if (m && m[1] && m[1] !== curId) {
+                                        if (!sibling_ids.includes(m[1])) sibling_ids.push(m[1]);
+                                        if (rawHref && !sibling_urls.includes(rawHref)) sibling_urls.push(rawHref);
+                                    }
+                                }
 
-                            if res.get("seller"):
-                                it["seller"] = res["seller"]
+                                return {
+                                    seller: seller,
+                                    price: price,
+                                    title: title,
+                                    image_url: img,
+                                    store_url: store_url,
+                                    store_id: store_id,
+                                    sibling_ids: sibling_ids,
+                                    sibling_urls: sibling_urls
+                                };
+                            }""", item_id)
+
+                            s_val = res.get("seller")
+                            if s_val:
+                                it["seller"] = s_val
+                            if res.get("store_url"):
+                                it["store_url"] = res["store_url"]
+                            if res.get("store_id"):
+                                it["store_id"] = res["store_id"]
                             if res.get("price"):
                                 it["price"] = res["price"]
                             if res.get("title") and (not it.get("title") or it.get("title").startswith("Printerval") or len(it.get("title", "")) < len(res.get("title", ""))):
                                 it["title"] = res["title"]
                             if res.get("image_url") and (not it.get("image_url") or "unsafe/540" in it.get("image_url", "")):
                                 it["image_url"] = res["image_url"]
+                            if res.get("sibling_ids"):
+                                it["sibling_ids"] = res["sibling_ids"]
+                            if res.get("sibling_urls"):
+                                it["sibling_urls"] = res["sibling_urls"]
 
                             # Cache result
                             if item_id:
@@ -759,8 +825,52 @@ class PrintervalScraper:
                                     "seller": it.get("seller"),
                                     "price": it.get("price"),
                                     "title": it.get("title"),
-                                    "image_url": it.get("image_url")
+                                    "image_url": it.get("image_url"),
+                                    "store_url": it.get("store_url", ""),
+                                    "store_id": it.get("store_id", ""),
+                                    "sibling_ids": it.get("sibling_ids", []),
+                                    "sibling_urls": it.get("sibling_urls", [])
                                 }
+
+                            # Cross-enrich sibling designs sharing the same artwork on this page
+                            sibling_ids = set(res.get("sibling_ids") or [])
+                            sibling_urls = set(res.get("sibling_urls") or [])
+                            if s_val and not any(g in s_val.lower() for g in generic_placeholders):
+                                # Pre-populate cache for all sibling IDs so subsequent checks resolve in 0ms
+                                for sib_id in sibling_ids:
+                                    if sib_id and sib_id not in cache:
+                                        cache[sib_id] = {
+                                            "seller": s_val,
+                                            "store_url": res.get("store_url", ""),
+                                            "store_id": res.get("store_id", "")
+                                        }
+                                for other_idx, other in enumerate(items):
+                                    if other is it:
+                                        continue
+                                    o_id = str(other.get("item_id", "")).strip()
+                                    o_url = str(other.get("url", "")).split("?")[0].strip().lower()
+                                    is_match = False
+                                    if o_id and o_id in sibling_ids:
+                                        is_match = True
+                                    elif o_url and any(o_url in su.lower() or su.lower() in o_url for su in sibling_urls):
+                                        is_match = True
+                                    elif any(sid in o_url for sid in sibling_ids):
+                                        is_match = True
+
+                                    if is_match:
+                                        other["seller"] = s_val
+                                        if res.get("store_url"): other["store_url"] = res["store_url"]
+                                        if res.get("store_id"): other["store_id"] = res["store_id"]
+                                        cache[o_id] = {
+                                            "seller": s_val,
+                                            "price": other.get("price"),
+                                            "title": other.get("title"),
+                                            "image_url": other.get("image_url"),
+                                            "store_url": res.get("store_url", ""),
+                                            "store_id": res.get("store_id", "")
+                                        }
+                                        if progress_callback:
+                                            progress_callback(other_idx + 1, len(items), other)
 
                         except Exception as item_err:
                             logger.debug(f"Error enriching item {item_id} ({url}): {item_err}")
@@ -789,17 +899,22 @@ class PrintervalScraper:
                                existing_item_ids: Optional[set] = None,
                                progress_callback=None,
                                stop_event: threading.Event = None,
+                               pause_event: threading.Event = None,
+                               on_variant_found=None,
                                log_callback=None) -> List[Dict]:
         """
         Dredge and harvest all Print-on-Demand (POD) design variants for given Printerval listings.
         Each parent design listing can expand into 40-50+ real product listings
         (Hoodies, Mugs, Stickers, Onesies, Tank Tops, House Flags, Baseball Caps, Blankets, Bags, etc.).
+        Supports real-time streaming to the UI via on_variant_found and live pause/stop events.
         
         Args:
             items: List of parent design listing dicts to expand.
             existing_item_ids: Optional set of already known item IDs to prevent duplicates.
             progress_callback: Optional callable(current, total, new_variants_found, item)
             stop_event: Optional threading.Event to abort early.
+            pause_event: Optional threading.Event to pause execution.
+            on_variant_found: Optional callable(variant_item) for real-time live streaming into the UI table.
             log_callback: Optional live logger callable.
             
         Returns:
@@ -841,6 +956,8 @@ class PrintervalScraper:
                         if stop_event and stop_event.is_set():
                             _log("⏹ [Printerval] Variant expansion cancelled by user.")
                             break
+                        if pause_event:
+                            pause_event.wait()
 
                         parent_id = str(parent.get("item_id", "")).strip()
                         parent_title = parent.get("title", "")
@@ -857,8 +974,17 @@ class PrintervalScraper:
                         _log(f"👕 [Printerval] Expanding variants for [{idx+1}/{total_parents}]: '{parent_title[:35]}...'")
 
                         try:
-                            page.goto(url, wait_until="domcontentloaded", timeout=25000)
-                            page.wait_for_timeout(2000)
+                            resp = page.goto(url, wait_until="domcontentloaded", timeout=25000)
+                            page.wait_for_timeout(1500)
+
+                            # Check for Cloudflare / HTTP 403 challenge
+                            curr_title = page.title()
+                            is_blocked = (resp and resp.status == 403) or any(k in curr_title.lower() for k in ("403", "forbidden", "just a moment", "cloudflare", "attention required"))
+                            if is_blocked:
+                                _log(f"⛔ [Printerval] HTTP 403 / Cloudflare Challenge Blocked on '{url}'.")
+                                _log("💡 [Printerval] Pausing browser window for 5s for analyst review. Click 'Printerval Connect' to solve.")
+                                time.sleep(5.0)
+                                continue
 
                             # Live creator/seller extraction directly from page source (0ms extra cost)
                             live_seller = page.evaluate("""() => {
@@ -1090,9 +1216,6 @@ class PrintervalScraper:
                             # 2. Add brand-new variants to session results
                             for v in extracted_variants:
                                 v_id = str(v.get("item_id", "")).strip()
-                                if not v_id or v_id in known_ids:
-                                    continue
-
                                 u = v.get("url", "")
                                 slug = u.split("/")[-1].split("-p")[0]
 
@@ -1110,8 +1233,6 @@ class PrintervalScraper:
                                 # Token & Brand relevance validation: ensure variant matches the specific POD artwork/design
                                 if not self._is_valid_pod_variant(parent_title, v_title, slug, brand=brand, keyword=keyword):
                                     continue
-
-                                known_ids.add(v_id)
 
                                 price = v.get("price") or parent.get("price") or "$19.95"
                                 variant_id = v_id if v_id else (re.search(r'-p(\d+)', u).group(1) if re.search(r'-p(\d+)', u) else f"{parent_id}_{slug}")
@@ -1131,6 +1252,17 @@ class PrintervalScraper:
                                     "condition": "New",
                                     "keyword": keyword
                                 }
+
+                                if on_variant_found:
+                                    try:
+                                        on_variant_found(variant_item)
+                                    except Exception:
+                                        pass
+
+                                if not v_id or v_id in known_ids:
+                                    continue
+
+                                known_ids.add(v_id)
                                 expanded_results.append(variant_item)
                                 new_for_this_parent += 1
 

@@ -27,4 +27,7 @@ copy /Y "EXE_README.md" "dist\Apollo Brand Intelligence\README.md" >nul
 
 echo [5/5] Build complete! Verified distribution ready:
 dir /b "dist\Apollo Brand Intelligence\*.exe"
+echo.
+echo Computing SHA-256 Cryptographic Checksums:
+powershell -NoProfile -Command "Get-FileHash -Algorithm SHA256 'dist\Apollo Brand Intelligence\*.exe' | Format-Table -AutoSize"
 echo Done!

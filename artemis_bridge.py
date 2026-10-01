@@ -90,6 +90,20 @@ def mark_batch_as_ingested(batch_filepath: str):
     except Exception:
         pass
 
+def _get_detached_popen_kwargs(cwd: str) -> dict:
+    """Return platform-specific kwargs to launch a completely detached GUI process."""
+    kwargs = {
+        "cwd": cwd,
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "close_fds": True,
+    }
+    if sys.platform == "win32":
+        # DETACHED_PROCESS (0x8) | CREATE_NEW_PROCESS_GROUP (0x200)
+        kwargs["creationflags"] = 0x00000008 | 0x00000200
+    return kwargs
+
 def launch_artemis_process(theme_key: Optional[str] = None) -> bool:
     """Launch Artemis Rights Engine GUI as a detached, independent process."""
     cmd_args = []
@@ -100,26 +114,28 @@ def launch_artemis_process(theme_key: Optional[str] = None) -> bool:
     if getattr(sys, "frozen", False):
         base_dir = os.path.dirname(sys.executable)
         exe_path = os.path.join(base_dir, "Artemis.exe")
+        kwargs = _get_detached_popen_kwargs(base_dir)
         if os.path.exists(exe_path):
             try:
-                subprocess.Popen([exe_path] + cmd_args)
+                subprocess.Popen([exe_path] + cmd_args, **kwargs)
                 return True
             except Exception:
                 pass
         # Launch using self with --artemis flag
         try:
-            subprocess.Popen([sys.executable, "--artemis"] + cmd_args)
+            subprocess.Popen([sys.executable, "--artemis"] + cmd_args, **kwargs)
             return True
         except Exception:
             pass
 
     # 2. Look for standalone artemis.py in project directory
-    base_dir = os.path.dirname(__file__)
+    base_dir = os.path.dirname(os.path.abspath(__file__))
     py_path = os.path.join(base_dir, "artemis.py")
+    kwargs = _get_detached_popen_kwargs(base_dir)
     if os.path.exists(py_path):
         try:
             python_exe = sys.executable
-            subprocess.Popen([python_exe, py_path] + cmd_args)
+            subprocess.Popen([python_exe, py_path] + cmd_args, **kwargs)
             return True
         except Exception:
             pass
@@ -129,7 +145,7 @@ def launch_artemis_process(theme_key: Optional[str] = None) -> bool:
     if os.path.exists(main_path):
         try:
             python_exe = sys.executable
-            subprocess.Popen([python_exe, main_path, "--artemis"] + cmd_args)
+            subprocess.Popen([python_exe, main_path, "--artemis"] + cmd_args, **kwargs)
             return True
         except Exception:
             pass

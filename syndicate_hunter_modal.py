@@ -81,7 +81,7 @@ class SyndicateHunterModal(tk.Toplevel):
 
         tk.Label(t_row, text="🕸️ Cross-Marketplace Syndicate Hunter & Entity Resolution", font=FONT_TITLE, bg=self._t("panel", "#0A0E36"), fg=self._t("text", "#FFFFFF")).pack(side="left")
         
-        tag_lbl = tk.Label(t_row, text="GENESIS-COMPLIANT MULTI-VECTOR CORRELATION", font=("Segoe UI", 8, "bold"), bg=self._t("accent", "#38BDF8"), fg="#000227", padx=8, pady=2)
+        tag_lbl = tk.Label(t_row, text="ENTERPRISE MULTI-VECTOR CORRELATION", font=("Segoe UI", 8, "bold"), bg=self._t("accent", "#38BDF8"), fg="#000227", padx=8, pady=2)
         tag_lbl.pack(side="left", padx=12)
 
         # Metric Cards Frame
@@ -261,7 +261,7 @@ class SyndicateHunterModal(tk.Toplevel):
         tk.Button(footer, text="📋 Copy All Handles", command=self._copy_handles, bg=self._t("entry_bg", "#05071F"), fg=self._t("text", "#FFFFFF"), relief="flat", padx=10, pady=4, font=FONT_SM).pack(side="right", padx=3)
         tk.Button(footer, text="➕ Queue Sellers", command=self._queue_sellers, bg=self._t("entry_bg", "#05071F"), fg=self._t("text", "#FFFFFF"), relief="flat", padx=10, pady=4, font=FONT_SM).pack(side="right", padx=3)
         tk.Button(footer, text="🎯 Select in Main Table", command=self._select_in_main_table, bg=self._t("accent2", "#347BB7"), fg="#FFFFFF", relief="flat", padx=12, pady=4, font=FONT_BOLD).pack(side="right", padx=4)
-        tk.Button(footer, text="📊 Export Genesis Dossier", command=self._export_genesis_dossier, bg=self._t("accent", "#38BDF8"), fg="#000227", relief="flat", padx=14, pady=4, font=FONT_BOLD).pack(side="right", padx=4)
+        tk.Button(footer, text="📊 Export Syndicate Dossier", command=self._export_genesis_dossier, bg=self._t("accent", "#38BDF8"), fg="#000227", relief="flat", padx=14, pady=4, font=FONT_BOLD).pack(side="right", padx=4)
 
     # ─────────────────────────────────────────────────────────────────────────
     # 5. Execution & Data Populating
@@ -624,7 +624,7 @@ class SyndicateHunterModal(tk.Toplevel):
                     writer.writeheader()
                     writer.writerows(records)
 
-            self.status_var.set(f"Exported Genesis dossier to: {os.path.basename(filepath)}")
-            messagebox.showinfo("Export Complete", f"Successfully compiled and exported Genesis Syndicate Dossier to:\n\n{filepath}", parent=self)
+            self.status_var.set(f"Exported Syndicate dossier to: {os.path.basename(filepath)}")
+            messagebox.showinfo("Export Complete", f"Successfully compiled and exported Enterprise Syndicate Dossier to:\n\n{filepath}", parent=self)
         except Exception as e:
             messagebox.showerror("Export Error", f"Failed to export dossier: {e}", parent=self)

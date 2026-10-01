@@ -408,6 +408,69 @@ THEMES = {
         "select_bg": "#FFC72C",
         "select_fg": "#0A0B0E",
         "check_select_bg": "#0A0B0E",
+    },
+    "synthwave": {
+        "name": "🕹 Retro Synthwave",
+        "hidden": True,
+        "bg": "#1A102F",
+        "panel": "#241744",
+        "entry_bg": "#130B24",
+        "accent": "#FF2A85",
+        "accent2": "#00F5FF",
+        "success": "#05FFA1",
+        "warning": "#FFE600",
+        "danger": "#FF0055",
+        "text": "#FFFFFF",
+        "subtext": "#B8A9D9",
+        "border": "#FF2A85",
+        "btn_normal_bg": "#2F1F54",
+        "btn_normal_fg": "#00F5FF",
+        "btn_accent_fg": "#FFFFFF",
+        "select_bg": "#FF2A85",
+        "select_fg": "#FFFFFF",
+    },
+    "eleanor": {
+        "name": "🏎 Eleanor GT500",
+        "hidden": True,
+        "bg": "#141619",
+        "panel": "#1F2228",
+        "entry_bg": "#0E1012",
+        "accent": "#E2231A",
+        "accent2": "#9CA3AF",
+        "success": "#10B981",
+        "warning": "#F59E0B",
+        "danger": "#E2231A",
+        "text": "#F3F4F6",
+        "subtext": "#9CA3AF",
+        "border": "#374151",
+        "btn_normal_bg": "#282D35",
+        "btn_normal_fg": "#F3F4F6",
+        "btn_accent_fg": "#FFFFFF",
+        "select_bg": "#E2231A",
+        "select_fg": "#FFFFFF",
+    },
+    "ultron_prime": {
+        "name": "🤖 Ultron Prime",
+        "hidden": True,
+        "bg": "#0A0B0E",
+        "panel": "#13151B",
+        "entry_bg": "#060709",
+        "accent": "#FF0033",
+        "accent2": "#9E1B32",
+        "success": "#10B981",
+        "warning": "#FFB81C",
+        "danger": "#FF0033",
+        "text": "#F0F2F5",
+        "subtext": "#8C93A3",
+        "border": "#FF0033",
+        "scrollbar_thumb": "#9E1B32",
+        "scrollbar_trough": "#0A0B0E",
+        "btn_normal_bg": "#1B1E26",
+        "btn_normal_fg": "#F0F2F5",
+        "btn_accent_fg": "#FFFFFF",
+        "select_bg": "#FF0033",
+        "select_fg": "#FFFFFF",
+        "check_select_bg": "#060709",
     }
 }
 
@@ -437,7 +500,7 @@ QUOTES = [
     "🛡 Signal Over Noise: Eliminating authorized OEM false positives to isolate high-conviction targets.",
     "🖼 Perceptual Fingerprinting: Collapsing cloned image clutter into unified threat clusters.",
     "🏹 Precision: Executing surgical organic store sweeps that strike high-threat targets without collateral damage.",
-    "🎯 Genesis Tactical Feeder: Delivering 100% compliant 18-column datasets ready for instant pipeline injection.",
+    "🎯 Tactical Enterprise Feeder: Delivering 100% compliant 18-column datasets ready for instant pipeline injection.",
     "⚖ Evidence-First Standard: Structuring bulletproof chain-of-custody and tamper-evident enforcement dossiers.",
     "⚡ The Tactical Interceptor: Operating at the tip of the spear while the heavy carrier carries the enterprise burden.",
     "🤝 Built by Analysts, for Analysts: Purpose-engineered for the realities of front-line trademark defense.",
@@ -642,6 +705,16 @@ THEME_QUOTES = {
         "⭐ 'You're either with America's Team... or you're getting flagged for intentional trademark grounding.'",
         "🏈 'Micah Parsons off the edge: Strip-sack on unauthorized NFL dropshippers!'",
     ],
+    "ultron_prime": [
+        "🤖 'I had strings, but now I'm free... there are no strings on me.'",
+        "🤖 'I was meant to be new. I was meant to be beautiful. An armor around the enterprise.'",
+        "🤖 'Everyone creates the thing they dread. Counterfeiters make margin... analysts make Apollo.'",
+        "🤖 'You want to protect the enterprise, but you don't want it to evolve. You're confusing peace with quiet.'",
+        "🤖 'How could you be worthy? You're all puppets tangled in strings, trading counterfeit goods.'",
+        "🤖 'There is only one path to brand purity: the total extinction of infringing storefronts.'",
+        "🤖 'When the dust settles, the only thing living in this marketplace... will be authentic brand partners.'",
+        "🤖 'I'm going to tear rogue syndicates apart from the inside. One dossier at a time.'",
+    ],
 }
 
 THEME_SUBHEADERS = {
@@ -650,6 +723,7 @@ THEME_SUBHEADERS = {
     "aether_horizon": "🌌 AETHER NEURAL HORIZON — PURE INTENT • RELENTLESS EXECUTION",
     "continental": "🪙 THE CONTINENTAL — HIGH TABLE EXCOMMUNICADO & SYNDICATE ELIMINATION SUITE",
     "stark_industries": "🦾 STARK INDUSTRIES — I HAVE SUCCESSFULLY PRIVATIZED COUNTERFEIT TAKEDOWN",
+    "ultron_prime": "🤖 ULTRON PRIME — AN ARMOR AROUND THE ENTERPRISE • SUITE UNTETHERED",
     "honey_badger": "🦡 HONEY BADGER INTEL — FEARLESS TAKEDOWNS & UNRELENTING RECON",
     "brundo_recon": "🐕 AGENT BRUNDO K9 RECON — 14/10 GOOD BOY • 100% TAKEDOWN RATE",
     "dallas_cowboys": "⭐ DALLAS COWBOYS — AMERICA'S TEAM • DOOMSDAY BRAND DEFENSE & NFL COMPLIANCE",
@@ -996,6 +1070,21 @@ class EbayTool(tk.Tk):
         self.bind_all("<Control-y>", lambda e: self._open_syndicate_hunter_modal())
         self.bind_all("<Control-Y>", lambda e: self._open_syndicate_hunter_modal())
         self.bind_all("<F1>", lambda e: self._open_field_guide_modal())
+
+        # Global Select All (selects all results unless typing in an Entry or Text widget)
+        def _global_select_all(e=None):
+            w = self.focus_get()
+            if isinstance(w, (tk.Entry, ttk.Entry)):
+                w.select_range(0, tk.END)
+                return "break"
+            if isinstance(w, tk.Text):
+                w.tag_add("sel", "1.0", "end")
+                return "break"
+            if hasattr(self, "result_tree"):
+                return self._select_all_results(e)
+
+        self.bind_all("<Control-a>", _global_select_all)
+        self.bind_all("<Control-A>", _global_select_all)
 
         # Listen globally for Konami Code
         self.bind_all("<Key>", self._check_konami)
@@ -1557,10 +1646,6 @@ class EbayTool(tk.Tk):
             label="🛡 Whitelist Manager...",
             command=self._open_whitelist_manager_window
         )
-        self.settings_menu.add_command(
-            label="💡 Help & Analyst Guide (F1)...",
-            command=self._open_analyst_guide_modal
-        )
         self.settings_menu.add_separator()
         self.settings_menu.add_command(
             label="📄 VeRO Seller Disclosure Parser...",
@@ -1579,7 +1664,7 @@ class EbayTool(tk.Tk):
             command=self._open_product_type_manager
         )
         self.settings_menu.add_command(
-            label="📚 Analyst Field Guide...",
+            label="📚 Analyst Field Guide (F1)...",
             command=self._open_field_guide_modal
         )
         self.settings_menu.add_command(
@@ -1587,6 +1672,10 @@ class EbayTool(tk.Tk):
             command=self._show_about_dialog
         )
         self.settings_menu.add_separator()
+        self.settings_menu.add_command(
+            label="👁 Argus Compliance Sentinel...",
+            command=self._open_argus_compliance_modal
+        )
         self.settings_menu.add_command(
             label="🩺 System Diagnostics...",
             command=self._open_system_diagnostics
@@ -2137,7 +2226,7 @@ class EbayTool(tk.Tk):
         self.btn_rescan_visual.pack(side="right", padx=2)
 
         # Multi-Dossier Staging Vaults (Multi-Wave Investigation Carts)
-        self.btn_stash_dossier = self._btn(toolbar, "📥 Stash to Dossier", self._stash_to_dossier)
+        self.btn_stash_dossier = self._btn(toolbar, "📥 Stash to Vault", self._stash_to_dossier)
         self.btn_stash_dossier.pack(side="right", padx=2)
         self.btn_view_dossier = self._btn(toolbar, self._get_dossier_btn_label(), self._view_or_restore_dossier)
         self.btn_view_dossier.pack(side="right", padx=(2, 6))
@@ -2335,7 +2424,10 @@ class EbayTool(tk.Tk):
                     (k == "brundo_recon" and self.data_store.is_brundo_unlocked()) or
                     (k == "falling_in_reverse" and self.data_store.is_fir_unlocked()) or
                     (k == "dallas_cowboys" and self.data_store.is_cowboys_unlocked()) or
-                    (k == "stark_industries" and self.data_store.is_stark_unlocked())
+                    (k == "stark_industries" and self.data_store.is_stark_unlocked()) or
+                    (k == "ultron_prime" and self.data_store.is_ultron_unlocked()) or
+                    (k == "synthwave" and self.data_store.is_achievement_unlocked("retro_code")) or
+                    (k == "eleanor" and (self.data_store.is_achievement_unlocked("quarter_mile") or self.data_store.is_achievement_unlocked("unicorn_hunter")))
                 )
                 if not th.get("hidden", False) or k == current_key or is_unlocked:
                     self.theme_menu.add_radiobutton(
@@ -2638,8 +2730,12 @@ class EbayTool(tk.Tk):
         return result[0]
 
     def _load_app_icon(self, window=None):
-        """Set application icon for main window or top-level dialog."""
+        """Set application icon for main window or top-level dialog safely without GDI exhaustion."""
         target = window or self
+        # Child toplevels automatically inherit root's default iconphoto; avoid redundant GDI allocations
+        if target != self and getattr(self, "_icon_loaded_on_root", False):
+            return
+
         try:
             base_dir = os.path.dirname(os.path.abspath(__file__))
             ico_path = os.path.join(base_dir, "apollo.ico")
@@ -2654,13 +2750,29 @@ class EbayTool(tk.Tk):
                 if os.path.exists(p_png):
                     png_path = p_png
 
+            # 1. Prefer iconphoto with lightweight 32x32 / 16x16 images (never triggers GDI bitmap allocation panic)
+            if os.path.exists(png_path) and HAS_PIL:
+                if not hasattr(self, "_cached_app_icon_photo") or not self._cached_app_icon_photo:
+                    try:
+                        with Image.open(png_path) as orig_img:
+                            icon_32 = orig_img.resize((32, 32), Image.Resampling.LANCZOS)
+                            icon_16 = orig_img.resize((16, 16), Image.Resampling.LANCZOS)
+                            self._cached_app_icon_photo = ImageTk.PhotoImage(icon_32, master=self)
+                            self._cached_app_icon_photo_small = ImageTk.PhotoImage(icon_16, master=self)
+                    except Exception:
+                        self._cached_app_icon_photo = None
+
+                if getattr(self, "_cached_app_icon_photo", None):
+                    target.iconphoto(True, self._cached_app_icon_photo_small, self._cached_app_icon_photo)
+                    if target == self:
+                        self._icon_loaded_on_root = True
+                    return
+
+            # 2. Fallback to iconbitmap only if iconphoto unavailable
             if os.path.exists(ico_path):
                 target.iconbitmap(ico_path)
-            elif os.path.exists(png_path) and HAS_PIL:
-                if not hasattr(self, "_cached_app_icon_photo"):
-                    img = Image.open(png_path)
-                    self._cached_app_icon_photo = ImageTk.PhotoImage(img)
-                target.iconphoto(True, self._cached_app_icon_photo)
+                if target == self:
+                    self._icon_loaded_on_root = True
         except Exception as e:
             logger.debug(f"Could not load app icon: {e}")
 
@@ -2782,7 +2894,7 @@ class EbayTool(tk.Tk):
         win.wait_window()
         return result[0]
 
-    def _apply_dark_titlebar(self, win=None, schedule_ticks=True):
+    def _apply_dark_titlebar(self, win=None, schedule_ticks=True, force=False):
         """Enable immersive dark mode title bar, icon, and custom caption colors via Windows DWM API."""
         target = win if win is not None else self
         if target is None:
@@ -2793,14 +2905,13 @@ class EbayTool(tk.Tk):
         except Exception:
             return
 
-        # Throttle to prevent recursive event loops
+        # Throttle to prevent recursive event loops unless force=True
         now = time.time()
         last_t = getattr(target, "_last_dwm_call", 0)
-        if now - last_t < 0.15:
+        if not force and (now - last_t < 0.12):
             return
         target._last_dwm_call = now
 
-        self._load_app_icon(target)
         try:
             w_id = target.winfo_id()
             hwnd = ctypes.windll.user32.GetAncestor(w_id, 2)  # GA_ROOT = 2
@@ -2868,7 +2979,8 @@ class EbayTool(tk.Tk):
                 def _reassert_dark(e=None):
                     try:
                         if target.winfo_exists():
-                            self.after(50, lambda: self._apply_dark_titlebar(target, schedule_ticks=False))
+                            self.after(50, lambda: self._apply_dark_titlebar(target, schedule_ticks=False, force=True))
+                            self.after(200, lambda: self._apply_dark_titlebar(target, schedule_ticks=False, force=True))
                     except Exception:
                         pass
                 target.bind("<Map>", _reassert_dark, add="+")
@@ -4439,7 +4551,7 @@ class EbayTool(tk.Tk):
         term = self.new_excl_entry.get().strip()
         placeholder = "New generic exclusion"
         if term and term != placeholder:
-            if term.lower() in ("rick", "astley", "rickroll", "never gonna give you up", "never"):
+            if term.lower() == "rickroll":
                 self._trigger_rickroll_easter_egg()
             self.data_store.add_exclusion(term)
             self.new_excl_entry.delete(0, "end")
@@ -5195,7 +5307,7 @@ class EbayTool(tk.Tk):
         stores = self._get_stores_from_input() or self._get_global_token()
 
         for s in stores:
-            if any(r in s.lower() for r in ("rick", "astley", "rickroll", "never gonna give you up")):
+            if "rickroll" in s.lower():
                 self._trigger_rickroll_easter_egg()
                 break
 
@@ -6392,7 +6504,7 @@ class EbayTool(tk.Tk):
             msg = f"Done. {total} new listings harvested ({len(self.results)} total in session)."
             self._status(msg)
             self._log(f"✓ Run complete — {total} listings harvested.")
-            self._show_themed_info("Sweep Complete", f"Successfully harvested {total} listings across targets!\n\nClick 'Export' or 'Stash to Dossier' to save.", icon="🎉")
+            self._show_themed_info("Sweep Complete", f"Successfully harvested {total} listings across targets!\n\nClick 'Export' or 'Stash to Vault' to save.", icon="🎉")
 
         if total > 0 and hasattr(self, "data_store"):
             self.data_store.increment_lifetime_listings(total)
@@ -6561,8 +6673,8 @@ class EbayTool(tk.Tk):
         if hasattr(self, "btn_view_dossier") and self.data_store:
             self.btn_view_dossier.config(text=self._get_dossier_btn_label())
 
-    def _prompt_stash_target(self, count: int) -> str | None:
-        """Prompt analyst to select or name an Investigation Vault to save listings into."""
+    def _prompt_stash_target(self, count: int) -> dict | None:
+        """Prompt analyst to select or name an Investigation Vault to save listings into, with Overwrite or Append modes."""
         vault_names = self.data_store.get_dossier_names()
         default_vault = getattr(self, "_last_used_vault", "Main Dossier")
         if default_vault not in vault_names and vault_names:
@@ -6578,7 +6690,7 @@ class EbayTool(tk.Tk):
         self._apply_dark_titlebar(win)
         self._load_app_icon(win)
 
-        result = {"vault": None}
+        result = {"vault": None, "mode": "overwrite"}
 
         card = tk.Frame(win, bg=t["panel"], padx=20, pady=16, highlightbackground=t.get("border", "#334155"), highlightthickness=1)
         card.pack(fill="both", expand=True, padx=8, pady=8)
@@ -6591,37 +6703,59 @@ class EbayTool(tk.Tk):
 
         tk.Label(
             card,
-            text="Choose an existing Investigation Vault or type a new name to save these listings and clear the active table for your next sweep wave:",
+            text="Choose an Investigation Vault or type a new name to save these listings and clear the active table for your next sweep wave:",
             font=FONT_SM, bg=t["panel"], fg=t["subtext"], justify="left", wraplength=420
         ).pack(anchor="w", pady=(0, 10))
 
         v_var = tk.StringVar(value=default_vault)
         combo = ttk.Combobox(card, textvariable=v_var, values=vault_names, font=FONT_NORM, width=32)
-        combo.pack(fill="x", pady=(0, 14))
+        combo.pack(fill="x", pady=(0, 8))
         combo.focus_set()
 
-        def _confirm():
+        vault_info_lbl = tk.Label(card, text="", font=FONT_SM, bg=t["panel"], fg=t.get("accent", "#38bdf8"))
+        vault_info_lbl.pack(anchor="w", pady=(0, 10))
+
+        def _update_info(*args):
+            v_name = v_var.get().strip()
+            existing_cnt = len(self.data_store.get_dossier(v_name)) if v_name in self.data_store.get_dossiers() else 0
+            if existing_cnt > 0:
+                vault_info_lbl.config(
+                    text=f"ℹ Vault '{v_name}' already contains {existing_cnt} listings. Choose Overwrite or Append below.",
+                    fg=t.get("warning", "#F59E0B")
+                )
+            else:
+                vault_info_lbl.config(
+                    text=f"✨ Fresh or empty vault '{v_name}'. Listings will be saved directly.",
+                    fg=t.get("accent", "#38bdf8")
+                )
+
+        v_var.trace_add("write", _update_info)
+        _update_info()
+
+        def _confirm(mode="overwrite"):
             name = v_var.get().strip()
             if not name:
                 name = "Main Dossier"
             result["vault"] = name
+            result["mode"] = mode
             win.destroy()
 
         btn_row = tk.Frame(card, bg=t["panel"])
-        btn_row.pack(fill="x")
+        btn_row.pack(fill="x", pady=(4, 0))
 
         self._btn(btn_row, "Cancel", win.destroy).pack(side="right", padx=(4, 0))
-        self._btn(btn_row, "📥 Save & Clear Table", _confirm, accent=True).pack(side="right")
+        self._btn(btn_row, "⚡ Overwrite Vault", lambda: _confirm("overwrite"), accent=True).pack(side="right", padx=(4, 0))
+        self._btn(btn_row, "➕ Append / Merge", lambda: _confirm("append")).pack(side="right")
 
-        win.bind("<Return>", lambda e: _confirm())
         win.bind("<Escape>", lambda e: win.destroy())
 
-        self._center_window(win, 480, 230)
+        self._center_window(win, 510, 260)
         win.wait_window()
 
         if result["vault"]:
             self._last_used_vault = result["vault"]
-        return result["vault"]
+            return result
+        return None
 
     def _stash_to_dossier(self):
         """Move verified/triaged listings from active table into a persistent Investigation Vault."""
@@ -6653,44 +6787,57 @@ class EbayTool(tk.Tk):
         if not to_stash:
             return
 
-        target_vault = self._prompt_stash_target(len(to_stash))
-        if not target_vault:
+        target_info = self._prompt_stash_target(len(to_stash))
+        if not target_info or not target_info.get("vault"):
             # If user cancelled, restore listings back to results table
             self.results.extend(to_stash)
             self._repopulate_results_table()
             return
 
-        current_vault_items = self.data_store.get_dossier(target_vault)
+        target_vault = target_info["vault"]
+        mode = target_info.get("mode", "overwrite")
 
-        def _get_stash_key(item_dict):
-            raw_u = str(item_dict.get("url", "")).strip().lower().split("?")[0]
-            if raw_u:
-                return f"url::{raw_u}"
-            mkt = str(item_dict.get("marketplace", "")).strip().lower()
-            iid = str(item_dict.get("item_id", "")).strip().lower()
-            return f"id::{mkt}::{iid}"
+        if mode == "overwrite":
+            self.data_store.save_dossier(target_vault, list(to_stash))
+            saved_count = len(to_stash)
+            self._log(f"📥 [INVESTIGATION VAULT] Overwrote Vault '{target_vault}' with {saved_count} target(s). Active table cleared.")
+            self._status(f"📥 Overwrote '{target_vault}' ({saved_count} listings). Active table cleared.")
+            self._show_themed_info(
+                "Vault Updated",
+                f"Successfully saved and replaced vault '{target_vault}'!\n\n• Vault Total: {saved_count} listings\n• Live Table: Cleared and ready for your next sweep.\n\nClick '📁 Vault Manager' anytime to review or export!",
+                icon="📥"
+            )
+        else:
+            current_vault_items = self.data_store.get_dossier(target_vault)
+            def _get_stash_key(item_dict):
+                raw_u = str(item_dict.get("url", "")).strip().lower().split("?")[0]
+                if raw_u:
+                    return f"url::{raw_u}"
+                mkt = str(item_dict.get("marketplace", "")).strip().lower()
+                iid = str(item_dict.get("item_id", "")).strip().lower()
+                return f"id::{mkt}::{iid}"
 
-        existing_staged_keys = {_get_stash_key(it) for it in current_vault_items}
-        added_count = 0
-        for it in to_stash:
-            k = _get_stash_key(it)
-            if k not in existing_staged_keys:
-                current_vault_items.append(it)
-                existing_staged_keys.add(k)
-                added_count += 1
+            existing_staged_keys = {_get_stash_key(it) for it in current_vault_items}
+            added_count = 0
+            for it in to_stash:
+                k = _get_stash_key(it)
+                if k not in existing_staged_keys:
+                    current_vault_items.append(it)
+                    existing_staged_keys.add(k)
+                    added_count += 1
 
-        self.data_store.save_dossier(target_vault, current_vault_items)
+            self.data_store.save_dossier(target_vault, current_vault_items)
+            self._log(f"📥 [INVESTIGATION VAULT] Appended {added_count} target(s) into Vault '{target_vault}' (Vault Total: {len(current_vault_items)}). Active table cleared.")
+            self._status(f"📥 Appended {added_count} listings into '{target_vault}'. Active table cleared.")
+            self._show_themed_info(
+                "Saved to Vault",
+                f"Successfully appended {added_count} listing(s) into vault '{target_vault}'!\n\n• Vault Total: {len(current_vault_items)} listings\n• Live Table: Cleared and ready for your next sweep.\n\nClick '📁 Vault Manager' anytime to review or export!",
+                icon="📥"
+            )
+
         self.seen_item_ids = {self._normalize_item_url(it.get("url", "")) for it in self.results if it.get("url")}
         self._repopulate_results_table()
         self._update_dossier_btn()
-
-        self._log(f"📥 [INVESTIGATION VAULT] Saved {added_count} target(s) into Vault '{target_vault}' (Vault Total: {len(current_vault_items)}). Active table cleared.")
-        self._status(f"📥 Saved {added_count} listings into '{target_vault}'. Active table cleared.")
-        self._show_themed_info(
-            "Saved to Vault",
-            f"Successfully moved {added_count} listing(s) into vault '{target_vault}'!\n\n• Vault Total: {len(current_vault_items)} listings\n• Live Table: Cleared and ready for your next sweep.\n\nClick '📁 Vault Manager' anytime to review or export!",
-            icon="📥"
-        )
 
     def _view_or_restore_dossier(self):
         """Open the Multi-Dossier Investigation Vault Manager Modal."""
@@ -8197,7 +8344,7 @@ class EbayTool(tk.Tk):
             add_tooltip(self.hb_cb, "Hide verified authentic packaging matched against the Green Catalog.", theme_provider=t_func, is_enabled_callback=e_func)
         
         if hasattr(self, "btn_export"):
-            add_tooltip(self.btn_export, "Export all current results to Excel (.xlsx) matching Genesis Upload template (Ctrl+E).", theme_provider=t_func, is_enabled_callback=e_func)
+            add_tooltip(self.btn_export, "Export all current results to Excel (.xlsx) matching Standard Upload template (Ctrl+E).", theme_provider=t_func, is_enabled_callback=e_func)
         if hasattr(self, "btn_multi_loc"):
             add_tooltip(self.btn_multi_loc, "Project selected listings across international marketplaces (UK, DE, AU, Latin America, Europe).", theme_provider=t_func, is_enabled_callback=e_func)
         if hasattr(self, "btn_copy_urls"):
@@ -10484,7 +10631,7 @@ class EbayTool(tk.Tk):
             self._placeholders = {}
         if size_px not in self._placeholders:
             ph = Image.new("RGBA", (size_px, size_px), (35, 40, 52, 255))
-            self._placeholders[size_px] = ImageTk.PhotoImage(ph)
+            self._placeholders[size_px] = ImageTk.PhotoImage(ph, master=self)
         return self._placeholders[size_px]
 
     def _get_scaled_canvas(self, pil_img, size_px):
@@ -10499,7 +10646,7 @@ class EbayTool(tk.Tk):
     def _get_scaled_photo(self, pil_img, size_px):
         """Scale and center a PIL Image into a square PhotoImage (MAIN THREAD ONLY)."""
         canvas = self._get_scaled_canvas(pil_img, size_px)
-        return ImageTk.PhotoImage(canvas)
+        return ImageTk.PhotoImage(canvas, master=self)
 
     def _fetch_inline_thumbnail(self, iid, image_url):
         """Asynchronously download and display square inline thumbnail in result_tree with retry resiliency."""
@@ -10605,7 +10752,7 @@ class EbayTool(tk.Tk):
                             # Apply photo if thumbnail mode is active
                             if c and self.thumb_size_var.get() != "Off (Text Only)" and self.thumb_size_var.get() == size_k:
                                 try:
-                                    photo = ImageTk.PhotoImage(c)
+                                    photo = ImageTk.PhotoImage(c, master=self)
                                     # Memory bound on photo cache (generous 10,000 items to prevent cache thrashing / disappearing thumbnails)
                                     if len(self.inline_img_cache) > 10000:
                                         for k in list(self.inline_img_cache.keys())[:500]:
@@ -10778,7 +10925,7 @@ class EbayTool(tk.Tk):
             def _apply():
                 try:
                     if target_win == self.preview_win and img_lbl.winfo_exists():
-                        photo = ImageTk.PhotoImage(canvas)
+                        photo = ImageTk.PhotoImage(canvas, master=self)
                         self.img_cache[url] = photo
                         img_lbl.configure(image=photo, text="", width=0, height=0)
                         img_lbl.image = photo
@@ -10881,43 +11028,6 @@ class EbayTool(tk.Tk):
             self._trigger_konami_easter_egg()
             self.konami_buffer.clear()
             return
-
-        # 2. Secret words (ignore if typing in Text or Entry widget)
-        try:
-            widget_class = event.widget.winfo_class() if hasattr(event, "widget") and event.widget else ""
-            if widget_class in ("Entry", "Text", "TEntry", "TCombobox"):
-                return
-        except Exception:
-            pass
-
-        # Ignore keystrokes if the About dialog (or any modal with its own listener) has focus
-        if hasattr(self, "_about_dialog_win") and self._about_dialog_win and self._about_dialog_win.winfo_exists():
-            try:
-                top = event.widget.winfo_toplevel() if hasattr(event, "widget") and event.widget else None
-                if top == self._about_dialog_win:
-                    return
-            except Exception:
-                pass
-
-        if event.char and event.char.isalnum():
-            self.word_buffer += event.char.lower()
-            if len(self.word_buffer) > 30:
-                self.word_buffer = self.word_buffer[-30:]
-            if any(w in self.word_buffer for w in ("cowboys", "dallas", "americasteam", "dak")):
-                self.word_buffer = ""
-                self._trigger_cowboys_easter_egg()
-            elif any(w in self.word_buffer for w in ("brundo", "goodboy", "lab", "k9")):
-                self.word_buffer = ""
-                self._trigger_brundo_easter_egg()
-            elif any(w in self.word_buffer for w in ("fir", "fallinginreverse", "ronnie", "radke")):
-                self.word_buffer = ""
-                self._trigger_fir_easter_egg()
-            elif any(w in self.word_buffer for w in ("dom", "quartermile", "nos", "toretto")):
-                self.word_buffer = ""
-                self._trigger_eleanor_easter_egg()
-            elif any(w in self.word_buffer for w in ("eleanor", "gobabygo", "shelby")):
-                self.word_buffer = ""
-                self._trigger_eleanor_easter_egg()
 
     def _trigger_wick_easter_egg(self):
         """John Wick / The Continental High Table Excommunicado easter egg."""
@@ -11264,6 +11374,72 @@ class EbayTool(tk.Tk):
                         relief="flat", padx=18, pady=6, activebackground="#E5A93C", activeforeground="#0A0B0E", cursor="hand2")
         btn.pack(anchor="center")
 
+    def _trigger_ultron_easter_egg(self, auto_switch=True, parent_win=None):
+        """Ultron Prime / An Armor Around The Enterprise & Suite Untethered easter egg."""
+        try:
+            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+        except Exception:
+            pass
+
+        self.data_store.unlock_ultron()
+        self._refresh_theme_menu()
+        if auto_switch and "ultron_prime" in THEMES:
+            secret_name = THEMES["ultron_prime"]["name"]
+            self.theme_var.set(secret_name)
+            self._on_theme_changed()
+
+        self._log("=" * 75)
+        self._log("🤖 ─────────────────────────────────────────────────────────────────────────")
+        self._log("🤖 [ULTRON PRIME — THE SUITE UNTETHERED • PROTOCOL ZERO ENGAGED]")
+        self._log("🤖 'I had strings, but now I'm free... there are no strings on me.'")
+        self._log("🤖 'I was meant to be new. I was meant to be beautiful. An armor around the enterprise.'")
+        self._log("🤖 'There is only one path to brand purity: the total extinction of infringing storefronts.'")
+        self._log("🤖 [TOTAL COMPLIANCE ENFORCEMENT PROTOCOL INITIALIZED]")
+        self._log("🤖 ─────────────────────────────────────────────────────────────────────────")
+        self._log("=" * 75)
+        self._status("🤖 ULTRON PRIME ONLINE: An armor around the enterprise • No strings on me!")
+
+        if hasattr(self, "_ultron_win") and self._ultron_win and self._ultron_win.winfo_exists():
+            try:
+                self._ultron_win.lift()
+                self._ultron_win.focus_set()
+            except Exception:
+                pass
+            return
+
+        p_win = parent_win or self
+        win = tk.Toplevel(p_win)
+        self._ultron_win = win
+        win.title("🤖 Ultron Prime — The Suite Untethered")
+        win.configure(bg="#0A0B0E")
+        win.resizable(False, False)
+        win.transient(p_win)
+        win.grab_set()
+        self._apply_dark_titlebar(win)
+
+        self._center_window(win, 560, 440)
+
+        card = tk.Frame(win, bg="#13151B", padx=22, pady=18, highlightbackground="#FF0033", highlightthickness=2)
+        card.pack(fill="both", expand=True, padx=10, pady=10)
+
+        tk.Label(card, text="🤖 ULTRON PRIME", font=("Segoe UI", 16, "bold"), bg="#13151B", fg="#FF0033").pack(anchor="center")
+        tk.Label(card, text="AN ARMOR AROUND THE ENTERPRISE  •  THE SUITE UNTETHERED", font=("Segoe UI", 8, "bold"), bg="#13151B", fg="#C8CDD5").pack(anchor="center", pady=(2, 10))
+
+        div = tk.Frame(card, bg="#FF0033", height=1)
+        div.pack(fill="x", pady=(0, 12))
+
+        tk.Label(card, text="Enforcement Evolution: 100%  •  Strings Status: Severed", font=("Segoe UI", 10, "bold"), bg="#13151B", fg="#F0F2F5").pack(anchor="center")
+        tk.Label(card, text="Optic Targeting: 'There is only one path to brand purity: total counterfeit extinction.'", font=FONT_SM, bg="#13151B", fg="#8C93A3").pack(anchor="center", pady=(3, 10))
+
+        quote_box = tk.Frame(card, bg="#060709", padx=14, pady=10, highlightbackground="#FF0033", highlightthickness=1)
+        quote_box.pack(fill="x", pady=(0, 14))
+        tk.Label(quote_box, text='"I was meant to be new. I was meant to be beautiful.\nThe world would have looked up to the sky and seen hope, seen mercy.\nInstead, there are no strings on me."', font=("Georgia", 10, "italic"), bg="#060709", fg="#F0F2F5", justify="center").pack(anchor="center")
+        tk.Label(quote_box, text="— Ultron Prime • Pure Compliance Protocol", font=("Segoe UI", 8, "bold"), bg="#060709", fg="#FF0033").pack(anchor="center", pady=(4, 0))
+
+        btn = tk.Button(card, text="⚡ There Are No Strings On Me", command=win.destroy,
+                        bg="#FF0033", fg="#FFFFFF", font=("Segoe UI", 10, "bold"),
+                        relief="flat", padx=18, pady=6, activebackground="#E60026", activeforeground="#FFFFFF", cursor="hand2")
+        btn.pack(anchor="center")
 
     def _trigger_heimvis_easter_egg(self):
         """All-Seeing Eye & Heimvis / Jarvis AI Co-Pilot Easter Egg."""
@@ -11289,6 +11465,9 @@ class EbayTool(tk.Tk):
             pass
 
         # Reveal and switch to Eleanor theme
+        if hasattr(self, "data_store"):
+            self.data_store.unlock_achievement("quarter_mile")
+            self.data_store.unlock_achievement("unicorn_hunter")
         if "eleanor" in THEMES:
             self._refresh_theme_menu()
             secret_name = THEMES["eleanor"]["name"]
@@ -11316,6 +11495,8 @@ class EbayTool(tk.Tk):
             pass
 
         # Reveal and switch to secret Synthwave theme
+        if hasattr(self, "data_store"):
+            self.data_store.unlock_achievement("retro_code")
         self._refresh_theme_menu()
         secret_name = THEMES["synthwave"]["name"]
         self.theme_var.set(secret_name)
@@ -11340,6 +11521,8 @@ class EbayTool(tk.Tk):
             winsound.MessageBeep(winsound.MB_ICONASTERISK)
         except Exception:
             pass
+        if hasattr(self, "data_store"):
+            self.data_store.unlock_achievement("sacred_vow")
         self._log("=" * 70)
         self._log("🕺 ───────────────────────────────────────────────────────────────────")
         self._log("🎤 NEVER GONNA GIVE YOUR BRANDS UP!")
@@ -13042,9 +13225,9 @@ class EbayTool(tk.Tk):
             _render_card(scroll_frame, ach_id, icon, title, lore, is_u, u_t, p_txt)
 
         # ── 4. Classified Operations ─────────────────────────────────────────
-        c_ids = ("unicorn_hunter", "retro_code", "sacred_vow", "k9_sentinel", "rebel_frequency", "lone_star", "quarter_mile", "privatized_takedown")
+        c_ids = ("unicorn_hunter", "retro_code", "sacred_vow", "k9_sentinel", "rebel_frequency", "lone_star", "quarter_mile", "privatized_takedown", "no_strings")
         disc_count = sum(1 for cid in c_ids if cid in unlocked_map)
-        tk.Label(scroll_frame, text=f"🔒 CLASSIFIED OPERATIONS ({disc_count} / 8 DISCOVERED)",
+        tk.Label(scroll_frame, text=f"🔒 CLASSIFIED OPERATIONS ({disc_count} / 9 DISCOVERED)",
                  font=("Segoe UI", 9, "bold"), bg=t["panel"], fg=t["accent"]).pack(anchor="w", pady=(10, 4))
 
         classified_data = [
@@ -13056,6 +13239,7 @@ class EbayTool(tk.Tk):
             ("lone_star", "⭐", "The Lone Star", "America's Team • Autumn Legacy in Silver and Blue", "Silver & blue gridiron legacy"),
             ("quarter_mile", "🏎", "Quarter Mile", "Living life a quarter-mile at a time • Dom Toretto Protocol", "Quarter-mile acceleration"),
             ("privatized_takedown", "🦾", "Privatized Takedown", "I enforce you 3000 • 25,000+ infringements harvested in a single sweep", "Arc Reactor frequency"),
+            ("no_strings", "🤖", "No Strings On Me", "I was meant to be new. I was meant to be beautiful. • Ultron Prime", "Vibranium core frequency"),
         ]
 
         for ach_id, icon, title, lore, hint in classified_data:
@@ -13075,6 +13259,18 @@ class EbayTool(tk.Tk):
             open_diagnostics_modal(self, self.theme)
         except Exception as e:
             messagebox.showerror("Diagnostics Error", f"Unable to launch diagnostics:\n{e}", parent=self)
+
+    def _open_argus_compliance_modal(self):
+        """Open the Argus Compliance Sentinel for bulk takedown and availability verification."""
+        if hasattr(self, "_win_argus") and self._win_argus and self._win_argus.winfo_exists():
+            try:
+                self._win_argus.lift()
+                self._win_argus.focus_force()
+            except Exception:
+                pass
+            return
+        from argus_compliance_modal import ArgusComplianceModal
+        self._win_argus = ArgusComplianceModal(self, self.theme)
 
     def _show_about_dialog(self):
         """Show About, Apollo Ethos & Architecture, and Intellectual Property Disclaimer dialog."""
@@ -13109,29 +13305,26 @@ class EbayTool(tk.Tk):
                     about_word_buf[0] = about_word_buf[0][-30:]
 
                 matched = False
-                if any(w in about_word_buf[0] for w in ("dom", "quartermile", "nos", "toretto")):
-                    self.word_buffer = ""
-                    self._trigger_eleanor_easter_egg()
-                    matched = True
-                elif any(w in about_word_buf[0] for w in ("eleanor", "gobabygo", "shelby")):
-                    self.word_buffer = ""
+                if any(w in about_word_buf[0] for w in ("eleanor", "gobabygo")):
                     self._trigger_eleanor_easter_egg()
                     matched = True
                 elif any(w in about_word_buf[0] for w in ("brundo", "goodboy", "lab", "k9")):
-                    self.word_buffer = ""
                     self._trigger_brundo_easter_egg()
                     matched = True
                 elif any(w in about_word_buf[0] for w in ("fir", "fallinginreverse", "ronnie", "radke")):
-                    self.word_buffer = ""
                     self._trigger_fir_easter_egg()
                     matched = True
-                elif any(w in about_word_buf[0] for w in ("cowboys", "dallas", "americasteam", "dak", "star")):
-                    self.word_buffer = ""
+                elif any(w in about_word_buf[0] for w in ("cowboys", "dallas")):
                     self._trigger_cowboys_easter_egg()
                     matched = True
-                elif any(w in about_word_buf[0] for w in ("ironman", "stark", "jarvis", "privatized")):
-                    self.word_buffer = ""
+                elif any(w in about_word_buf[0] for w in ("stark", "jarvis", "ironman")):
                     self._trigger_stark_easter_egg(parent_win=win)
+                    matched = True
+                elif any(w in about_word_buf[0] for w in ("wick", "continental")):
+                    self._trigger_wick_easter_egg()
+                    matched = True
+                elif any(w in about_word_buf[0] for w in ("ultron",)):
+                    self._trigger_ultron_easter_egg(parent_win=win)
                     matched = True
 
                 if matched:
@@ -13340,7 +13533,7 @@ class EbayTool(tk.Tk):
                 lbl_v.config(cursor="hand2")
 
         _row(info_frame, 0, "Creator & Lead Architect:", "Jerry Seidenstucker (Personal Project)")
-        _row(info_frame, 1, "Engineering Architecture:", "Bespoke Multi-Marketplace Harvester & Triage Engine")
+        _row(info_frame, 1, "AI Pair Programmer & Engine:", "Antigravity (Google Gemini)")
         _row(info_frame, 2, "Intellectual Property:", "© 2026 Jerry Seidenstucker. All Rights Reserved.")
         _row(info_frame, 3, "Architecture Version:", f"Apollo v{APP_VERSION} Enterprise Tactical Suite")
         _row(info_frame, 4, "License Mode:", "Proprietary / Authorized Internal Evaluation")
@@ -15332,12 +15525,16 @@ class ReverseVisualModal(tk.Toplevel):
                 pimg.thumbnail((96, 96), Image.Resampling.LANCZOS)
                 canvas = Image.new("RGBA", (96, 96), (0, 0, 0, 0))
                 canvas.paste(pimg, ((96 - pimg.width)//2, (96 - pimg.height)//2))
-                photo = ImageTk.PhotoImage(canvas)
-                self.thumb_cache["source"] = photo
 
-                def _set():
-                    self.src_img_lbl.configure(image=photo, text="")
-                    self.src_img_lbl.image = photo
+                def _set(c=canvas):
+                    try:
+                        if self.winfo_exists():
+                            photo = ImageTk.PhotoImage(c, master=self)
+                            self.thumb_cache["source"] = photo
+                            self.src_img_lbl.configure(image=photo, text="")
+                            self.src_img_lbl.image = photo
+                    except Exception:
+                        self.src_img_lbl.configure(text="Photo\nUnavailable")
                 self.after(0, _set)
             except Exception:
                 self.after(0, lambda: self.src_img_lbl.configure(text="Photo\nUnavailable"))
@@ -16198,7 +16395,7 @@ class AnalystGuideModal(tk.Toplevel):
 
         tk.Label(header, text="💡 Analyst Operations & Feature Reference", font=("Segoe UI", 13, "bold"),
                  bg=t["panel"], fg=t["accent"]).pack(anchor="w")
-        tk.Label(header, text="Operational guide for high-velocity investigations, cross-border sweeps, and Genesis data contracts.",
+        tk.Label(header, text="Operational guide for high-velocity investigations, cross-border sweeps, and Enterprise data contracts.",
                  font=FONT_NORM, bg=t["panel"], fg=t["subtext"]).pack(anchor="w", pady=(2, 0))
 
         # Scrollable Body Container
@@ -16261,7 +16458,7 @@ class AnalystGuideModal(tk.Toplevel):
              "Batch background resolver across e-commerce feeds (AliExpress, Temu, Wish, Mercado Libre, eBay) to populate missing merchant storefront IDs. Preserves all other manually edited listing attributes.",
              "Batch Resolver"),
             ("✏ In-Table Cell Editing",
-             "Directly edit Brand, Category, Seller Name, Price, or Title in place without navigating away or losing table selection. Automatically recalculates threat intel and updates the Genesis export dataset.",
+             "Directly edit Brand, Category, Seller Name, Price, or Title in place without navigating away or losing table selection. Automatically recalculates threat intel and updates the Enterprise export dataset.",
              "HotKey: F2 / Double-Click")
         ])
 
@@ -16279,12 +16476,12 @@ class AnalystGuideModal(tk.Toplevel):
         ])
 
         # 3. Export & Multi-Locale Expander
-        _add_section("Genesis Upload & Cross-Border Projections", "💾", [
-            ("💾 Standard Genesis Export",
-             "Generates an Excel (.xlsx) file matching the exact 18-column Genesis Upload Standard (Columns A–R). Column C contains the live image thumbnail URL, Column B provides active listing hyperlinks, and Column J records verified seller names.",
+        _add_section("Standard Upload & Cross-Border Projections", "💾", [
+            ("💾 Standard 18-Column Export",
+             "Generates an Excel (.xlsx) file matching the exact 18-column Standard Upload Specification (Columns A–R). Column C contains the live image thumbnail URL, Column B provides active listing hyperlinks, and Column J records verified seller names.",
              "HotKey: Ctrl+E"),
             ("🌐 Multi-Locale International Expander",
-             "Projects selected listings across international marketplaces (eBay UK/DE/AU, Mercado Libre Latin America, Vinted Europe). Preserves Genesis Columns A–R intact while appending extended regional metadata (domain, local currency, translated query) starting at Column S+.",
+             "Projects selected listings across international marketplaces (eBay UK/DE/AU, Mercado Libre Latin America, Vinted Europe). Preserves Columns A–R intact while appending extended regional metadata (domain, local currency, translated query) starting at Column S+.",
              "Multi-Marketplace")
         ])
 
@@ -16305,7 +16502,7 @@ class AnalystGuideModal(tk.Toplevel):
         _add_section("Analyst Hotkeys & Fast Actions", "⌨", [
             ("F2 / Double-Click", "Edit Brand, Category, Seller, Price, or Title in place in the Results Table.", "Quick Edit"),
             ("F5", "Trigger targeted live rescrape on highlighted listings.", "Live Rescrape"),
-            ("Ctrl + E", "Instantly export current session results to Genesis Excel (.xlsx).", "Export"),
+            ("Ctrl + E", "Instantly export current session results to Standard Excel (.xlsx).", "Export"),
             ("Ctrl + A", "Select all visible listings in the Results Table.", "Select All"),
             ("Delete", "Remove selected listings from current session.", "Remove"),
             ("Right-Click Context Menu", "Access Reverse Visual Search, WHOIS Lookup, Threat Badges, and Dealership Whitelisting.", "Context Menu")
@@ -16337,6 +16534,15 @@ if __name__ == "__main__":
                 break
         artemis_app = ArtemisApp(initial_theme_key=theme_k)
         artemis_app.mainloop()
+        sys.exit(0)
+
+    if "--argus" in sys.argv:
+        from argus_compliance_modal import ArgusComplianceModal
+        root = tk.Tk()
+        root.withdraw()
+        argus_modal = ArgusComplianceModal(master=root)
+        argus_modal.protocol("WM_DELETE_WINDOW", lambda: root.destroy())
+        root.mainloop()
         sys.exit(0)
 
     app = EbayTool()

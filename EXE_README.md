@@ -1,55 +1,54 @@
-# Apollo Brand Intelligence — Analyst Quickstart Guide
+# Apollo Brand Intelligence & Artemis Rights Engine — Analyst Quickstart Guide
 
-**Version:** v1.5.0 Standalone Windows Portable Application  
-**Author:** Jerry Seidenstucker  
-**Intended For:** Brand Protection Analysts, Investigators, and IP Enforcement Teams  
+**Version:** v3.3.3 Enterprise Tactical Suite (Apollo, Artemis & Argus)  
+**Author & Lead Architect:** Jerry Seidenstucker  
+**Intended For:** Brand Protection Analysts, Legal Enforcement Teams & IP Investigators  
 
 ---
 
 ## ⚡ Zero Installation Required
-This package is fully portable and self-contained. **No Python installation, administrator rights, or external browser drivers are required.**
+This package is fully portable, self-contained, and operates strictly within standard user permissions. **No administrative rights, Python installation, background services, or registry modifications are required.**
 
-To launch the tool, double-click:
-```
-Apollo Brand Intelligence.exe
-```
+The distribution provides two standalone executables sharing an optimized runtime footprint:
+1. **`Apollo Brand Intelligence.exe`** — Multi-Marketplace Forensic Reconnaissance, Visual Threat Hashing & Cross-Border 3PL Intelligence.
+2. **`Artemis.exe`** — Autonomous Platform Enforcement, LOA Rights Registry & Legal Infringement Notice Hub.
 
 ---
 
 ## 🔍 Core Modules & Capabilities
 
-### 1. Multi-Marketplace Ecosystems
-- **Supported Marketplaces:**
-  - **🛒 eBay (Global)**: High-speed scraping + optional REST API mode.
-  - **👗 Vinted (10 Regions)**: UK, France, Germany, Spain, Italy, Poland, US, Netherlands, Belgium, All Locales.
-  - **🛍 Mercado Libre (7 Regions)**: Mexico, Brazil, Argentina, Colombia, Chile, Peru, All Latin America.
-  - **🌐 AliExpress**, **🌠 Wish**, **🟠 Temu**, **🎨 Redbubble**, **👕 Printerval**.
+### 1. Multi-Marketplace Ecosystems (22+ Platforms)
+- **Unified Global Sweeps:**
+  - **🛒 Tier-1 E-Commerce:** eBay (Global), Amazon, Walmart, AliExpress, Mercado Libre (7 Regions), TikTok Shop, Vinted (10 Regions).
+  - **🎨 Print-on-Demand (POD):** Printblur, Redbubble, Printerval, TeePublic, TeeSpring, Spreadshirt, Zazzle, CafePress, Threadless, Fine Art America.
+  - **📦 Direct & Specialized:** Shopify Stores, Etsy, ManoMano, Temu, Wish, Scribd.
 - **Search Modes:**
-  - **Global sweeps**: Leave the Stores box blank or on `Global Search`.
-  - **Storefront Targeting**: Enter one or more storefront handles or URLs (one per line).
+  - **Global sweeps:** Unified keyword and archetype targeting across all selected surfaces simultaneously.
+  - **Storefront Targeting:** Direct deep-dive targeting by store handle, seller ID, or profile URL.
+  - **POD Multi-SKU Variant Dredging:** Expands single design detections into up to 70 product SKU variants (apparel, mugs, stickers, home goods) with authentic item IDs and pricing.
 
-### 2. Visual Threat Catalog & Reverse Search (`F2`)
-- **64-Bit DCT Perceptual Hashing**: Detects identical replica stock photos across all platforms regardless of watermarks or slight cropping.
-- **Red Catalog**: Known counterfeit imagery for automated visual matching.
-- **Green Catalog**: Authentic manufacturer packaging to hide benign listings from queues.
-- **Right-Click Dredge**: Right-click any row to sweep by photo across platforms and specific regional locales.
+### 2. 🏹 Artemis Rights Engine & Air-Gapped IPC
+- **Direct Dispatch:** Send flagged listings from Apollo to Artemis in under 30 seconds via secure local JSON IPC.
+- **Corporate LOA Vault:** Manage trademark registration numbers, copyright schedules, and Letters of Authorization locally.
+- **Human-in-the-Loop Browser Sessions:** Launch assisted interactive Microsoft Edge sessions for authenticated platform submissions without automated credential risks.
 
-### 3. Searchable Analyst Field Guide (`F1`)
-- Press **`F1`** anywhere or open via **`⚙️ Settings ▾`** for real-time searchable documentation on:
-  - **Threat Signals**: `NWT`, `NWOT`, `BNIB`, `3PL Hubs`, `Burner Handles`, `pHash`, `VeRO`, `BPP`.
-  - **Search Syntax**: Live filtering with `+inclusion` and `-exclusion` modifiers.
-  - **Tool Directory**: Quick reference workflows for all Apollo sub-modules.
+### 3. 🛡️ Argus Compliance Sentinel
+- **Automated Post-Takedown Verification:** Launch from Apollo (`🛡️ Argus Compliance Sentinel` under Tools) to audit enforcement URLs in real time.
+- **Async Availability Checks:** Verifies 100+ URLs in under 30 seconds, detecting Active vs. Delisted status with zero false delisting flags.
+- **SLA & Compliance Auditing:** Generates timestamped compliance reports showing empirical platform takedown success rates.
 
-### 4. Threat Intelligence & Origin Resolution
-- **Cross-Border Discrepancy Detection**: Compares seller registration country against dispatch location to flag domestic 3PL drop-shipping hubs.
-- **Connected Seller Network Hunter**: Uncovers syndicate sister storefronts sharing business registrations, contact info, or master stock photos.
+### 4. Visual Threat Catalog & Reverse Search (`F2`)
+- **64-Bit DCT Perceptual Hashing (pHash):** Matches identical counterfeit designs across all platforms regardless of watermarks, scaling, or background alterations.
+- **Red Catalog:** Known infringing artwork for automated clustering and match highlighting.
+- **Green Catalog:** Whitelisted authentic manufacturer packaging to suppress false positives.
+- **Reverse Visual Dredge:** Right-click any row to execute cross-platform visual similarity sweeps.
 
-### 5. Standardized Excel Dossier Export
-- Generates formatted spreadsheets ready for notice-and-takedown platform submissions.
-- Includes multi-tab brand segregation and executive summary threat rollups.
+### 5. Standardized 18-Column Enterprise Dossier Export
+- Generates structured, court-ready Excel spreadsheets matching the exact 18-column enterprise compliance standard with direct listing hyperlinks and embedded high-resolution product thumbnails.
 
 ---
 
 ## 🛠️ Configuration & Persistence
-- All brand library settings, exclusions, presets, and threat metrics are saved automatically to `data.json`.
-- Back up or share `data.json` to transfer configurations across analyst workstations.
+- Configuration data, brand vaults, exclusions, and threat heuristics persist automatically in `%LOCALAPPDATA%\Apollo_Brand_Intelligence\data.json`.
+- Artemis rights and LOAs persist in `%LOCALAPPDATA%\Artemis_Rights_Engine\artemis_data.json`.
+- To migrate configurations to a new workstation, simply copy these JSON files.

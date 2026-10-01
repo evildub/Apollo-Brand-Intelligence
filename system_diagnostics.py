@@ -337,6 +337,9 @@ class SystemDiagnosticsModal(tk.Toplevel):
 
         self._center_window(w, h)
         self._apply_dark_titlebar()
+        self.after(50, self._apply_dark_titlebar)
+        self.after(200, self._apply_dark_titlebar)
+        self.bind("<Map>", lambda e: self.after(60, self._apply_dark_titlebar), add="+")
 
         self.all_results: List[DiagnosticResult] = []
         self.is_running = False
@@ -357,28 +360,56 @@ class SystemDiagnosticsModal(tk.Toplevel):
     def _center_window(self, width: int, height: int):
         self.update_idletasks()
         if self.parent and self.parent.winfo_exists():
+            if hasattr(self.parent, "_center_window"):
+                self.parent._center_window(self, width, height)
+                return
             rx = self.parent.winfo_rootx()
             ry = self.parent.winfo_rooty()
             rw = self.parent.winfo_width()
             rh = self.parent.winfo_height()
-            if rw > 100 and rh > 100:
-                x = max(20, rx + (rw - width) // 2)
-                y = max(20, ry + (rh - height) // 2)
+            if rw > 50 and rh > 50:
+                x = rx + (rw - width) // 2
+                y = ry + (rh - height) // 2
+                if y < ry:
+                    y = ry + 10
                 self.geometry(f"{width}x{height}+{x}+{y}")
+                self.deiconify()
+                self.lift()
+                self.focus_force()
                 return
         x = (self.winfo_screenwidth() - width) // 2
-        y = (self.winfo_screenheight() - height) // 2
+        y = max(30, (self.winfo_screenheight() - height) // 2)
         self.geometry(f"{width}x{height}+{x}+{y}")
+        self.deiconify()
+        self.lift()
+        self.focus_force()
 
     def _apply_dark_titlebar(self):
         try:
             import ctypes
-            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
-            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
-            val = ctypes.c_int(1)
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ctypes.byref(val), ctypes.sizeof(val)
-            )
+            w_id = self.winfo_id()
+            hwnd = ctypes.windll.user32.GetAncestor(w_id, 2)
+            if not hwnd:
+                hwnd = ctypes.windll.user32.GetParent(w_id)
+            if not hwnd:
+                hwnd = w_id
+            v_dark = ctypes.c_int(1)
+            for attr in (20, 19):
+                try:
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                        hwnd, attr, ctypes.byref(v_dark), ctypes.sizeof(v_dark)
+                    )
+                except Exception:
+                    pass
+            t = self.theme or {}
+            bg_hex = t.get("panel", t.get("bg", "#111827"))
+            if bg_hex and len(bg_hex) == 7:
+                try:
+                    r, g, b = int(bg_hex[1:3], 16), int(bg_hex[3:5], 16), int(bg_hex[5:7], 16)
+                    c_color = ctypes.c_int((b << 16) | (g << 8) | r)
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 35, ctypes.byref(c_color), ctypes.sizeof(c_color))
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -417,7 +448,7 @@ class SystemDiagnosticsModal(tk.Toplevel):
         main_f.pack(fill="both", expand=True)
 
         cols = ("category", "component", "status", "latency", "details")
-        self.tree = ttk.Treeview(main_f, columns=cols, show="headings", selectmode="browse")
+        self.tree = ttk.Treeview(main_f, columns=cols, show="headings", selectmode="browse", style="Diagnostics.Treeview")
 
         self.tree.heading("category", text="Category", anchor="w")
         self.tree.heading("component", text="System Component", anchor="w")
@@ -433,14 +464,13 @@ class SystemDiagnosticsModal(tk.Toplevel):
 
         # Style Treeview
         style = ttk.Style(self)
-        style.theme_use("clam")
-        style.configure("Treeview",
+        style.configure("Diagnostics.Treeview",
                         background=t["panel"],
                         foreground=t["text"],
                         fieldbackground=t["panel"],
                         rowheight=24,
                         font=("Segoe UI", 9))
-        style.configure("Treeview.Heading",
+        style.configure("Diagnostics.Treeview.Heading",
                         background=t.get("btn_normal_bg", t["border"]),
                         foreground=t["text"],
                         font=("Segoe UI", 9, "bold"))

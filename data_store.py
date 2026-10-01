@@ -217,6 +217,13 @@ class DataStore:
         self.set_setting("unlocked_stark", True)
         self.unlock_achievement("privatized_takedown")
 
+    def is_ultron_unlocked(self) -> bool:
+        return bool(self.get_setting("unlocked_ultron", False)) or self.is_achievement_unlocked("no_strings")
+
+    def unlock_ultron(self):
+        self.set_setting("unlocked_ultron", True)
+        self.unlock_achievement("no_strings")
+
     # ── Achievements & Career Enforcement Milestones ───────────────────────────
     def get_achievements_data(self) -> dict:
         """Return achievements dictionary containing lifetime stats and unlocked milestones."""
@@ -244,6 +251,8 @@ class DataStore:
             ach["unlocked"]["lone_star"] = {"unlocked_at": now_str}
         if self.get_setting("unlocked_stark", False) and "privatized_takedown" not in ach["unlocked"]:
             ach["unlocked"]["privatized_takedown"] = {"unlocked_at": now_str}
+        if self.get_setting("unlocked_ultron", False) and "no_strings" not in ach["unlocked"]:
+            ach["unlocked"]["no_strings"] = {"unlocked_at": now_str}
         return ach
 
     def get_lifetime_listings(self) -> int:

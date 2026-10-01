@@ -85,7 +85,7 @@ class VeroDisclosureModal(tk.Toplevel):
 
         sub_lbl = tk.Label(
             head_f,
-            text="Decompose VeRO PDF seller tracking lines into structured addresses, sync with Enforcement Registry & Genesis",
+            text="Decompose VeRO PDF seller tracking lines into structured addresses, sync with Enforcement Registry & Enterprise Intake",
             font=FONT_SM,
             bg=t["bg"],
             fg=t["subtext"]
@@ -184,7 +184,7 @@ class VeroDisclosureModal(tk.Toplevel):
 
         in_lbl = tk.Label(
             input_frame,
-            text="Raw Disclosure Text Input (Paste one seller line per row or tab-delimited Genesis lines):",
+            text="Raw Disclosure Text Input (Paste one seller line per row or tab-delimited intake lines):",
             font=FONT_SM,
             bg=t["panel"],
             fg=t["subtext"]
@@ -224,7 +224,7 @@ class VeroDisclosureModal(tk.Toplevel):
 
         tk.Label(
             tbl_lbl_frame,
-            text="Parsed Structured Disclosures (9-Column Genesis Format):",
+            text="Parsed Structured Disclosures (9-Column Standard Format):",
             font=FONT_BOLD,
             bg=t["panel"],
             fg=t["accent"]
@@ -357,7 +357,7 @@ class VeroDisclosureModal(tk.Toplevel):
 
         xlsx_btn = tk.Button(
             bot_f,
-            text="💾 Export Genesis Excel (.xlsx)",
+            text="💾 Export Standard Excel (.xlsx)",
             font=FONT_BOLD,
             bg=t["success"],
             fg="#FFFFFF",

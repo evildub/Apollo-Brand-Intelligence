@@ -76,7 +76,14 @@ class ArtemisApp(tk.Tk):
         self.after(1500, self._poll_intake_loop)
 
         # Reveal window smoothly once all widgets and dark styles are applied
-        self.after(10, self.deiconify)
+        def _reveal():
+            self.deiconify()
+            self.lift()
+            self.attributes("-topmost", True)
+            self.after(200, lambda: self.attributes("-topmost", False))
+            self.focus_force()
+
+        self.after(10, _reveal)
 
     def _load_app_icon(self, window=None):
         target = window or self

@@ -21,13 +21,18 @@ if %ERRORLEVEL% NEQ 0 (
 echo [3/5] Copying data.json into distribution directory...
 copy /Y "data.json" "dist\Apollo Brand Intelligence\data.json" >nul
 
-echo [4/5] Bundling Security Audit and Analyst Documentation...
+echo [4/6] Bundling Security Audit, Executive Brief, and Analyst Documentation...
 copy /Y "SECURITY_AUDIT.md" "dist\Apollo Brand Intelligence\SECURITY_AUDIT.md" >nul
+copy /Y "ENTERPRISE_EXECUTIVE_BRIEF.md" "dist\Apollo Brand Intelligence\ENTERPRISE_EXECUTIVE_BRIEF.md" >nul
+copy /Y "EVALUATION.md" "dist\Apollo Brand Intelligence\EVALUATION.md" >nul
 copy /Y "EXE_README.md" "dist\Apollo Brand Intelligence\README.md" >nul
 
-echo [5/5] Build complete! Verified distribution ready:
+echo [5/6] Packaging Release Zip Archive...
+powershell -NoProfile -Command "Compress-Archive -Path 'dist\Apollo Brand Intelligence' -DestinationPath 'dist\ApolloBrandIntelligence-v3.3.3.zip' -Force"
+
+echo [6/6] Build complete! Verified distribution ready:
 dir /b "dist\Apollo Brand Intelligence\*.exe"
 echo.
 echo Computing SHA-256 Cryptographic Checksums:
-powershell -NoProfile -Command "Get-FileHash -Algorithm SHA256 'dist\Apollo Brand Intelligence\*.exe' | Format-Table -AutoSize"
+powershell -NoProfile -Command "Get-FileHash -Algorithm SHA256 'dist\Apollo Brand Intelligence\*.exe', 'dist\ApolloBrandIntelligence-v3.3.3.zip' | Format-Table -AutoSize"
 echo Done!

@@ -426,7 +426,7 @@ class BrandRegistryModal(tk.Toplevel):
         res_hdr = tk.Frame(self.res_brand_frame, bg=self._t("panel", "#1e1e1e"))
         res_hdr.pack(fill="x")
         tk.Label(
-            res_hdr, text="🎯 Result Brand Output (Genesis & Results Table):", font=FONT_BOLD,
+            res_hdr, text="🎯 Result Brand Output (Enterprise Intake & Results Table):", font=FONT_BOLD,
             bg=self._t("panel", "#1e1e1e"), fg=self._t("accent", "#38bdf8")
         ).pack(side="left")
 

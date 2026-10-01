@@ -33,7 +33,9 @@ class DossierManagerModal(tk.Toplevel):
         self.transient(master)
 
         if hasattr(master, "_apply_dark_titlebar"):
-            master._apply_dark_titlebar(self)
+            master._apply_dark_titlebar(self, force=True)
+            self.after(50, lambda: master._apply_dark_titlebar(self, force=True))
+            self.after(200, lambda: master._apply_dark_titlebar(self, force=True))
         if hasattr(master, "_load_app_icon"):
             master._load_app_icon(self)
 
@@ -238,6 +240,13 @@ class DossierManagerModal(tk.Toplevel):
         i_vsb.grid(row=0, column=1, sticky="ns")
         i_hsb.grid(row=1, column=0, sticky="ew")
 
+        # Hotkeys for selecting all and deleting listings from vault
+        self.items_tree.bind("<Control-a>", lambda e: self._select_all_items())
+        self.items_tree.bind("<Control-A>", lambda e: self._select_all_items())
+        self.bind("<Control-a>", lambda e: self._select_all_items())
+        self.bind("<Control-A>", lambda e: self._select_all_items())
+        self.items_tree.bind("<Delete>", lambda e: self._remove_selected_listings_from_vault())
+
         items_frame.rowconfigure(0, weight=1)
         items_frame.columnconfigure(0, weight=1)
 
@@ -264,8 +273,15 @@ class DossierManagerModal(tk.Toplevel):
 
         self._btn(ftr, "✓ Done / Close", self.destroy, accent=True, padx=16).pack(side="right")
 
+    def _select_all_items(self):
+        """Select all listings in the active vault table."""
+        kids = self.items_tree.get_children()
+        if kids:
+            self.items_tree.selection_set(kids)
+        return "break"
+
     # ── Vault Operations ──────────────────────────────────────────────────────
-    def _populate_vault_list(self):
+    def _populate_vault_list(self, preserve_vault=None):
         self.vault_tree.delete(*self.vault_tree.get_children())
         if not self.data_store:
             return
@@ -273,6 +289,8 @@ class DossierManagerModal(tk.Toplevel):
         dossiers = self.data_store.get_dossiers()
         total_items = 0
         first_id = None
+        target_id = None
+        wanted_name = preserve_vault or self._selected_vault
 
         for name, items in dossiers.items():
             count = len(items) if isinstance(items, list) else 0
@@ -280,11 +298,14 @@ class DossierManagerModal(tk.Toplevel):
             iid = self.vault_tree.insert("", "end", text=f"📁 {name}", values=(f"{count} items",))
             if not first_id:
                 first_id = iid
+            if wanted_name and name == wanted_name:
+                target_id = iid
 
         self.summary_badge.config(text=f"{len(dossiers)} Vaults | {total_items} Staged Listings")
 
-        if first_id:
-            self.vault_tree.selection_set(first_id)
+        sel_id = target_id or first_id
+        if sel_id:
+            self.vault_tree.selection_set(sel_id)
             self._on_vault_selected()
         else:
             self._clear_items_view()
@@ -403,8 +424,8 @@ class DossierManagerModal(tk.Toplevel):
         sel_indices = set(self.items_tree.index(s) for s in sel)
         new_items = [it for idx, it in enumerate(items) if idx not in sel_indices]
         self.data_store.save_dossier(self._selected_vault, new_items)
-        self._on_vault_selected()
-        self._populate_vault_list()
+        curr_vault = self._selected_vault
+        self._populate_vault_list(preserve_vault=curr_vault)
         if hasattr(self.master, "_update_dossier_btn"):
             self.master._update_dossier_btn()
 

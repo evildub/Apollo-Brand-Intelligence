@@ -1,6 +1,6 @@
 # Apollo Brand Intelligence & Artemis Rights Engine — Analyst Quickstart Guide
 
-**Version:** v3.3.3 Enterprise Tactical Suite (Apollo, Artemis & Argus)  
+**Version:** v3.4.0 Enterprise Tactical Suite (Apollo, Artemis & Argus)  
 **Author & Lead Architect:** Jerry Seidenstucker  
 **Intended For:** Brand Protection Analysts, Legal Enforcement Teams & IP Investigators  
 

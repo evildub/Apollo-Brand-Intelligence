@@ -224,6 +224,13 @@ class DataStore:
         self.set_setting("unlocked_ultron", True)
         self.unlock_achievement("no_strings")
 
+    def is_joker_unlocked(self) -> bool:
+        return bool(self.get_setting("unlocked_joker", False)) or self.is_achievement_unlocked("agent_of_chaos")
+
+    def unlock_joker(self):
+        self.set_setting("unlocked_joker", True)
+        self.unlock_achievement("agent_of_chaos")
+
     # ── Achievements & Career Enforcement Milestones ───────────────────────────
     def get_achievements_data(self) -> dict:
         """Return achievements dictionary containing lifetime stats and unlocked milestones."""

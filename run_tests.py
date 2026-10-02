@@ -2429,6 +2429,7 @@ class TestApolloCoreFeatures(unittest.TestCase):
 
         app = EbayTool()
         app.withdraw()
+        saved_user_theme = app.data_store.get_setting("theme", "continental")
 
         try:
             # 1. Profile label exists and is in themed section_labels
@@ -2470,6 +2471,10 @@ class TestApolloCoreFeatures(unittest.TestCase):
             app._trigger_easter_egg()
 
         finally:
+            try:
+                app.data_store.set_setting("theme", saved_user_theme)
+            except Exception:
+                pass
             app.destroy()
 
     def test_72_hero_pipeline_and_printerval_pagination_and_cross_parent_enrichment(self):
@@ -3104,6 +3109,7 @@ class TestApolloCoreFeatures(unittest.TestCase):
             ds._save()
 
         # 3. Dynamic UI Transformation Invariant
+        saved_user_theme = ds.get_setting("theme", "continental")
         app = EbayTool()
         app.withdraw()
         try:
@@ -3146,6 +3152,10 @@ class TestApolloCoreFeatures(unittest.TestCase):
             if hasattr(app, "_about_dialog_win") and app._about_dialog_win and app._about_dialog_win.winfo_exists():
                 app._about_dialog_win.destroy()
         finally:
+            try:
+                app.data_store.set_setting("theme", saved_user_theme)
+            except Exception:
+                pass
             app.destroy()
 
     def test_83_artemis_rights_engine_and_bridge(self):
@@ -3228,6 +3238,80 @@ class TestApolloCoreFeatures(unittest.TestCase):
 
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_84_the_joker_theme_and_chaos_flair(self):
+        """Test Item 84: Verify The Joker theme palette, custom button flairs, whysoserious unlock, chaos click sequence, and accent gradient."""
+        from main import EbayTool, THEMES
+        import tkinter as tk
+
+        app = EbayTool()
+        app.withdraw()
+        saved_theme = app.data_store.get_setting("theme", "continental")
+
+        try:
+            # 1. Palette and DataStore Unlock
+            self.assertIn("joker", THEMES)
+            self.assertEqual(THEMES["joker"]["accent"], "#25F23A")
+            self.assertEqual(THEMES["joker"]["accent2"], "#E024C3")
+
+            app.data_store.unlock_joker()
+            self.assertTrue(app.data_store.is_joker_unlocked())
+            self.assertTrue(app.data_store.is_achievement_unlocked("agent_of_chaos"))
+
+            # 2. Apply Joker Theme & Verify Custom Button Flairs
+            app.current_theme_key = "joker"
+            app.theme = THEMES["joker"]
+            app._apply_full_theme()
+
+            self.assertIn("Put On A Happy Face", app.run_btn.cget("text"))
+            self.assertIn("Introduce A Little Anarchy", app.sweep_btn.cget("text"))
+            self.assertIn("Send In The Clowns", app.add_q_btn.cget("text"))
+            self.assertIn("And Here... We... GO!", app.clean_sweep_btn.cget("text"))
+            self.assertIn("ARKHAM ASYLUM", app.store_placeholder)
+
+            # 3. Accent Gradient Bar exists and renders
+            self.assertTrue(hasattr(app, "accent_bar"))
+            self.assertTrue(app.accent_bar.winfo_exists())
+            app._render_accent_gradient()
+
+            # 4. Easter Egg Trigger & Modal Guard
+            app._trigger_joker_easter_egg(auto_switch=True)
+            self.assertTrue(hasattr(app, "_joker_win") and app._joker_win.winfo_exists())
+            self.assertIn("Joker", app._joker_win.title())
+            app._joker_win.destroy()
+
+            # 5. Chaos Click Sequence: icon -> label -> icon
+            app._chaos_clicks = []
+            app._on_title_element_clicked("icon")
+            app.update()
+            self.assertIn("Why...", app.status_var.get())
+
+            app._on_title_element_clicked("label")
+            app.update()
+            self.assertIn("So...", app.status_var.get())
+
+            app._on_title_element_clicked("icon")
+            app.update()
+            self.assertTrue(hasattr(app, "_joker_win") and app._joker_win.winfo_exists())
+            app._joker_win.destroy()
+
+            # 6. About Dialog Keystroke Unlock ('whysoserious')
+            app._show_about_dialog()
+            self.assertTrue(hasattr(app, "_about_dialog_win") and app._about_dialog_win.winfo_exists())
+            about_win = app._about_dialog_win
+            for ch in "whysoserious":
+                about_win.event_generate("<KeyPress>", keysym=ch)
+            if hasattr(app, "_joker_win") and app._joker_win and app._joker_win.winfo_exists():
+                app._joker_win.destroy()
+            if hasattr(app, "_about_dialog_win") and app._about_dialog_win and app._about_dialog_win.winfo_exists():
+                app._about_dialog_win.destroy()
+
+        finally:
+            try:
+                app.data_store.set_setting("theme", saved_theme)
+            except Exception:
+                pass
+            app.destroy()
 
 
 if __name__ == "__main__":

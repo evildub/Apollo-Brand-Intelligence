@@ -19,7 +19,7 @@ from PIL import Image, ImageTk
 import ctypes
 
 logger = logging.getLogger("Apollo")
-APP_VERSION = "3.3.3"
+APP_VERSION = "3.4.0"
 VERSION = APP_VERSION
 
 from scraper import EbayScraper
@@ -471,6 +471,29 @@ THEMES = {
         "select_bg": "#FF0033",
         "select_fg": "#FFFFFF",
         "check_select_bg": "#060709",
+    },
+    "joker": {
+        "name": "🃏 The Joker",
+        "hidden": True,
+        "bg": "#100A1C",
+        "panel": "#1B122E",
+        "entry_bg": "#140C24",
+        "accent": "#25F23A",
+        "accent2": "#E024C3",
+        "success": "#25F23A",
+        "warning": "#FFE600",
+        "danger": "#FF1744",
+        "text": "#F5EEFC",
+        "subtext": "#9482A8",
+        "border": "#25F23A",
+        "scrollbar_thumb": "#E024C3",
+        "scrollbar_trough": "#100A1C",
+        "btn_normal_bg": "#23173D",
+        "btn_normal_fg": "#25F23A",
+        "btn_accent_fg": "#100A1C",
+        "select_bg": "#25F23A",
+        "select_fg": "#100A1C",
+        "check_select_bg": "#140C24",
     }
 }
 
@@ -715,6 +738,31 @@ THEME_QUOTES = {
         "🤖 'When the dust settles, the only thing living in this marketplace... will be authentic brand partners.'",
         "🤖 'I'm going to tear rogue syndicates apart from the inside. One dossier at a time.'",
     ],
+    "joker": [
+        "🃏 'Why so serious? Let's put a takedown on that storefront.'",
+        "🃏 'I'm an agent of chaos. And you know the thing about chaos? It's fair.'",
+        "🃏 'It's not about the money... it's about sending a takedown notice.'",
+        "🃏 'You see, in their last moments, infringers show you who they really are.'",
+        "🃏 'If you're good at something, never do it for free.'",
+        "🃏 'I'm not a monster. I'm just ahead of the curve.'",
+        "🃏 'Introduce a little anarchy. Upset the established order, and everything becomes... taken down.'",
+        "🃏 'All it takes is one bad scan to reduce the sanest dropshipper to tears.'",
+        "🃏 'Do I look like a guy with a plan? I just harvest listings and things happen.'",
+        "🃏 'And here... we... GO!'",
+        "🃏 'HA HA HA HA HA HA HA HA HA HA 🃏'",
+    ],
+    "stark_industries": [
+        "🦾 Tony Stark: 'I have successfully privatized counterfeit takedown.'",
+        "🤖 J.A.R.V.I.S.: 'Targeting lock established across all infringing storefronts, sir.'",
+        "🦾 Tony Stark: 'I enforce you 3000.'",
+        "🤖 J.A.R.V.I.S.: 'Deploying House Party Protocol. All marks queued for sweep.'",
+        "🦾 Tony Stark: 'Sometimes you gotta run before you can walk.'",
+        "🤖 J.A.R.V.I.S.: 'Power levels at 400%, Mr. Stark. Repulsor beam sweeps active.'",
+        "🦾 Tony Stark: 'Is it better to be feared or respected? I say, is it too much to ask for both?'",
+        "🤖 J.A.R.V.I.S.: 'Jericho protocol armed. Decimating rogue listings in sector 4.'",
+        "🦾 Tony Stark: 'Give me a Scotch, I'm starving. And clean those listings.'",
+        "🤖 J.A.R.V.I.S.: 'As you wish, sir. Takedowns dispatched to legal intake.'",
+    ],
 }
 
 THEME_SUBHEADERS = {
@@ -723,6 +771,7 @@ THEME_SUBHEADERS = {
     "aether_horizon": "🌌 AETHER NEURAL HORIZON — PURE INTENT • RELENTLESS EXECUTION",
     "continental": "🪙 THE CONTINENTAL — HIGH TABLE EXCOMMUNICADO & SYNDICATE ELIMINATION SUITE",
     "stark_industries": "🦾 STARK INDUSTRIES — I HAVE SUCCESSFULLY PRIVATIZED COUNTERFEIT TAKEDOWN",
+    "joker": "🃏 THE JOKER — SOME ANALYSTS JUST WANT TO WATCH THE COUNTERFEITS BURN",
     "ultron_prime": "🤖 ULTRON PRIME — AN ARMOR AROUND THE ENTERPRISE • SUITE UNTETHERED",
     "honey_badger": "🦡 HONEY BADGER INTEL — FEARLESS TAKEDOWNS & UNRELENTING RECON",
     "brundo_recon": "🐕 AGENT BRUNDO K9 RECON — 14/10 GOOD BOY • 100% TAKEDOWN RATE",
@@ -963,6 +1012,9 @@ class EbayTool(tk.Tk):
         self.thumb_size_var = tk.StringVar(value=saved_thumb_size)
         self.show_preview_var = tk.BooleanVar(value=(saved_thumb_size != "Off (Text Only)"))
         self.sound_enabled_var = tk.BooleanVar(value=True)
+        self.flowing_gradient_var = tk.BooleanVar(value=self.data_store.get_setting("ambient_gradient_flow", True))
+        self._gradient_phase = 0.0
+        self._gradient_anim_job = None
 
         # Brand targeting states: { item_id: "target" | "exclude" | "neutral" }
         self.brand_states   = {}
@@ -1100,6 +1152,7 @@ class EbayTool(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
         self.after(50, self._apply_dark_titlebar)
         self.after(60, self._update_combobox_popdowns)
+        self.after(100, lambda: self._start_ambient_flow() if getattr(self, "flowing_gradient_var", None) and self.flowing_gradient_var.get() else None)
         self.after(450, self._check_session_recovery)
 
     def _on_closing(self):
@@ -1127,6 +1180,11 @@ class EbayTool(tk.Tk):
         self.top_bar.pack(fill="x")
         self.themed_widgets["panel_frames"].append(self.top_bar)
 
+        # Sleek 3px Gradient Accent Bar for high-tier thematic flair
+        self.accent_bar = tk.Canvas(self, height=3, bg=t["accent"], highlightthickness=0, bd=0)
+        self.accent_bar.pack(fill="x")
+        self.accent_bar.bind("<Configure>", lambda e: self._render_accent_gradient())
+
         # Title & Sub-header container frame
         title_box = tk.Frame(self.top_bar, bg=t["panel"])
         title_box.pack(side="left", padx=16)
@@ -1145,8 +1203,8 @@ class EbayTool(tk.Tk):
                                   font=("Segoe UI", 12, "bold"), bg=t["panel"], fg=t["accent"],
                                   cursor="hand2")
         self.title_lbl.pack(side="left", padx=(3, 0))
-        self.title_lbl.bind("<Button-1>", self._on_title_click)
-        self.title_icon_lbl.bind("<Button-1>", self._on_title_click)
+        self.title_lbl.bind("<Button-1>", lambda e: self._on_title_element_clicked("label"))
+        self.title_icon_lbl.bind("<Button-1>", lambda e: self._on_title_element_clicked("icon"))
         self.themed_widgets["section_labels"].append(self.title_lbl)
         self.themed_widgets["section_labels"].append(self.title_icon_lbl)
 
@@ -1612,6 +1670,11 @@ class EbayTool(tk.Tk):
             label="💡 Analyst Onboarding Hints & Tooltips",
             variable=self.show_hints_var,
             command=lambda: self.data_store.set_show_analyst_hints(self.show_hints_var.get())
+        )
+        self.settings_menu.add_checkbutton(
+            label="🌊 Ambient Accent Flow (Dynamic Glow)",
+            variable=self.flowing_gradient_var,
+            command=self._on_toggle_ambient_flow
         )
         self.settings_menu.add_checkbutton(
             label="👻 Stealth / Headless Browser Mode",
@@ -2426,6 +2489,7 @@ class EbayTool(tk.Tk):
                     (k == "dallas_cowboys" and self.data_store.is_cowboys_unlocked()) or
                     (k == "stark_industries" and self.data_store.is_stark_unlocked()) or
                     (k == "ultron_prime" and self.data_store.is_ultron_unlocked()) or
+                    (k == "joker" and self.data_store.is_joker_unlocked()) or
                     (k == "synthwave" and self.data_store.is_achievement_unlocked("retro_code")) or
                     (k == "eleanor" and (self.data_store.is_achievement_unlocked("quarter_mile") or self.data_store.is_achievement_unlocked("unicorn_hunter")))
                 )
@@ -2613,6 +2677,17 @@ class EbayTool(tk.Tk):
         self.brand_tree.tag_configure("exclude", foreground=t["danger"])
         self.brand_tree.tag_configure("neutral", foreground=t["text"])
 
+        try:
+            p_style = ttk.Style()
+            p_style.configure("Apollo.Horizontal.TProgressbar",
+                              troughcolor=t["entry_bg"],
+                              background=t["accent"],
+                              bordercolor=t.get("border", t["entry_bg"]),
+                              lightcolor=t.get("accent2", t["accent"]),
+                              darkcolor=t["accent"])
+        except Exception:
+            pass
+
         # 14. Activity Log tags
         self.log_text.tag_config("err",  foreground=t["danger"])
         self.log_text.tag_config("info", foreground=t["text"])
@@ -2650,7 +2725,25 @@ class EbayTool(tk.Tk):
                 self.store_placeholder = "// STARK INDUSTRIES TACTICAL HUD v10.4\n// Enter target storefront coordinates or marketplace URLs...\n// \"J.A.R.V.I.S., sweep every counterfeit signature in the sector.\""
                 if hasattr(self, "store_text"):
                     curr_txt = self.store_text.get("1.0", "end").strip()
-                    if not curr_txt or curr_txt == old_ph.strip() or "store1" in curr_txt or "High Table" in curr_txt:
+                    if not curr_txt or curr_txt == old_ph.strip() or "store1" in curr_txt or "High Table" in curr_txt or "ARKHAM" in curr_txt:
+                        self.store_text.delete("1.0", "end")
+                        self.store_text.insert("1.0", self.store_placeholder)
+                        self.store_text.config(fg=t["subtext"])
+        elif self.current_theme_key == "joker":
+            if hasattr(self, "sweep_btn"):
+                self.sweep_btn.config(text="🎪 Introduce A Little Anarchy: Sweep All")
+            if hasattr(self, "run_btn"):
+                self.run_btn.config(text="🃏 Put On A Happy Face: Execute Sweep")
+            if hasattr(self, "add_q_btn"):
+                self.add_q_btn.config(text="🎈 Send In The Clowns")
+            if hasattr(self, "clean_sweep_btn"):
+                self.clean_sweep_btn.config(text="💥 And Here... We... GO!")
+            if "eBay" in getattr(self, "marketplace_var", tk.StringVar()).get():
+                old_ph = getattr(self, "store_placeholder", "")
+                self.store_placeholder = "// ARKHAM ASYLUM DOSSIER //\n// Enter target storefronts or seller coordinates...\n// \"It's not about the money... it's about sending a takedown notice.\""
+                if hasattr(self, "store_text"):
+                    curr_txt = self.store_text.get("1.0", "end").strip()
+                    if not curr_txt or curr_txt == old_ph.strip() or "store1" in curr_txt or "High Table" in curr_txt or "STARK" in curr_txt:
                         self.store_text.delete("1.0", "end")
                         self.store_text.insert("1.0", self.store_placeholder)
                         self.store_text.config(fg=t["subtext"])
@@ -2668,7 +2761,7 @@ class EbayTool(tk.Tk):
                 self.store_placeholder = "https://www.ebay.com/str/store1\nstore2\nseller3"
                 if hasattr(self, "store_text"):
                     curr_txt = self.store_text.get("1.0", "end").strip()
-                    if not curr_txt or curr_txt == old_ph.strip() or "High Table contracts" in curr_txt:
+                    if not curr_txt or curr_txt == old_ph.strip() or "High Table contracts" in curr_txt or "ARKHAM" in curr_txt or "STARK" in curr_txt:
                         self.store_text.delete("1.0", "end")
                         self.store_text.insert("1.0", self.store_placeholder)
                         self.store_text.config(fg=t["subtext"])
@@ -2680,7 +2773,127 @@ class EbayTool(tk.Tk):
         self._repopulate_results_table()
         self._hide_preview_popup()
         self._apply_dark_titlebar()
+        self._render_accent_gradient()
+        if getattr(self, "flowing_gradient_var", None) and self.flowing_gradient_var.get():
+            self._start_ambient_flow()
+        else:
+            self._stop_ambient_flow()
         self._log(f"Theme switched to: {t['name']}")
+
+    def _on_toggle_ambient_flow(self):
+        """Toggle ambient animated gradient flow on/off and save preference."""
+        enabled = self.flowing_gradient_var.get()
+        self.data_store.set_setting("ambient_gradient_flow", enabled)
+        if enabled:
+            self._start_ambient_flow()
+        else:
+            self._stop_ambient_flow()
+            self._render_accent_gradient(phase=0.0)
+
+    def _start_ambient_flow(self):
+        """Start the animated fluid gradient flow loop."""
+        self._stop_ambient_flow()
+        t_key = getattr(self, "current_theme_key", "")
+        # Only animate for selected high-tier themes
+        if t_key in ("continental", "stark_industries", "joker", "ultron_prime", "dallas_cowboys"):
+            self._animate_accent_gradient()
+
+    def _stop_ambient_flow(self):
+        """Cancel any scheduled gradient animation ticks."""
+        if getattr(self, "_gradient_anim_job", None):
+            try:
+                self.after_cancel(self._gradient_anim_job)
+            except Exception:
+                pass
+            self._gradient_anim_job = None
+
+    def _animate_accent_gradient(self):
+        """Frame ticker for smooth flowing gradient animation (~25 FPS, negligible CPU)."""
+        if not getattr(self, "flowing_gradient_var", None) or not self.flowing_gradient_var.get():
+            return
+        t_key = getattr(self, "current_theme_key", "")
+        if t_key not in ("continental", "stark_industries", "joker", "ultron_prime", "dallas_cowboys"):
+            return
+
+        self._gradient_phase = (getattr(self, "_gradient_phase", 0.0) + 0.012) % 1.0
+        self._render_accent_gradient(phase=self._gradient_phase)
+
+        try:
+            self._gradient_anim_job = self.after(40, self._animate_accent_gradient)
+        except Exception:
+            pass
+
+    def _render_accent_gradient(self, phase: float = None):
+        """Render multi-stop color gradient along the 3px accent bar beneath top navigation with optional phase offset."""
+        if not hasattr(self, "accent_bar") or not self.accent_bar.winfo_exists():
+            return
+
+        w = self.accent_bar.winfo_width()
+        if w <= 1:
+            w = self.winfo_width()
+            if w <= 1:
+                w = 1200
+
+        t = self.theme
+        t_key = getattr(self, "current_theme_key", "")
+        self.accent_bar.delete("all")
+
+        # Define gradient color stops for secret & high-tier themes
+        if t_key == "continental":
+            # Burnished Gold -> High Table Crimson -> Deep Onyx Gold
+            stops = ["#D4AF37", "#E63946", "#D4AF37", "#12141A", "#D4AF37"]
+        elif t_key == "stark_industries":
+            # Arc Reactor Cyan -> Hot-Rod Red -> Stark Gold -> Arc Reactor Cyan
+            stops = ["#00F5FF", "#C81E2E", "#FFC72C", "#00F5FF"]
+        elif t_key == "joker":
+            # Toxic Acid Green -> Arkham Noir -> Electric Joker Magenta -> Acid Green
+            stops = ["#25F23A", "#1B122E", "#E024C3", "#25F23A"]
+        elif t_key == "ultron_prime":
+            # Crimson -> Carbon Slate -> Blood Red
+            stops = ["#FF0033", "#13151B", "#9E1B32", "#FF0033"]
+        elif t_key == "dallas_cowboys":
+            # Star Blue -> Royal Blue -> Metallic Silver
+            stops = ["#0072CE", "#041E42", "#A5ACAF", "#0072CE"]
+        else:
+            # Default fallback: solid accent line without overhead
+            self.accent_bar.configure(bg=t.get("border", t.get("accent", "#38bdf8")))
+            return
+
+        def hex_to_rgb(h):
+            h = h.lstrip("#")
+            return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+
+        def rgb_to_hex(r, g, b):
+            return f"#{max(0, min(255, int(r))):02x}{max(0, min(255, int(g))):02x}{max(0, min(255, int(b))):02x}"
+
+        try:
+            p_val = (self._gradient_phase if phase is None else phase) % 1.0
+            num_stops = len(stops)
+            num_segments = num_stops - 1
+            step_px = max(3, int(w // 120))  # Smooth slices for 0ms rendering
+
+            # Sample color at continuous normalized position t_pos in [0.0, 1.0]
+            def sample_gradient(t_pos):
+                t_pos = (t_pos + p_val) % 1.0
+                seg = t_pos * num_segments
+                idx1 = int(seg) % num_segments
+                idx2 = (idx1 + 1) % num_stops
+                factor = seg - int(seg)
+                c1 = hex_to_rgb(stops[idx1])
+                c2 = hex_to_rgb(stops[idx2])
+                r = c1[0] + (c2[0] - c1[0]) * factor
+                g = c1[1] + (c2[1] - c1[1]) * factor
+                b = c1[2] + (c2[2] - c1[2]) * factor
+                return rgb_to_hex(r, g, b)
+
+            curr_x = 0
+            while curr_x < w:
+                next_x = min(w, curr_x + step_px)
+                color = sample_gradient(curr_x / w)
+                self.accent_bar.create_rectangle(curr_x, 0, next_x, 3, fill=color, outline="")
+                curr_x = next_x
+        except Exception:
+            self.accent_bar.configure(bg=t.get("accent", "#38bdf8"))
 
     def _ask_string_dialog(self, title, prompt, initialvalue=""):
         result = [None]
@@ -2732,26 +2945,42 @@ class EbayTool(tk.Tk):
     def _load_app_icon(self, window=None):
         """Set application icon for main window or top-level dialog safely without GDI exhaustion."""
         target = window or self
-        # Child toplevels automatically inherit root's default iconphoto; avoid redundant GDI allocations
+        # Child toplevels automatically inherit root's default icon; avoid redundant GDI allocations
         if target != self and getattr(self, "_icon_loaded_on_root", False):
             return
 
         try:
             base_dir = os.path.dirname(os.path.abspath(__file__))
-            ico_path = os.path.join(base_dir, "apollo.ico")
-            png_path = os.path.join(base_dir, "apollo.png")
-
-            # Try PyInstaller bundled _MEIPASS path first
+            candidate_dirs = [base_dir]
             if hasattr(sys, "_MEIPASS"):
-                p_ico = os.path.join(sys._MEIPASS, "apollo.ico")
-                if os.path.exists(p_ico):
-                    ico_path = p_ico
-                p_png = os.path.join(sys._MEIPASS, "apollo.png")
-                if os.path.exists(p_png):
-                    png_path = p_png
+                candidate_dirs.append(sys._MEIPASS)
+            if hasattr(sys, "executable"):
+                exe_dir = os.path.dirname(sys.executable)
+                candidate_dirs.extend([exe_dir, os.path.join(exe_dir, "_internal")])
 
-            # 1. Prefer iconphoto with lightweight 32x32 / 16x16 images (never triggers GDI bitmap allocation panic)
-            if os.path.exists(png_path) and HAS_PIL:
+            ico_path = None
+            png_path = None
+            for d in candidate_dirs:
+                if not d or not os.path.isdir(d):
+                    continue
+                c_ico = os.path.join(d, "apollo.ico")
+                if not ico_path and os.path.exists(c_ico):
+                    ico_path = c_ico
+                c_png = os.path.join(d, "apollo.png")
+                if not png_path and os.path.exists(c_png):
+                    png_path = c_png
+
+            # 1. Native Windows Win32 iconbitmap (binds to taskbar and caption; prevents Tk feather default)
+            if ico_path and sys.platform.startswith("win"):
+                try:
+                    target.iconbitmap(ico_path)
+                    if target == self:
+                        self._icon_loaded_on_root = True
+                except Exception as e:
+                    logger.debug(f"iconbitmap failed: {e}")
+
+            # 2. Modern 32-bit alpha iconphoto for crisp alt-tab & high-DPI scaling
+            if png_path and HAS_PIL:
                 if not hasattr(self, "_cached_app_icon_photo") or not self._cached_app_icon_photo:
                     try:
                         with Image.open(png_path) as orig_img:
@@ -2763,16 +2992,12 @@ class EbayTool(tk.Tk):
                         self._cached_app_icon_photo = None
 
                 if getattr(self, "_cached_app_icon_photo", None):
-                    target.iconphoto(True, self._cached_app_icon_photo_small, self._cached_app_icon_photo)
-                    if target == self:
-                        self._icon_loaded_on_root = True
-                    return
-
-            # 2. Fallback to iconbitmap only if iconphoto unavailable
-            if os.path.exists(ico_path):
-                target.iconbitmap(ico_path)
-                if target == self:
-                    self._icon_loaded_on_root = True
+                    try:
+                        target.iconphoto(True, self._cached_app_icon_photo_small, self._cached_app_icon_photo)
+                        if target == self:
+                            self._icon_loaded_on_root = True
+                    except Exception as e:
+                        logger.debug(f"iconphoto failed: {e}")
         except Exception as e:
             logger.debug(f"Could not load app icon: {e}")
 
@@ -11441,6 +11666,75 @@ class EbayTool(tk.Tk):
                         relief="flat", padx=18, pady=6, activebackground="#E60026", activeforeground="#FFFFFF", cursor="hand2")
         btn.pack(anchor="center")
 
+    def _trigger_joker_easter_egg(self, auto_switch=True, parent_win=None):
+        """The Joker / Agent of Chaos & 'Why So Serious?' Easter Egg."""
+        try:
+            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+        except Exception:
+            pass
+
+        self.data_store.unlock_joker()
+        self._refresh_theme_menu()
+        if auto_switch and "joker" in THEMES:
+            secret_name = THEMES["joker"]["name"]
+            self.theme_var.set(secret_name)
+            self._on_theme_changed()
+
+        self._log("=" * 75)
+        self._log("🃏 ─────────────────────────────────────────────────────────────────────────")
+        self._log("🃏 [ARKHAM ASYLUM DOSSIER — AGENT OF CHAOS PROTOCOL ONLINE]")
+        self._log("🃏 'Why so serious? Let's put a takedown on that storefront.'")
+        self._log("🃏 'It's not about the money... it's about sending a takedown notice.'")
+        self._log("🃏 'Introduce a little anarchy. Upset the established order, and everything becomes... taken down.'")
+        self._log("🃏 'And here... we... GO!'")
+        self._log("🃏 HA HA HA HA HA HA HA HA HA HA 🃏")
+        self._log("🃏 ─────────────────────────────────────────────────────────────────────────")
+        self._log("=" * 75)
+        self._status("🃏 THE JOKER: Why so serious? Let's put a takedown on that storefront!")
+
+        if hasattr(self, "_joker_win") and self._joker_win and self._joker_win.winfo_exists():
+            try:
+                self._joker_win.lift()
+                self._joker_win.focus_set()
+            except Exception:
+                pass
+            return
+
+        p_win = parent_win or self
+        win = tk.Toplevel(p_win)
+        self._joker_win = win
+        win.title("🃏 The Joker — Agent of Chaos")
+        win.configure(bg="#100A1C")
+        win.resizable(False, False)
+        win.transient(p_win)
+        win.grab_set()
+        self._apply_dark_titlebar(win)
+
+        self._center_window(win, 560, 460)
+
+        card = tk.Frame(win, bg="#1B122E", padx=22, pady=18, highlightbackground="#25F23A", highlightthickness=2)
+        card.pack(fill="both", expand=True, padx=10, pady=10)
+
+        tk.Label(card, text="🃏 THE JOKER", font=("Segoe UI", 16, "bold"), bg="#1B122E", fg="#25F23A").pack(anchor="center")
+        tk.Label(card, text="AGENT OF CHAOS  •  ARKHAM ASYLUM  •  WHY SO SERIOUS?", font=("Segoe UI", 8, "bold"), bg="#1B122E", fg="#E024C3").pack(anchor="center", pady=(2, 10))
+
+        div = tk.Frame(card, bg="#25F23A", height=1)
+        div.pack(fill="x", pady=(0, 12))
+
+        tk.Label(card, text="Marketplace Order: Subverted  •  Dossier Status: Pure Chaos", font=("Segoe UI", 10, "bold"), bg="#1B122E", fg="#F5EEFC").pack(anchor="center")
+        tk.Label(card, text="Gotham Syndicate Radar: 'All it takes is one bad scan to reduce infringers to tears.'", font=FONT_SM, bg="#1B122E", fg="#9482A8").pack(anchor="center", pady=(3, 10))
+
+        quote_box = tk.Frame(card, bg="#140C24", padx=14, pady=10, highlightbackground="#E024C3", highlightthickness=1)
+        quote_box.pack(fill="x", pady=(0, 14))
+        tk.Label(quote_box, text='"Introduce a little anarchy. Upset the established order,\nand everything becomes chaos. I\'m an agent of chaos.\nOh, and you know the thing about chaos?\nIt\'s fair."', font=("Georgia", 10, "italic"), bg="#140C24", fg="#F5EEFC", justify="center").pack(anchor="center")
+        tk.Label(quote_box, text="— The Joker • Heath Ledger Legacy", font=("Segoe UI", 8, "bold"), bg="#140C24", fg="#FFE600").pack(anchor="center", pady=(4, 0))
+        tk.Label(quote_box, text='"Why so serious?"', font=("Segoe UI", 9, "bold italic"), bg="#140C24", fg="#25F23A").pack(anchor="center", pady=(2, 0))
+
+        btn = tk.Button(card, text="🃏 Let's Put A Smile On That Face", command=win.destroy,
+                        bg="#25F23A", fg="#100A1C", font=("Segoe UI", 10, "bold"),
+                        relief="flat", padx=18, pady=6, activebackground="#E024C3", activeforeground="#FFFFFF", cursor="hand2")
+        btn.pack(anchor="center")
+
     def _trigger_heimvis_easter_egg(self):
         """All-Seeing Eye & Heimvis / Jarvis AI Co-Pilot Easter Egg."""
         try:
@@ -11541,6 +11835,35 @@ class EbayTool(tk.Tk):
             pass
         self._log("🏎💨 [NITRO BOOST ENGAGED] Twin-turbochargers spooling to 9,500 RPM... Search velocity +200%!")
         self._status("🏎💨 NITRO BOOST ENGAGED at 9,500 RPM!")
+
+    def _on_title_element_clicked(self, element: str):
+        """Handle clicks on title logo and title label to track chaos click sequence (icon -> label -> icon)."""
+        now = time.time()
+        if not hasattr(self, "_chaos_clicks"):
+            self._chaos_clicks = []
+
+        # Reset sequence if more than 3 seconds elapsed since last click
+        if self._chaos_clicks and (now - self._chaos_clicks[-1][1] > 3.0):
+            self._chaos_clicks = []
+
+        self._chaos_clicks.append((element, now))
+
+        # Check sequence: ["icon", "label", "icon"]
+        pattern = [c[0] for c in self._chaos_clicks[-3:]]
+        if pattern == ["icon"]:
+            self._status("🃏 Why...")
+            return
+        elif pattern == ["icon", "label"]:
+            self._status("🃏 So...")
+            return
+        elif pattern == ["icon", "label", "icon"]:
+            self._status("🃏 SERIOUS?! 🤡 HA HA HA!")
+            self._chaos_clicks = []
+            self._trigger_joker_easter_egg()
+            return
+
+        # Fallback to standard quote cycle on title click
+        self._on_title_click()
 
     def _on_title_click(self, event=None):
         """Clicking title bar triggers fun motivational enforcement badges and theme-specific quotes."""
@@ -13225,9 +13548,9 @@ class EbayTool(tk.Tk):
             _render_card(scroll_frame, ach_id, icon, title, lore, is_u, u_t, p_txt)
 
         # ── 4. Classified Operations ─────────────────────────────────────────
-        c_ids = ("unicorn_hunter", "retro_code", "sacred_vow", "k9_sentinel", "rebel_frequency", "lone_star", "quarter_mile", "privatized_takedown", "no_strings")
+        c_ids = ("unicorn_hunter", "retro_code", "sacred_vow", "k9_sentinel", "rebel_frequency", "lone_star", "quarter_mile", "privatized_takedown", "no_strings", "agent_of_chaos")
         disc_count = sum(1 for cid in c_ids if cid in unlocked_map)
-        tk.Label(scroll_frame, text=f"🔒 CLASSIFIED OPERATIONS ({disc_count} / 9 DISCOVERED)",
+        tk.Label(scroll_frame, text=f"🔒 CLASSIFIED OPERATIONS ({disc_count} / 10 DISCOVERED)",
                  font=("Segoe UI", 9, "bold"), bg=t["panel"], fg=t["accent"]).pack(anchor="w", pady=(10, 4))
 
         classified_data = [
@@ -13240,6 +13563,7 @@ class EbayTool(tk.Tk):
             ("quarter_mile", "🏎", "Quarter Mile", "Living life a quarter-mile at a time • Dom Toretto Protocol", "Quarter-mile acceleration"),
             ("privatized_takedown", "🦾", "Privatized Takedown", "I enforce you 3000 • 25,000+ infringements harvested in a single sweep", "Arc Reactor frequency"),
             ("no_strings", "🤖", "No Strings On Me", "I was meant to be new. I was meant to be beautiful. • Ultron Prime", "Vibranium core frequency"),
+            ("agent_of_chaos", "🃏", "Agent of Chaos", "Why so serious? • Arkham Asylum Anarchy & Gotham Takedowns", "Anarchist laughing gas"),
         ]
 
         for ach_id, icon, title, lore, hint in classified_data:
@@ -13325,6 +13649,9 @@ class EbayTool(tk.Tk):
                     matched = True
                 elif any(w in about_word_buf[0] for w in ("ultron",)):
                     self._trigger_ultron_easter_egg(parent_win=win)
+                    matched = True
+                elif any(w in about_word_buf[0] for w in ("whysoserious", "joker")):
+                    self._trigger_joker_easter_egg(parent_win=win)
                     matched = True
 
                 if matched:

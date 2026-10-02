@@ -104,6 +104,15 @@ class ArgusEngine:
         self.pause_event = threading.Event()
         self.pause_event.set()  # Unpaused by default
         self._session_cache: Dict[str, Any] = {}
+        self._domain_locks: Dict[str, threading.Lock] = {}
+        self._domain_last_request: Dict[str, float] = {}
+        self._engine_lock = threading.Lock()
+
+    def _get_domain_lock(self, mkt: str) -> threading.Lock:
+        with self._engine_lock:
+            if mkt not in self._domain_locks:
+                self._domain_locks[mkt] = threading.Lock()
+            return self._domain_locks[mkt]
 
     @staticmethod
     def identify_marketplace(url: str) -> str:
@@ -152,10 +161,11 @@ class ArgusEngine:
         parsed = urlparse(url)
         return parsed.netloc.replace("www.", "") if parsed.netloc else "Independent Web"
 
-    def probe_url(self, url: str, original_data: Optional[Dict[str, Any]] = None) -> ComplianceResult:
+    def probe_url(self, url: str, original_data: Optional[Dict[str, Any]] = None, is_retry: bool = False) -> ComplianceResult:
         """
         Probe a single URL with domain-tuned heuristics to detect if the product
         is active, ended, or completely removed / 404'd.
+        Includes domain-level polite pacing to prevent tripping anti-bot shields.
         """
         clean_url = str(url).strip()
         if not clean_url.startswith("http://") and not clean_url.startswith("https://"):
@@ -163,6 +173,17 @@ class ArgusEngine:
 
         mkt = self.identify_marketplace(clean_url)
         t_start = time.time()
+
+        # Domain-tuned polite pacing (prevents Akamai/Cloudflare burst blocks on eBay/Amazon)
+        min_interval = 0.65 if mkt in ("eBay", "Amazon") else (0.35 if mkt in ("Mercado Libre", "Vinted") else 0.1)
+        d_lock = self._get_domain_lock(mkt)
+        with d_lock:
+            last_t = self._domain_last_request.get(mkt, 0.0)
+            now = time.time()
+            elapsed = now - last_t
+            if elapsed < min_interval:
+                time.sleep(min_interval - elapsed)
+            self._domain_last_request[mkt] = time.time()
 
         headers = {
             "User-Agent": DEFAULT_USER_AGENT,
@@ -220,8 +241,12 @@ class ArgusEngine:
         if resp_code in (404, 410):
             return ComplianceResult(clean_url, mkt, STATUS_REMOVED, resp_code, f"HTTP {resp_code} (Item / Page Removed)", latency, original_data)
 
-        # ── 2. HTTP 403 / 429 Captcha / Block Path ───────────────────────────
-        if resp_code in (403, 429) or ("captcha" in html.lower() and len(html) < 6000):
+        # ── 2. HTTP 403 / 429 Captcha / Block Path with Back-Off Retry ────────
+        is_blocked = resp_code in (403, 429) or ("captcha" in html.lower() and len(html) < 8000)
+        if is_blocked:
+            if not is_retry:
+                time.sleep(1.2)
+                return self.probe_url(clean_url, original_data=original_data, is_retry=True)
             return ComplianceResult(clean_url, mkt, STATUS_BLOCKED, resp_code, "Security Challenge / Rate-Limited (Verify Manually)", latency, original_data)
 
         # ── 3. Marketplace-Specific Semantic Heuristics ──────────────────────
@@ -229,13 +254,38 @@ class ArgusEngine:
 
         # ── eBay ──
         if mkt == "eBay":
-            if "this listing was ended by the seller" in html_l:
-                return ComplianceResult(clean_url, mkt, STATUS_ENDED, resp_code, "eBay: Listing ended by seller", latency, original_data)
-            if "this item is out of stock" in html_l or "out of stock" in html_l and "buy it now" not in html_l:
+            # 1. Direct Removal / Page Missing
+            if any(p in html_l for p in (
+                "we looked everywhere",
+                "looks like this page is missing",
+                "the item you're looking for was not found",
+                "the listing has been removed",
+                "this item is no longer available",
+                "item was removed",
+                "page not found",
+                "we can't find that item"
+            )):
+                return ComplianceResult(clean_url, mkt, STATUS_REMOVED, resp_code, "eBay: Item removed / Page missing", latency, original_data)
+
+            # 2. Listing Ended / Inactive / Out of Stock
+            if any(p in html_l for p in (
+                "this listing was ended by the seller",
+                "the listing you're looking for has ended",
+                "this listing was ended",
+                "this listing has ended",
+                "listing has ended",
+                "item condition: ended",
+                "ended by the seller",
+                "bidding has ended",
+                "this item is out of stock"
+            )):
+                return ComplianceResult(clean_url, mkt, STATUS_ENDED, resp_code, "eBay: Listing ended by seller / inactive", latency, original_data)
+
+            if "out of stock" in html_l and "buy it now" not in html_l:
                 return ComplianceResult(clean_url, mkt, STATUS_ENDED, resp_code, "eBay: Out of stock / inactive", latency, original_data)
-            if "we looked everywhere" in html_l or "looks like this page is missing" in html_l or "this item is no longer available" in html_l:
-                return ComplianceResult(clean_url, mkt, STATUS_REMOVED, resp_code, "eBay: Item removed from marketplace", latency, original_data)
-            if "binBtn_btn" in html or "isCartBtn_btn" in html or "buy it now" in html_l or "add to cart" in html_l or "add to watchlist" in html_l:
+
+            # 3. Active Buy / Cart Buttons
+            if any(btn in html for btn in ("binBtn_btn", "isCartBtn_btn")) or any(p in html_l for p in ("buy it now", "add to cart", "add to watchlist", "place bid", "make offer")):
                 return ComplianceResult(clean_url, mkt, STATUS_ACTIVE, resp_code, "eBay: Live active listing with purchase options", latency, original_data)
 
         # ── Mercado Libre ──

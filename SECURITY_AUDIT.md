@@ -3,7 +3,7 @@
 **Application Suite:** Apollo Brand Intelligence (Reconnaissance), Artemis Rights Engine (Enforcement) & Argus Compliance Sentinel (Verification)  
 **Lead Architect & Sole Author:** Jerry Seidenstucker  
 **Intellectual Property & Copyright:** © 2026 Jerry Seidenstucker. All Rights Reserved.  
-**Suite Version:** v3.3.3 (Beta) Enterprise Tactical Suite  
+**Suite Version:** v3.4.0 Enterprise Tactical Suite  
 **Target Runtime:** Windows 10 / 11 Enterprise (Standard User Workstation Space)  
 **Distribution Topology:** Standalone Dual-Executable Architecture (`--onedir` via PyInstaller, Native Microsoft Edge Driver)  
 **Operational Scope:** Anti-Counterfeit Reconnaissance, Visual Threat Intelligence, Letters of Authorization (LOA) Management, Assisted Portal Enforcement & Automated Post-Takedown Compliance Verification  
@@ -184,6 +184,6 @@ Get-FileHash -Algorithm SHA256 "dist\Apollo Brand Intelligence\Artemis.exe"
 
 ## 8. Formal Security & Legal Attestation
 
-Apollo Brand Intelligence v3.3.3 (Beta) and Artemis Rights Engine are independent, bespoke brand protection instruments developed outside corporate infrastructure and without access to proprietary systems. 
+Apollo Brand Intelligence v3.4.0 (Beta) and Artemis Rights Engine are independent, bespoke brand protection instruments developed outside corporate infrastructure and without access to proprietary systems. 
 
 The software strictly respects enterprise network boundaries, executes exclusively in user space, enforces zero-egress data containment, maintains an airtight human-in-the-loop compliance protocol, and relies exclusively on permissively licensed open-source components.

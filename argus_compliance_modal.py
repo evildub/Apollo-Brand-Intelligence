@@ -7,6 +7,7 @@ and outputs formatted compliance audit dossiers.
 
 import os
 import sys
+import re
 import threading
 import webbrowser
 import tkinter as tk
@@ -99,13 +100,14 @@ class ArgusComplianceModal(tk.Toplevel):
     def _t(self, key: str, default: str) -> str:
         return self.theme.get(key, default)
 
-    def _apply_local_dark_titlebar(self):
+    def _apply_local_dark_titlebar(self, win=None):
         try:
             import ctypes
-            w_id = self.winfo_id()
+            target = win or self
+            w_id = target.winfo_id()
             hwnd = ctypes.windll.user32.GetAncestor(w_id, 2)
             if not hwnd:
-                hwnd = self.winfo_id()
+                hwnd = target.winfo_id()
             v_dark = ctypes.c_int(1)
             for attr in (20, 19):
                 ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v_dark), ctypes.sizeof(v_dark))
@@ -325,34 +327,159 @@ class ArgusComplianceModal(tk.Toplevel):
             messagebox.showerror("Import Error", f"Failed to parse file:\n{e}", parent=self)
 
     def _prompt_paste_urls(self):
-        text = simpledialog.askstring(
-            "Paste URLs for Audit",
-            "Paste listing URLs (one per line):",
-            parent=self
+        """Open high-capacity, dark-themed multi-line URL intake modal."""
+        t = self.theme
+        win = tk.Toplevel(self)
+        win.title("📋 Bulk Listing URL Intake — Argus Compliance")
+        win.geometry("700x540")
+        win.minsize(540, 420)
+        win.configure(bg=t["bg"])
+        win.transient(self)
+        self._apply_local_dark_titlebar(win)
+
+        # Center on parent modal
+        try:
+            x = self.winfo_rootx() + (self.winfo_width() - 700) // 2
+            y = self.winfo_rooty() + (self.winfo_height() - 540) // 2
+            win.geometry(f"700x540+{max(10, x)}+{max(10, y)}")
+        except Exception:
+            pass
+
+        # Top Header
+        hdr = tk.Frame(win, bg=t["panel"], padx=16, pady=12, highlightbackground=t["border"], highlightthickness=1)
+        hdr.pack(fill="x", side="top")
+        tk.Label(hdr, text="📋 Bulk Listing URL Intake", font=FONT_HEAD, bg=t["panel"], fg=t["text"]).pack(anchor="w")
+        tk.Label(
+            hdr,
+            text="Paste product listing URLs below (one per line, comma-separated, or raw text). Blank lines are scrubbed automatically.",
+            font=FONT_NORM, bg=t["panel"], fg=t["subtext"]
+        ).pack(anchor="w", pady=(2, 0))
+
+        # Main Body
+        body = tk.Frame(win, bg=t["bg"], padx=16, pady=12)
+        body.pack(fill="both", expand=True)
+
+        txt_frame = tk.Frame(body, bg=t["border"], bd=1)
+        txt_frame.pack(fill="both", expand=True)
+
+        txt = tk.Text(
+            txt_frame,
+            bg=t.get("entry_bg", "#0F1642"),
+            fg=t.get("text", "#FFFFFF"),
+            insertbackground=t.get("accent", "#38BDF8"),
+            font=("Consolas", 10),
+            wrap="none",
+            relief="flat",
+            padx=8,
+            pady=8
         )
-        if not text:
-            return
+        sb_y = ttk.Scrollbar(txt_frame, orient="vertical", command=txt.yview)
+        sb_x = ttk.Scrollbar(txt_frame, orient="horizontal", command=txt.xview)
+        txt.configure(yscrollcommand=sb_y.set, xscrollcommand=sb_x.set)
 
-        lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
-        if not lines:
-            return
+        sb_y.pack(side="right", fill="y")
+        sb_x.pack(side="bottom", fill="x")
+        txt.pack(side="left", fill="both", expand=True)
 
-        self.loaded_items = [{"url": ln} for ln in lines]
-        self.original_columns = ["url"]
-        self.detected_url_col = "url"
-        self.audit_results.clear()
+        # Action Toolbar (Clipboard / Clear)
+        tools_row = tk.Frame(body, bg=t["bg"], pady=6)
+        tools_row.pack(fill="x")
 
-        self.card_total.config(text=str(len(self.loaded_items)))
-        self.card_removed.config(text="0")
-        self.card_ended.config(text="0")
-        self.card_active.config(text="0")
-        self.card_blocked.config(text="0")
+        counter_lbl = tk.Label(tools_row, text="📊 0 URLs detected", font=FONT_BOLD, bg=t["bg"], fg=t["accent"])
+        counter_lbl.pack(side="left")
 
-        self.status_lbl.config(
-            text=f"Loaded {len(lines)} pasted URLs. Ready to audit.",
-            fg=self.theme.get("accent", "#38BDF8")
+        dedup_var = tk.BooleanVar(value=True)
+        cb = tk.Checkbutton(
+            tools_row,
+            text="Deduplicate URLs",
+            variable=dedup_var,
+            bg=t["bg"],
+            fg=t["text"],
+            selectcolor=t.get("panel", "#0F1642"),
+            activebackground=t["bg"],
+            activeforeground=t["text"],
+            font=FONT_NORM
         )
-        self._refresh_table_view()
+        cb.pack(side="right")
+
+        def _extract_urls(raw: str) -> List[str]:
+            # Regex extracts all valid http/https URLs from arbitrary text
+            found = re.findall(r'https?://[^\s,;"\'<>]+', raw)
+            if not found:
+                for ln in raw.splitlines():
+                    s = ln.strip()
+                    if s and ("." in s) and not s.startswith("#"):
+                        found.append("https://" + s if not s.startswith("http") else s)
+            if dedup_var.get():
+                seen = set()
+                deduped = []
+                for u in found:
+                    u_clean = u.rstrip(".,;)")
+                    if u_clean not in seen:
+                        seen.add(u_clean)
+                        deduped.append(u_clean)
+                return deduped
+            return [u.rstrip(".,;)") for u in found]
+
+        def _update_count(e=None):
+            raw = txt.get("1.0", "end").strip()
+            urls = _extract_urls(raw)
+            counter_lbl.config(text=f"📊 {len(urls)} URLs detected")
+
+        txt.bind("<KeyRelease>", _update_count)
+
+        def _paste_clipboard():
+            try:
+                clip = win.clipboard_get()
+                if clip:
+                    txt.insert("insert", clip)
+                    _update_count()
+            except Exception:
+                pass
+
+        def _clear_all():
+            txt.delete("1.0", "end")
+            _update_count()
+
+        btn_row = tk.Frame(body, bg=t["bg"])
+        btn_row.pack(fill="x", pady=(2, 0))
+        self._btn(btn_row, "📋 Paste Clipboard", _paste_clipboard).pack(side="left", padx=(0, 6))
+        self._btn(btn_row, "🧹 Clear All", _clear_all).pack(side="left")
+
+        # Bottom Action Bar
+        btn_bar = tk.Frame(win, bg=t["panel"], padx=16, pady=10, highlightbackground=t["border"], highlightthickness=1)
+        btn_bar.pack(fill="x", side="bottom")
+
+        def _on_confirm():
+            raw = txt.get("1.0", "end").strip()
+            urls = _extract_urls(raw)
+            if not urls:
+                messagebox.showwarning("No URLs", "Please paste or enter at least one valid listing URL.", parent=win)
+                return
+
+            self.loaded_items = [{"url": u} for u in urls]
+            self.original_columns = ["url"]
+            self.detected_url_col = "url"
+            self.audit_results.clear()
+
+            self.card_total.config(text=str(len(self.loaded_items)))
+            self.card_removed.config(text="0")
+            self.card_ended.config(text="0")
+            self.card_active.config(text="0")
+            self.card_blocked.config(text="0")
+
+            self.status_lbl.config(
+                text=f"Loaded {len(urls)} pasted URLs. Ready to audit.",
+                fg=self.theme.get("accent", "#38BDF8")
+            )
+            self._refresh_table_view()
+            win.destroy()
+
+        self._btn(btn_bar, "✓ Ingest URLs into Argus Audit", _on_confirm, accent=True).pack(side="right", padx=(6, 0))
+        self._btn(btn_bar, "Cancel", win.destroy).pack(side="right")
+
+        win.grab_set()
+        txt.focus_set()
 
     # ── Audit Execution ───────────────────────────────────────────────────────
     def _start_audit(self):

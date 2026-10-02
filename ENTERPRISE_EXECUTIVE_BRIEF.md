@@ -3,7 +3,7 @@
 
 **Lead Architect & Sole Author:** Jerry Seidenstucker  
 **Intellectual Property & Copyright:** © 2026 Jerry Seidenstucker. All Rights Reserved.  
-**Suite Version:** v3.3.3 (Beta) Enterprise Tactical Suite  
+**Suite Version:** v3.4.0 Enterprise Tactical Suite  
 **Classification:** Proprietary / Authorized Internal Evaluation  
 **Target Environment:** Windows 10 / 11 Enterprise (Standard User Workstation Space)  
 **Distribution:** Standalone Dual-Executable Architecture (`--onedir` via PyInstaller, Microsoft Edge Automation)  

@@ -494,6 +494,29 @@ THEMES = {
         "select_bg": "#25F23A",
         "select_fg": "#100A1C",
         "check_select_bg": "#140C24",
+    },
+    "interstellar": {
+        "name": "🌌 Interstellar",
+        "hidden": True,
+        "bg": "#06070B",
+        "panel": "#0D1017",
+        "entry_bg": "#121620",
+        "accent": "#F6A623",
+        "accent2": "#00D2FF",
+        "success": "#00E5FF",
+        "warning": "#FFE8A3",
+        "danger": "#FF3B30",
+        "text": "#F2F4F8",
+        "subtext": "#8C96A8",
+        "border": "#F6A623",
+        "scrollbar_thumb": "#F6A623",
+        "scrollbar_trough": "#06070B",
+        "btn_normal_bg": "#161B26",
+        "btn_normal_fg": "#F2F4F8",
+        "btn_accent_fg": "#06070B",
+        "select_bg": "#F6A623",
+        "select_fg": "#06070B",
+        "check_select_bg": "#121620",
     }
 }
 
@@ -763,6 +786,22 @@ THEME_QUOTES = {
         "🦾 Tony Stark: 'Give me a Scotch, I'm starving. And clean those listings.'",
         "🤖 J.A.R.V.I.S.: 'As you wish, sir. Takedowns dispatched to legal intake.'",
     ],
+    "interstellar": [
+        "🌌 Cooper: 'It's not possible.' — TARS: 'No, it's necessary.'",
+        "🌌 Cooper: 'We used to look up at the sky and wonder at our place in the stars. Now we just look down and worry about our place in the dirt.'",
+        "🌌 Professor Brand: 'Do not go gentle into that good night. Rage, rage against the dying of the light.'",
+        "🌌 Brand: 'Love is the one thing we're capable of perceiving that transcends dimensions of time and space.'",
+        "🌌 Cooper: 'Murphy's law doesn't mean that something bad will happen. It means that whatever can happen, will happen.'",
+        "🌌 Cooper: 'We've always defined ourselves by the ability to overcome the impossible.'",
+        "🌌 Cooper: 'Mankind was born on Earth. It was never meant to die here.'",
+        "🌌 TARS: 'Absolute honesty isn't always the most diplomatic nor the safest form of communication with emotional beings.'",
+        "🌌 Cooper: 'This is no time for caution.' — TARS: 'Analyze the spin. Docking compliance confirmed at 67 RPM.'",
+        "🌌 Endurance Telemetry: 'Time is a resource. Every hour spent on rogue sellers is seven years of brand dilution.'",
+        "🌌 TARS: 'Setting humor to 75%. Setting takedown conviction to 100%.'",
+        "🌌 Cooper: 'There is a moment when the noise of the universe clears, and all that remains is the signal.'",
+        "🌌 Tesseract Relay: 'The 5th dimension wasn't built for them. It was built for us—to see the entire marketplace timeline at once.'",
+        "🌌 Cooper: 'It's not a ghost. It's gravity.'",
+    ],
 }
 
 THEME_SUBHEADERS = {
@@ -772,6 +811,7 @@ THEME_SUBHEADERS = {
     "continental": "🪙 THE CONTINENTAL — HIGH TABLE EXCOMMUNICADO & SYNDICATE ELIMINATION SUITE",
     "stark_industries": "🦾 STARK INDUSTRIES — I HAVE SUCCESSFULLY PRIVATIZED COUNTERFEIT TAKEDOWN",
     "joker": "🃏 THE JOKER — SOME ANALYSTS JUST WANT TO WATCH THE COUNTERFEITS BURN",
+    "interstellar": "🌌 THE ENDURANCE & GARGANTUA — WHAT IS POSSIBLE • 'NO, IT'S NECESSARY'",
     "ultron_prime": "🤖 ULTRON PRIME — AN ARMOR AROUND THE ENTERPRISE • SUITE UNTETHERED",
     "honey_badger": "🦡 HONEY BADGER INTEL — FEARLESS TAKEDOWNS & UNRELENTING RECON",
     "brundo_recon": "🐕 AGENT BRUNDO K9 RECON — 14/10 GOOD BOY • 100% TAKEDOWN RATE",
@@ -1758,8 +1798,10 @@ class EbayTool(tk.Tk):
 
         self.status_var = tk.StringVar(value="Ready.")
         self.status_lbl = tk.Label(self.status_bar, textvariable=self.status_var,
-                                   bg=t["panel"], fg=t["text"], font=FONT_SM)
+                                   bg=t["panel"], fg=t["text"], font=FONT_SM, cursor="hand2")
         self.status_lbl.pack(side="left", padx=12)
+        self.status_lbl.bind("<Button-1>", self._on_status_bar_clicked)
+        self.status_bar.bind("<Button-1>", self._on_status_bar_clicked)
         self.themed_widgets["text_labels"].append(self.status_lbl)
 
         # Style and create Progressbar with vibrant accent animation
@@ -2490,6 +2532,7 @@ class EbayTool(tk.Tk):
                     (k == "stark_industries" and self.data_store.is_stark_unlocked()) or
                     (k == "ultron_prime" and self.data_store.is_ultron_unlocked()) or
                     (k == "joker" and self.data_store.is_joker_unlocked()) or
+                    (k == "interstellar" and self.data_store.is_interstellar_unlocked()) or
                     (k == "synthwave" and self.data_store.is_achievement_unlocked("retro_code")) or
                     (k == "eleanor" and (self.data_store.is_achievement_unlocked("quarter_mile") or self.data_store.is_achievement_unlocked("unicorn_hunter")))
                 )
@@ -2747,6 +2790,24 @@ class EbayTool(tk.Tk):
                         self.store_text.delete("1.0", "end")
                         self.store_text.insert("1.0", self.store_placeholder)
                         self.store_text.config(fg=t["subtext"])
+        elif self.current_theme_key == "interstellar":
+            if hasattr(self, "sweep_btn"):
+                self.sweep_btn.config(text="🚀 Full Orbital Sweep")
+            if hasattr(self, "run_btn"):
+                self.run_btn.config(text="🌌 Initialize Trajectory")
+            if hasattr(self, "add_q_btn"):
+                self.add_q_btn.config(text="🪐 Chart Coordinates")
+            if hasattr(self, "clean_sweep_btn"):
+                self.clean_sweep_btn.config(text="⏳ Cross Event Horizon")
+            if "eBay" in getattr(self, "marketplace_var", tk.StringVar()).get():
+                old_ph = getattr(self, "store_placeholder", "")
+                self.store_placeholder = "// ENDURANCE NAVIGATION MATRIX //\n// Enter target coordinates, Lazarus beacon, or storefront URLs...\n// \"It's not possible... No, it's necessary.\""
+                if hasattr(self, "store_text"):
+                    curr_txt = self.store_text.get("1.0", "end").strip()
+                    if not curr_txt or curr_txt == old_ph.strip() or "store1" in curr_txt or "High Table" in curr_txt or "STARK" in curr_txt or "ARKHAM" in curr_txt:
+                        self.store_text.delete("1.0", "end")
+                        self.store_text.insert("1.0", self.store_placeholder)
+                        self.store_text.config(fg=t["subtext"])
         else:
             if hasattr(self, "sweep_btn"):
                 self.sweep_btn.config(text="⚡ 1-Click Sweep: Queue Portfolio for All Stores")
@@ -2795,7 +2856,7 @@ class EbayTool(tk.Tk):
         self._stop_ambient_flow()
         t_key = getattr(self, "current_theme_key", "")
         # Only animate for selected high-tier themes
-        if t_key in ("continental", "stark_industries", "joker", "ultron_prime", "dallas_cowboys"):
+        if t_key in ("continental", "stark_industries", "joker", "ultron_prime", "dallas_cowboys", "interstellar"):
             self._animate_accent_gradient()
 
     def _stop_ambient_flow(self):
@@ -2812,7 +2873,7 @@ class EbayTool(tk.Tk):
         if not getattr(self, "flowing_gradient_var", None) or not self.flowing_gradient_var.get():
             return
         t_key = getattr(self, "current_theme_key", "")
-        if t_key not in ("continental", "stark_industries", "joker", "ultron_prime", "dallas_cowboys"):
+        if t_key not in ("continental", "stark_industries", "joker", "ultron_prime", "dallas_cowboys", "interstellar"):
             return
 
         self._gradient_phase = (getattr(self, "_gradient_phase", 0.0) + 0.012) % 1.0
@@ -2854,6 +2915,9 @@ class EbayTool(tk.Tk):
         elif t_key == "dallas_cowboys":
             # Star Blue -> Royal Blue -> Metallic Silver
             stops = ["#0072CE", "#041E42", "#A5ACAF", "#0072CE"]
+        elif t_key == "interstellar":
+            # Gargantua Event Horizon: Deep Void -> Accretion Amber -> Blazing Singularity White -> Gravitational Lensing Cyan
+            stops = ["#06070B", "#F6A623", "#FFE8A3", "#FFFFFF", "#FFE8A3", "#FF6B1A", "#8A1C14", "#00D2FF", "#06070B"]
         else:
             # Default fallback: solid accent line without overhead
             self.accent_bar.configure(bg=t.get("border", t.get("accent", "#38bdf8")))
@@ -11735,6 +11799,76 @@ class EbayTool(tk.Tk):
                         relief="flat", padx=18, pady=6, activebackground="#E024C3", activeforeground="#FFFFFF", cursor="hand2")
         btn.pack(anchor="center")
 
+    def _trigger_interstellar_easter_egg(self, auto_switch=True, parent_win=None):
+        """Interstellar / The Endurance & Quantum Gravity Easter Egg."""
+        try:
+            winsound.MessageBeep(winsound.MB_ICONASTERISK)
+        except Exception:
+            pass
+
+        self.data_store.unlock_interstellar()
+        self._refresh_theme_menu()
+        if auto_switch and "interstellar" in THEMES:
+            secret_name = THEMES["interstellar"]["name"]
+            self.theme_var.set(secret_name)
+            self._on_theme_changed()
+
+        self._log("=" * 75)
+        self._log("🌌 ─────────────────────────────────────────────────────────────────────────")
+        self._log("🌌 [THE ENDURANCE & GARGANTUA — QUANTUM TELEMETRY RECEIVED]")
+        self._log("🌌 'It's not possible.' — 'No, it's necessary.'")
+        self._log("🌌 'We've always defined ourselves by the ability to overcome the impossible.'")
+        self._log("🌌 'Do not go gentle into that good night. Rage, rage against the dying of the light.'")
+        self._log("🌌 'TARS, match the rotation. Docking compliance confirmed at 67 RPM.'")
+        self._log("🌌 'It's not a ghost. It's gravity.'")
+        self._log("🌌 ─────────────────────────────────────────────────────────────────────────")
+        self._log("=" * 75)
+        self._status("🌌 THE ENDURANCE: Quantum gravity data received • It's not a ghost. It's gravity!")
+
+        if hasattr(self, "_interstellar_win") and self._interstellar_win and self._interstellar_win.winfo_exists():
+            try:
+                self._interstellar_win.lift()
+                self._interstellar_win.focus_set()
+            except Exception:
+                pass
+            return
+
+        p_win = parent_win or self
+        win = tk.Toplevel(p_win)
+        self._interstellar_win = win
+        win.title("🌌 The Endurance — Quantum Data Received")
+        win.configure(bg="#06070B")
+        win.resizable(False, False)
+        win.transient(p_win)
+        win.grab_set()
+        self._apply_dark_titlebar(win)
+
+        self._center_window(win, 580, 480)
+
+        card = tk.Frame(win, bg="#0D1017", padx=22, pady=18, highlightbackground="#F6A623", highlightthickness=2)
+        card.pack(fill="both", expand=True, padx=10, pady=10)
+
+        tk.Label(card, text="🌌 THE ENDURANCE", font=("Segoe UI", 16, "bold"), bg="#0D1017", fg="#F6A623").pack(anchor="center")
+        tk.Label(card, text="GARGANTUA EVENT HORIZON  •  QUANTUM GRAVITY SOLVED  •  WHAT IS POSSIBLE", font=("Segoe UI", 8, "bold"), bg="#0D1017", fg="#00D2FF").pack(anchor="center", pady=(2, 10))
+
+        div = tk.Frame(card, bg="#F6A623", height=1)
+        div.pack(fill="x", pady=(0, 12))
+
+        tk.Label(card, text="Relativity Drift: 7 Yrs / Hr  •  Event Horizon Clearance: Nominal", font=("Segoe UI", 10, "bold"), bg="#0D1017", fg="#F2F4F8").pack(anchor="center")
+        tk.Label(card, text="5th Dimensional Relay: 'The signal has been transmitted through the watch second hand.'", font=FONT_SM, bg="#0D1017", fg="#8C96A8").pack(anchor="center", pady=(3, 10))
+
+        # TARS Co-Pilot Telemetry Box
+        tars_box = tk.Frame(card, bg="#06070B", padx=14, pady=10, highlightbackground="#1F2636", highlightthickness=1)
+        tars_box.pack(fill="x", pady=(0, 12))
+        tk.Label(tars_box, text="🤖 TARS AI CO-PILOT TELEMETRY MATRIX:", font=("Segoe UI", 8, "bold"), bg="#06070B", fg="#00D2FF").pack(anchor="w")
+        tk.Label(tars_box, text="• Honesty Parameter: 90%  •  Humor Setting: 75%\n• Takedown Conviction: 100%  •  Discretion with Counterfeiters: 0%", font=("Segoe UI", 9), bg="#06070B", fg="#F2F4F8", justify="left").pack(anchor="w", pady=(2, 4))
+        tk.Label(tars_box, text='"It\'s not possible." — "No, it\'s necessary."', font=("Georgia", 10, "italic bold"), bg="#06070B", fg="#F6A623").pack(anchor="center", pady=(4, 0))
+
+        btn = tk.Button(card, text="🌌 Transcend Dimensions", command=win.destroy,
+                        bg="#F6A623", fg="#06070B", font=("Segoe UI", 10, "bold"),
+                        relief="flat", padx=18, pady=6, activebackground="#FFA62B", activeforeground="#06070B", cursor="hand2")
+        btn.pack(anchor="center")
+
     def _trigger_heimvis_easter_egg(self):
         """All-Seeing Eye & Heimvis / Jarvis AI Co-Pilot Easter Egg."""
         try:
@@ -11864,6 +11998,28 @@ class EbayTool(tk.Tk):
 
         # Fallback to standard quote cycle on title click
         self._on_title_click()
+
+    def _on_status_bar_clicked(self, event=None):
+        """Handle clicks on the status bar to track the 3-click gravitational anomaly sequence (Morse code watch tick)."""
+        now = time.time()
+        if not hasattr(self, "_gravity_clicks"):
+            self._gravity_clicks = []
+
+        # Reset sequence if more than 3.5 seconds elapsed between ticks
+        if self._gravity_clicks and (now - self._gravity_clicks[-1] > 3.5):
+            self._gravity_clicks = []
+
+        self._gravity_clicks.append(now)
+        count = len(self._gravity_clicks)
+
+        if count == 1:
+            self._status("⏱ [GRAVITATIONAL ANOMALY DETECTED] · - - - (Ticking...)")
+        elif count == 2:
+            self._status("🌌 Morse telemetry syncing across dimensions: - · · ·  - · · · (Quantum signal locked...)")
+        elif count >= 3:
+            self._gravity_clicks = []
+            self._status("🌌 EUREKA! 'It's not a ghost. It's gravity.'")
+            self._trigger_interstellar_easter_egg()
 
     def _on_title_click(self, event=None):
         """Clicking title bar triggers fun motivational enforcement badges and theme-specific quotes."""
@@ -13652,6 +13808,9 @@ class EbayTool(tk.Tk):
                     matched = True
                 elif any(w in about_word_buf[0] for w in ("whysoserious", "joker")):
                     self._trigger_joker_easter_egg(parent_win=win)
+                    matched = True
+                elif any(w in about_word_buf[0] for w in ("gravity", "interstellar", "tars", "murph")):
+                    self._trigger_interstellar_easter_egg(parent_win=win)
                     matched = True
 
                 if matched:

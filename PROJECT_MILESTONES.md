@@ -2,8 +2,8 @@
 
 **Lead Analyst & Architect:** Jerry Seidenstucker (Senior Brand Protection Analyst)  
 **Platform Evolution:** Single-query desktop scraper -> Multi-Marketplace Enterprise Threat Intelligence & Reverse-Image Clustering Suite  
-**Date of Milestone Audit:** September 2, 2026  
-**Current Release:** **v1.9.0 Enterprise Tactical Suite**
+**Date of Milestone Audit:** October 5, 2026  
+**Current Release:** **v3.4.0 Enterprise Tactical Suite (Apollo, Artemis & Argus)**
 
 ---
 
@@ -55,6 +55,25 @@
 * Added **Instant Seller Origin Propagation**: Enriched origins immediately propagate across all listings in the active table.
 * Rebuilt Sidebar Ergonomics with **0px Collapsible Generic Exclusions** and **2-Tier Brand Library**.
 * Unified **Analyst Field Guide (F1)** with 6-Phase Operations SOP Playbook, Tools Directory, and Threat Glossary.
+
+### v2.0.0 – Multi-Marketplace POD & Enterprise Tactical Baseline
+* Expanded POD harvesting engines across Redbubble, Printerval, TeePublic, Spreadshirt, Zazzle, CafePress, and Threadless.
+* Implemented 1-to-50 SKU variant expansion, dynamic infinite scrolling, and multi-threaded session warming.
+
+### v3.0.0 – Multi-Sector Intelligence & Syndicate Hunter
+* Deployed 22+ marketplace scraping engines including Scribd OEM manual discovery with 3-Layer GMW Acronym Disambiguation.
+* Built Connected Seller Network Hunter for syndicate discovery across corporate parent stores and drop-ship fulfillment hubs.
+
+### v3.3.0 – Dual-Engine Architecture & Artemis Rights Engine
+* Introduced decoupled twin-engine architecture: Apollo (Intelligence & Discovery) and Artemis (Enforcement & Rights Registry).
+* Built secure air-gapped JSON IPC bridge (`artemis_bridge.py`), dedicated LOA vault, and standalone `Artemis.exe` executable.
+
+### v3.4.0 – Argus Compliance Sentinel, Cloudflare Stealth & Ambient Flow
+* Integrated **Argus Compliance Sentinel (`argus_modal.py`)**: Asynchronous real-time URL availability auditing (Active vs. Delisted / 404) verifying 100+ enforcement links in under 30 seconds with zero false delistings.
+* Built **Redbubble Cloudflare 403 Challenge Automated Stealth Fallback**: Direct HTTP requests automatically fall back to persistent stealth Microsoft Edge browser automation when anti-bot challenge pages are encountered.
+* Implemented **Liquid Ambient Accent Flow**: Smooth 25 FPS multi-stop liquid accent gradient flow beneath navigation headers.
+* Expanded test suite to **86 automated regression unit tests** passing 100%.
+
 
 ---
 

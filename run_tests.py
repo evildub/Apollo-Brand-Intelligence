@@ -3244,9 +3244,9 @@ class TestApolloCoreFeatures(unittest.TestCase):
         from main import EbayTool, THEMES
         import tkinter as tk
 
+        saved_theme = "continental"
         app = EbayTool()
         app.withdraw()
-        saved_theme = app.data_store.get_setting("theme", "continental")
 
         try:
             # 1. Palette and DataStore Unlock
@@ -3311,7 +3311,126 @@ class TestApolloCoreFeatures(unittest.TestCase):
                 app.data_store.set_setting("theme", saved_theme)
             except Exception:
                 pass
-            app.destroy()
+            try:
+                app.destroy()
+            except Exception:
+                pass
+
+    def test_85_redbubble_cloudflare_challenge_fallback(self):
+        """Test Item 85: Verify Redbubble automatic stealth Playwright/Edge fallback on Cloudflare 403 challenges."""
+        from redbubble_scraper import RedbubbleScraper
+        from unittest.mock import MagicMock
+
+        rb = RedbubbleScraper(headless=True)
+        self.assertTrue(hasattr(rb, "_fetch_page_html"))
+
+        # 1. Normal 200 response
+        mock_session = MagicMock()
+        mock_resp_200 = MagicMock()
+        mock_resp_200.status_code = 200
+        mock_resp_200.text = "<html><body><h1>Redbubble Catalog</h1></body></html>"
+        mock_session.get.return_value = mock_resp_200
+
+        html = rb._fetch_page_html("https://www.redbubble.com/shop/?query=test", session=mock_session)
+        self.assertIn("Redbubble Catalog", html)
+
+        # 2. Cloudflare 403 challenge triggers fallback
+        mock_resp_403 = MagicMock()
+        mock_resp_403.status_code = 403
+        mock_resp_403.text = "<!DOCTYPE html><html><head><title>Just a moment...</title></head></html>"
+        mock_session.get.return_value = mock_resp_403
+
+        # Mock _get_context to verify fallback is invoked
+        mock_page = MagicMock()
+        mock_page.content.return_value = "<html><body><h1>Stealth Edge Recovered Data</h1></body></html>"
+        mock_ctx = MagicMock()
+        mock_ctx.new_page.return_value = mock_page
+        mock_ctx.cookies.return_value = [{"name": "cf_clearance", "value": "test_token"}]
+        rb._get_context = MagicMock(return_value=mock_ctx)
+
+        logs = []
+        html_fallback = rb._fetch_page_html("https://www.redbubble.com/shop/?query=test", session=mock_session, log_callback=logs.append)
+        self.assertIn("Stealth Edge Recovered Data", html_fallback)
+        self.assertTrue(any("Cloudflare challenge" in m for m in logs))
+        mock_ctx.new_page.assert_called_once()
+        mock_page.close.assert_called_once()
+
+    def test_86_interstellar_theme_and_quantum_gravity_anomaly(self):
+        """Test Item 86: Verify Interstellar theme palette, button flairs, gravity unlock, status bar Morse tick anomaly, and event horizon gradient."""
+        from main import EbayTool, THEMES
+        import tkinter as tk
+
+        saved_theme = "continental"
+        app = EbayTool()
+        app.withdraw()
+
+        try:
+            # 1. Palette and DataStore Unlock
+            self.assertIn("interstellar", THEMES)
+            self.assertEqual(THEMES["interstellar"]["accent"], "#F6A623")
+            self.assertEqual(THEMES["interstellar"]["accent2"], "#00D2FF")
+
+            app.data_store.unlock_interstellar()
+            self.assertTrue(app.data_store.is_interstellar_unlocked())
+            self.assertTrue(app.data_store.is_achievement_unlocked("quantum_gravity"))
+
+            # 2. Apply Interstellar Theme & Verify Custom Button Flairs
+            app.current_theme_key = "interstellar"
+            app.theme = THEMES["interstellar"]
+            app._apply_full_theme()
+
+            self.assertIn("Initialize Trajectory", app.run_btn.cget("text"))
+            self.assertIn("Full Orbital Sweep", app.sweep_btn.cget("text"))
+            self.assertIn("Chart Coordinates", app.add_q_btn.cget("text"))
+            self.assertIn("Cross Event Horizon", app.clean_sweep_btn.cget("text"))
+            self.assertIn("ENDURANCE NAVIGATION MATRIX", app.store_placeholder)
+
+            # 3. Accent Gradient Bar exists and renders
+            self.assertTrue(hasattr(app, "accent_bar"))
+            self.assertTrue(app.accent_bar.winfo_exists())
+            app._render_accent_gradient()
+
+            # 4. Easter Egg Trigger & Modal Guard
+            app._trigger_interstellar_easter_egg(auto_switch=True)
+            self.assertTrue(hasattr(app, "_interstellar_win") and app._interstellar_win.winfo_exists())
+            self.assertIn("Endurance", app._interstellar_win.title())
+            app._interstellar_win.destroy()
+
+            # 5. Gravitational Anomaly 3-Click Sequence on Status Bar
+            app._gravity_clicks = []
+            app._on_status_bar_clicked()
+            app.update()
+            self.assertIn("GRAVITATIONAL ANOMALY", app.status_var.get())
+
+            app._on_status_bar_clicked()
+            app.update()
+            self.assertIn("Morse telemetry syncing", app.status_var.get())
+
+            app._on_status_bar_clicked()
+            app.update()
+            self.assertTrue(hasattr(app, "_interstellar_win") and app._interstellar_win.winfo_exists())
+            app._interstellar_win.destroy()
+
+            # 6. About Dialog Keystroke Unlock ('gravity')
+            app._show_about_dialog()
+            self.assertTrue(hasattr(app, "_about_dialog_win") and app._about_dialog_win.winfo_exists())
+            about_win = app._about_dialog_win
+            # Trigger easter egg directly
+            app._trigger_interstellar_easter_egg(parent_win=about_win)
+            if hasattr(app, "_interstellar_win") and app._interstellar_win and app._interstellar_win.winfo_exists():
+                app._interstellar_win.destroy()
+            if hasattr(app, "_about_dialog_win") and app._about_dialog_win and app._about_dialog_win.winfo_exists():
+                app._about_dialog_win.destroy()
+
+        finally:
+            try:
+                app.data_store.set_setting("theme", saved_theme)
+            except Exception:
+                pass
+            try:
+                app.destroy()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

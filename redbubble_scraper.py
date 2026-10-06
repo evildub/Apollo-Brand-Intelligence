@@ -161,6 +161,56 @@ class RedbubbleScraper:
         s.headers.update(self.headers)
         return s
 
+    def _fetch_page_html(self, url: str, session=None, log_callback=None) -> str:
+        """
+        Fetch page HTML using fast TLS session with automatic stealth Playwright/Edge fallback
+        if Cloudflare challenge (403/503/429), challenge page, or empty response is encountered.
+        """
+        if session is None:
+            session = self._get_session()
+
+        html_text = ""
+        status_code = 0
+        raw_text = ""
+        try:
+            resp = session.get(url, timeout=18)
+            status_code = resp.status_code
+            raw_text = resp.text or ""
+            if status_code == 200 and raw_text and "<title>Just a moment...</title>" not in raw_text:
+                html_text = raw_text
+        except Exception as e:
+            logger.debug(f"Redbubble fast session fetch error: {e}")
+
+        # If blocked by Cloudflare (403/503/429, challenge page, or empty response), engage stealth Edge browser
+        if not html_text or status_code in (403, 429, 503) or ("<title>Just a moment...</title>" in raw_text):
+            if log_callback:
+                try:
+                    log_callback(f"🛡 [Redbubble] Cloudflare challenge ({status_code or 'challenge'}) detected. Engaging stealth Edge engine...")
+                except Exception:
+                    pass
+            try:
+                context = self._get_context()
+                page = context.new_page()
+                page.goto(url, wait_until="domcontentloaded", timeout=25000)
+                page.wait_for_timeout(1000)
+                html_text = page.content()
+                page.close()
+                # Opportunistically sync cookies from browser context to fast session
+                try:
+                    for cookie in context.cookies():
+                        session.cookies.set(cookie["name"], cookie["value"], domain=cookie.get("domain", ".redbubble.com"))
+                except Exception:
+                    pass
+            except Exception as pw_err:
+                logger.warning(f"Redbubble stealth browser fallback failed: {pw_err}")
+                if log_callback:
+                    try:
+                        log_callback(f"⚠ [Redbubble] Stealth browser fallback error: {pw_err}")
+                    except Exception:
+                        pass
+
+        return html_text
+
     def resolve_store_info(self, raw_input: str) -> dict:
         """Parse Redbubble artist shop URL, artist name, or Global Search."""
         raw = raw_input.strip() if raw_input else ""
@@ -245,12 +295,12 @@ class RedbubbleScraper:
 
                 _log(f"🌐 [Redbubble] Fetching page {page}...")
 
-                resp = session.get(target_url, timeout=18)
-                if resp.status_code != 200:
-                    _log(f"⚠ [Redbubble] HTTP status {resp.status_code} on page {page}.")
+                html_text = self._fetch_page_html(target_url, session=session, log_callback=_log)
+                if not html_text:
+                    _log(f"⚠ [Redbubble] Could not retrieve page HTML on page {page}.")
                     break
 
-                soup = BeautifulSoup(resp.text, "html.parser")
+                soup = BeautifulSoup(html_text, "html.parser")
                 next_data = soup.find("script", id="__NEXT_DATA__")
                 page_items = []
 
@@ -452,21 +502,7 @@ class RedbubbleScraper:
                 _log(f"🎨 [Redbubble] Expanding variants for [{idx+1}/{total_parents}]: '{parent_title[:35]}...'")
 
                 try:
-                    resp = session.get(raw_url, timeout=18)
-                    html_text = resp.text if resp.status_code == 200 else ""
-
-                    # Fallback to Playwright if session get blocked or empty
-                    if not html_text or resp.status_code in (403, 429, 503):
-                        try:
-                            context = self._get_context()
-                            page = context.new_page()
-                            page.goto(raw_url, wait_until="domcontentloaded", timeout=20000)
-                            page.wait_for_timeout(1500)
-                            html_text = page.content()
-                            page.close()
-                        except Exception as pw_err:
-                            logger.debug(f"Playwright fallback fetch error: {pw_err}")
-
+                    html_text = self._fetch_page_html(raw_url, session=session, log_callback=_log)
                     if not html_text:
                         _log(f"⚠ [Redbubble] Could not retrieve page HTML for {raw_url}.")
                         continue
@@ -728,11 +764,11 @@ class RedbubbleScraper:
                 else:
                     url = f"https://www.redbubble.com/people/{clean_artist}/shop?page={page}"
 
-                resp = session.get(url, timeout=18)
-                if resp.status_code != 200:
+                html_text = self._fetch_page_html(url, session=session, log_callback=_log)
+                if not html_text:
                     break
 
-                soup = BeautifulSoup(resp.text, "html.parser")
+                soup = BeautifulSoup(html_text, "html.parser")
                 next_data = soup.find("script", id="__NEXT_DATA__")
                 page_results = []
 

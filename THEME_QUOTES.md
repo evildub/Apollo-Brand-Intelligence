@@ -92,6 +92,22 @@
 - 🚙 Trail-Rated 4x4 crawling through rocky listings... Nothing gets past.
 - 🚙 Rubicon heavy-duty axles: Clearing uncharted counterfeit terrain.
 
+## interstellar (14 quotes)
+- 🌌 Cooper: 'It's not possible.' — TARS: 'No, it's necessary.'
+- 🌌 Cooper: 'We used to look up at the sky and wonder at our place in the stars. Now we just look down and worry about our place in the dirt.'
+- 🌌 Professor Brand: 'Do not go gentle into that good night. Rage, rage against the dying of the light.'
+- 🌌 Brand: 'Love is the one thing we're capable of perceiving that transcends dimensions of time and space.'
+- 🌌 Cooper: 'Murphy's law doesn't mean that something bad will happen. It means that whatever can happen, will happen.'
+- 🌌 Cooper: 'We've always defined ourselves by the ability to overcome the impossible.'
+- 🌌 Cooper: 'Mankind was born on Earth. It was never meant to die here.'
+- 🌌 TARS: 'Absolute honesty isn't always the most diplomatic nor the safest form of communication with emotional beings.'
+- 🌌 Cooper: 'This is no time for caution.' — TARS: 'Analyze the spin. Docking compliance confirmed at 67 RPM.'
+- 🌌 Endurance Telemetry: 'Time is a resource. Every hour spent on rogue sellers is seven years of brand dilution.'
+- 🌌 TARS: 'Setting humor to 75%. Setting takedown conviction to 100%.'
+- 🌌 Cooper: 'There is a moment when the noise of the universe clears, and all that remains is the signal.'
+- 🌌 Tesseract Relay: 'The 5th dimension wasn't built for them. It was built for us—to see the entire marketplace timeline at once.'
+- 🌌 Cooper: 'It's not a ghost. It's gravity.'
+
 ## joker (11 quotes)
 - 🃏 'Why so serious? Let's put a takedown on that storefront.'
 - 🃏 'I'm an agent of chaos. And you know the thing about chaos? It's fair.'

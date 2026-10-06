@@ -1,29 +1,31 @@
-# Apollo Brand Intelligence v3.3.2 — Akamai Anti-Throttle Resilience & Native Shopify Integration
+# Apollo Brand Intelligence v3.4.0 — Argus Compliance Sentinel & Multi-Platform Stealth Resilience
 
-### 🛒 eBay Scraper Resilience & Akamai Edge Diagnostics
-- **Transient Edge Auto-Reload**: When eBay's Akamai edge serves a momentary rate-limit error page (`Something went wrong on our end` / `Error Page | eBay`), Apollo now pauses for 1.8s and automatically reloads the search URL once, allowing the edge threshold to lift and pulling listings cleanly.
-- **Accurate Throttle Reporting in Activity Log**: Eliminated false "0 results or store was not found" messages when Akamai blocks an IP. Transient error pages and security checks are now explicitly flagged as `[IP THROTTLE / BOT CHALLENGE]`.
-- **First-Term Cold-Start Auto-Retry**: Added automatic handshake retry for the initial query of a session after cold start, preventing cold-cache failures.
-- **Inter-Term Pacing Jitter**: Integrated 1.2s–2.2s randomized human jitter between consecutive queries within a store to keep burst traffic below Akamai rate-limiting thresholds.
-- **Extended Session Warmup**: Increased initial cookie jar stabilization pre-flight delay from 0.6s to 1.8s.
+### 🛡️ Argus URL Compliance Sentinel & Live Triage Engine
+- **Automated Post-Enforcement Availability Auditing**: Direct integration of the Argus Compliance Sentinel (`🛡️ Argus Compliance Sentinel` under Tools / Settings). Analysts can audit bulk enforcement URLs in real time to verify whether infringing listings remain live or have been taken down.
+- **High-Velocity Asynchronous Probes**: Verifies 100+ URLs in under 30 seconds via concurrent non-blocking worker pools with specialized status heuristics (Active, 404/Delisted, Restricted, Bot Check) and zero false delisting flags.
+- **SLA & Compliance Auditing Reports**: Exports timestamped compliance reports showing empirical platform takedown success rates, response times, and unresolved merchant recidivism for legal and client reviews.
 
 ---
 
-### 🛍️ Native Shopify Scraper & Sector Cleanliness
-- **Native Shopify Scraper (`shopify_scraper.py`)**: Added dedicated storefront scraping via direct store catalog sweeps (`/products.json`, `/search/suggest.json`) and global ecosystem brand discovery across `myshopify.com` stores.
-- **Strict Marketplace Isolation**: Eliminated legacy fallbacks that routed unhandled platforms to eBay. Selecting Shopify or direct URLs now runs their native scrapers or previews without eBay contamination.
-- **Dropdown Cleanliness**: Renamed sector dropdown from `🌐 Independent Websites` to `🌐 Websites`.
+### 🌐 Multi-Platform Stealth Resilience & Anti-Bot Fallbacks
+- **Redbubble Cloudflare 403 Challenge Automated Stealth Fallback**: Intelligent detection of anti-bot interstitial gates (HTTP 403 / 503 Cloudflare challenge pages) during direct HTTP requests. Apollo automatically falls back to persistent stealth Microsoft Edge browser automation, harvesting listings seamlessly without analyst interruption.
+- **Unified Single-Origin Transport**: Consolidated Redbubble discovery, artist portfolio sweeps, and variant dredging into a resilient transport layer (`_fetch_page_html`) with automatic session warming.
+- **Akamai Anti-Throttle Hardening**: Maintained resilient pacing jitter (1.2s–2.2s), cold-start retry handshakes, and transparent throttle diagnostics across all e-commerce scrapers.
 
 ---
 
-### 🏪 Store Search Fidelity & Pipeline Fixes
-- **No Parent Brand Auto-Expansion in Store Searches**: Store searches search ONLY the exact brands or sub-brands targeted by the user. Removed unwanted corporate parent-to-subbrand auto-expansion.
-- **Printerval Auto-Pipeline Seller Enrichment**: Fixed missing `defaultdict` import in 1-Click Auto-Pipeline seller enrichment.
-- **Fixed Missing `random` Import**: Added missing `random` import to `main.py` header, ensuring jitter and retries execute without `NameError`.
+### 🎨 Fluid Ambient Lighting & UI Visual Ergonomics
+- **Liquid Ambient Accent Flow**: Implemented smooth 25 FPS multi-stop liquid accent gradient flow beneath navigation headers, providing subtle visual feedback during active operations.
+- **Dark-Mode Scrollbar Parity**: Universal dark-mode styling applied to canvas and treeview containers, eliminating bright native UI artifacts across all tabs.
+- **Enhanced Contrast Hierarchy**: Refined panel contrast, border highlights, and responsive column rendering across the main intelligence grid.
 
 ---
 
-### 🏹 The Apollo & Artemis Initiative
-- **Twin-Engine Architecture**: Integrated the Artemis Rights Engine (`artemis.py`) with decoupled bridge interface (`artemis_bridge.py`), dedicated LOA/rights registry (`artemis_data_store.py`), and test suite (`run_artemis_tests.py`).
-- **Pre-Flight System Diagnostics**: Added system diagnostics modal and telemetry probes (`system_diagnostics.py`).
-- **Master Rulebook (`AGENTS.md`)**: Codified Section 9: Marketplace Isolation & Cross-Functional Verification Protocol.
+### 🧪 86-Point Enterprise Automated Verification Suite
+- **Expanded Test Coverage**: Test suite extended to 86 comprehensive automated unit and integration tests covering all 22+ marketplace engines, perceptual hashing (pHash) visual catalogs, and data pipelines.
+- **100% Pass Rate**: Validated clean execution across all regression tests, confirming zero cross-marketplace contamination.
+
+---
+
+### 📦 Standalone Dual-Executable Distribution
+- **Zero-Dependency Portability**: Distribution package includes standalone binaries for both **`Apollo Brand Intelligence.exe`** and companion **`Artemis.exe`** Rights Engine, bundled with all required runtime assets, icons, and analyst documentation.

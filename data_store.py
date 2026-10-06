@@ -231,6 +231,13 @@ class DataStore:
         self.set_setting("unlocked_joker", True)
         self.unlock_achievement("agent_of_chaos")
 
+    def is_interstellar_unlocked(self) -> bool:
+        return bool(self.get_setting("unlocked_interstellar", False)) or self.is_achievement_unlocked("quantum_gravity")
+
+    def unlock_interstellar(self):
+        self.set_setting("unlocked_interstellar", True)
+        self.unlock_achievement("quantum_gravity")
+
     # ── Achievements & Career Enforcement Milestones ───────────────────────────
     def get_achievements_data(self) -> dict:
         """Return achievements dictionary containing lifetime stats and unlocked milestones."""
@@ -260,6 +267,10 @@ class DataStore:
             ach["unlocked"]["privatized_takedown"] = {"unlocked_at": now_str}
         if self.get_setting("unlocked_ultron", False) and "no_strings" not in ach["unlocked"]:
             ach["unlocked"]["no_strings"] = {"unlocked_at": now_str}
+        if self.get_setting("unlocked_joker", False) and "agent_of_chaos" not in ach["unlocked"]:
+            ach["unlocked"]["agent_of_chaos"] = {"unlocked_at": now_str}
+        if self.get_setting("unlocked_interstellar", False) and "quantum_gravity" not in ach["unlocked"]:
+            ach["unlocked"]["quantum_gravity"] = {"unlocked_at": now_str}
         return ach
 
     def get_lifetime_listings(self) -> int:
@@ -310,6 +321,12 @@ class DataStore:
             self._data.setdefault("settings", {})["unlocked_cowboys"] = True
         elif ach_id == "privatized_takedown":
             self._data.setdefault("settings", {})["unlocked_stark"] = True
+        elif ach_id == "no_strings":
+            self._data.setdefault("settings", {})["unlocked_ultron"] = True
+        elif ach_id == "agent_of_chaos":
+            self._data.setdefault("settings", {})["unlocked_joker"] = True
+        elif ach_id == "quantum_gravity":
+            self._data.setdefault("settings", {})["unlocked_interstellar"] = True
 
         self._save()
         return True

@@ -198,6 +198,48 @@ When explicitly instructed to update GitHub or publish a release:
 5. **Claims Require Evidence**: Never report something as working without an actual run. If it hasn't been verified, say "unverified." (Test-suite and regression-test requirements are in §6.3.)
 6. **Explain Before Implementing**: For non-trivial changes, describe the approach and get approval before writing code (see §1.1).
 7. **Flag Tech Debt**: Call out shortcuts, duplication, or fragile code instead of quietly adding to it.
-8. **Surgical Edits in Large Files**: In very large files (e.g. `main.py`), touch only the affected region and state the blast radius of the change.
+8. **Surgical Edits in Large Files**: In very large files (e.g. `main.py` / `app.py`), touch only the affected region and state the blast radius of the change.
+
+---
+
+## 11. Multi-Agent Governance & Specialist Squad Model
+
+Apollo-Enterprise operates under an **Agent-First Modular Architecture**, coordinated by an Executive Manager agent that dispatches discrete, domain-bounded tasks to specialized domain agents:
+
+```
+                      ┌────────────────────────────────────────┐
+                      │          Executive Manager             │
+                      │    (Orchestration & Verification)      │
+                      └──────────────────┬─────────────────────┘
+                                         │
+     ┌───────────────────┬───────────────┴───────────────┬───────────────────┐
+     ▼                   ▼                               ▼                   ▼
+┌───────────────┐ ┌───────────────┐             ┌───────────────┐   ┌───────────────┐
+│  UI Craftsman │ │Scraper Sentinel│             │ Export Officer│   │Compliance Lead│
+│(apollo/ui/*)  │ │(apollo/scrape)│             │(apollo/export)│   │(apollo/compli)│
+└───────────────┘ └───────────────┘             └───────────────┘   └───────────────┘
+```
+
+### Specialist Squad Charters & Rules:
+1. **🎨 UI Craftsman** (`.agents/rules/ui_craftsman.md`):
+   - **Domain**: `apollo/ui/`, modals, components, themes, layout widgets.
+   - **Invariants**: Strict theme palette fidelity (23 themes), multi-monitor window centering (`center_window_on_parent`), recursive mousewheel scrolling, zero native white messageboxes (`ThemedMessageBoxProxy`), top toolbar button freeze.
+
+2. **🕷️ Scraper Sentinel** (`.agents/rules/scraper_sentinel.md`):
+   - **Domain**: `apollo/scrapers/`, scraper engines (15+ marketplaces), batch importer.
+   - **Invariants**: 7-Point Marketplace Invariant audit on any modification; exact user brand fidelity (zero unsolicited sub-brand expansion); clean DOM fallback extraction; empirical verification with real listings.
+
+3. **📊 Export Officer** (`.agents/rules/export_officer.md`):
+   - **Domain**: `apollo/export/`, Excel/CSV exporter, VeRO disclosures, report styling.
+   - **Invariants**: Strict openpyxl auto-column sizing and header formatting; zero data loss on batch export; VeRO statement accuracy and brand rights attributions.
+
+4. **⚖️ Compliance Lead** (`.agents/rules/compliance_lead.md`):
+   - **Domain**: `apollo/compliance/`, Artemis engine, Argus sentinel, legal notice generation.
+   - **Invariants**: Zero-leakage notice assembly; verified corporate metadata; strict status classification (`Active`, `Removed`, `Ended`, `Blocked`); LOA tracking.
+
+### Operational Principles:
+- **Investigation Protocol**: A regression or bug in one domain triggers a cross-check in connecting domains (e.g. scraper change -> check UI table rendering + export columns).
+- **Mandatory Verification**: Every domain change must pass its respective test harness (`run_tests.py`, `run_artemis_tests.py`, `test_argus_compliance.py`) before staging.
+- **Enterprise Ready**: Codebase strictly enforces zero employer terminology in commit history or tracked files. All pushes require explicit human authorization.
 
 

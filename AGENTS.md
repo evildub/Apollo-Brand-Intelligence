@@ -212,12 +212,12 @@ Apollo-Enterprise operates under an **Agent-First Modular Architecture**, coordi
                       │    (Orchestration & Verification)      │
                       └──────────────────┬─────────────────────┘
                                          │
-     ┌───────────────────┬───────────────┴───────────────┬───────────────────┐
-     ▼                   ▼                               ▼                   ▼
-┌───────────────┐ ┌───────────────┐             ┌───────────────┐   ┌───────────────┐
-│  UI Craftsman │ │Scraper Sentinel│             │ Export Officer│   │Compliance Lead│
-│(apollo/ui/*)  │ │(apollo/scrape)│             │(apollo/export)│   │(apollo/compli)│
-└───────────────┘ └───────────────┘             └───────────────┘   └───────────────┘
+     ┌──────────────┬──────────────┬─────┴──────┬──────────────┬──────────────┐
+     ▼              ▼              ▼            ▼              ▼              ▼
+┌───────────┐  ┌───────────┐  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐
+│UI Craftsman│ │Scraper Snt│  │Export Off.│ │Compl. Lead│ │Intel Strat│ │ QA Marshal│
+│(apollo/ui)│  │(scrapers) │  │(export)   │ │(complianc)│ │ (core)    │ │ (tests)   │
+└───────────┘  └───────────┘  └───────────┘ └───────────┘ └───────────┘ └───────────┘
 ```
 
 ### Specialist Squad Charters & Rules:
@@ -237,9 +237,17 @@ Apollo-Enterprise operates under an **Agent-First Modular Architecture**, coordi
    - **Domain**: `apollo/compliance/`, Artemis engine, Argus sentinel, legal notice generation.
    - **Invariants**: Zero-leakage notice assembly; verified corporate metadata; strict status classification (`Active`, `Removed`, `Ended`, `Blocked`); LOA tracking.
 
+5. **🧠 Intel & Graph Strategist** (`.agents/rules/intel_strategist.md`):
+   - **Domain**: `apollo/core/`, visual catalog (`pHash`), syndicate graph correlation, session vault encryption, contracts.
+   - **Invariants**: 64-bit DCT pHash calculations on background workers; Hamming distance thresholds (<=5 clone, <=10 variant); AES-GCM encrypted persistence in `session_vault.enc`; ListingRecord typed contracts.
+
+6. **🛡️ QA & Release Marshal** (`.agents/rules/qa_marshal.md`):
+   - **Domain**: `tests/`, `verify.py`, `build_exe.bat`, packaging, security auditing.
+   - **Invariants**: 100% pass across all 115 tests; zero employer term leakage; PyInstaller compilation smoke tests; maintenance of canonical `python verify.py` gatekeeper.
+
 ### Operational Principles:
 - **Investigation Protocol**: A regression or bug in one domain triggers a cross-check in connecting domains (e.g. scraper change -> check UI table rendering + export columns).
-- **Mandatory Verification**: Every domain change must pass its respective test harness (`run_tests.py`, `run_artemis_tests.py`, `test_argus_compliance.py`) before staging.
+- **Mandatory Verification**: Every domain change must pass its respective test harness (`python verify.py`) before staging.
 - **Enterprise Ready**: Codebase strictly enforces zero employer terminology in commit history or tracked files. All pushes require explicit human authorization.
 
 ---

@@ -60,15 +60,11 @@ python run_apollo.py
 
 Apollo enforces a strict zero-regression policy. All tests must pass before staging or building binaries.
 
-### Run Core Regression Suite (89 Tests)
+### Canonical Enterprise Verification Gate (1-Command All-In-One Check)
 ```bash
-python -m unittest tests/run_tests.py
+python verify.py
 ```
-
-### Run Rights & Compliance Suites (26 Tests)
-```bash
-python -m unittest tests/run_artemis_tests.py tests/test_argus_compliance.py
-```
+This runs the full 115-test regression battery (89 Core + 26 Compliance), checks modular package imports, and validates private employer term security guards.
 
 ---
 
@@ -78,10 +74,12 @@ Engineering and refactoring tasks are routed through specialist domain agent cha
 
 | Specialist Agent | Domain Package | Key Responsibilities |
 | :--- | :--- | :--- |
-| **🎨 UI Craftsman** | `apollo/ui/*` | Theme consistency, multi-monitor window centering, zero native messageboxes, layout integrity |
+| **🎨 UI Craftsman** | `apollo/ui/*` | Theme consistency (23 palettes), multi-monitor centering, zero native messageboxes, layout integrity |
 | **🕷️ Scraper Sentinel** | `apollo/scrapers/*` | Marketplace crawling, 7-point audit, DOM fallback selectors, anti-bot resilience |
 | **📊 Export Officer** | `apollo/export/*` | 18-column contract fidelity, openpyxl auto-formatting, VeRO disclosures |
 | **⚖️ Compliance Lead** | `apollo/compliance/*` | Artemis legal notice generator, Argus listing status classification, LOA tracking |
+| **🧠 Intel & Graph Strategist** | `apollo/core/*` | Perceptual image hashing (`pHash`), syndicate graph correlation, encrypted session vault |
+| **🛡️ QA & Release Marshal** | `tests/`, `verify.py` | 100% regression gatekeeper, PyInstaller builds, distribution smoke testing |
 
 ---
 

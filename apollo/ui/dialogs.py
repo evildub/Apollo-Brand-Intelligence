@@ -81,7 +81,14 @@ class ThemedMessageBoxProxy:
     def _get_app(self):
         if callable(self.active_app_provider):
             return self.active_app_provider()
-        return getattr(ThemedMessageBoxProxy, "active_instance", None)
+        inst = getattr(ThemedMessageBoxProxy, "active_instance", None)
+        if inst:
+            return inst
+        import sys
+        main_mod = sys.modules.get("main") or sys.modules.get("apollo.app")
+        if main_mod and hasattr(main_mod, "EbayTool"):
+            return getattr(main_mod.EbayTool, "active_instance", None)
+        return None
 
     def showinfo(self, title=None, message=None, **options):
         inst = self._get_app()

@@ -634,4 +634,35 @@ CONTINENTAL_QUOTES = [   "🪙 Winston: 'Rules... without them, we live with the
     "🪙 Winston: 'Contract fulfilled. High Table dossier compiled.'",
     "🪙 John Wick: 'Whoever comes, whoever it is... I'll kill them. I'll kill them all (from the marketplace).'",
     "🪙 Charon: 'How may I be of service this evening, sir?'",
-    "🪙 Winston: 'You have your target. Execute with discretion.'"]
+    "🪙 Winston: 'You have your target. Execute with discretion.'"
+]
+
+QUOTES = [
+    "☀ The Light: Illuminating true merchant origins & unmasking international 3PL drop-shipping fronts.",
+    "💡 Tactical Reconnaissance: Transforming raw marketplace darkness into actionable intelligence.",
+    "🌐 Cross-Border Visibility: Exposing foreign counterfeiter networks operating behind domestic storefront masks.",
+    "👁 Clarity: Stripping away digital landfill noise so analysts operate with unclouded focus.",
+    "🛡 Signal Over Noise: Eliminating authorized OEM false positives to isolate high-conviction targets.",
+    "🖼 Perceptual Fingerprinting: Collapsing cloned image clutter into unified threat clusters.",
+    "🏹 Precision: Executing surgical organic store sweeps that strike high-threat targets without collateral damage.",
+    "🎯 Tactical Enterprise Feeder: Delivering 100% compliant 18-column datasets ready for instant pipeline injection.",
+    "⚖ Evidence-First Standard: Structuring bulletproof chain-of-custody and tamper-evident enforcement dossiers.",
+    "⚡ The Tactical Interceptor: Operating at the tip of the spear while the heavy carrier carries the enterprise burden.",
+    "🤝 Built by Analysts, for Analysts: Purpose-engineered for the realities of front-line trademark defense.",
+    "🔒 Brand Integrity Defended: Protecting genuine craftsmanship and consumer safety worldwide.",
+]
+
+EASTER_EGG_QUOTES = [
+    "🏎 'I live my life a quarter mile at a time. For those 10 seconds or less... I'm free.' — Dom Toretto",
+    "💨 'Too soon, Junior! You didn't double-clutch like you should!'",
+    "🔥 'DANGER TO MANIFOLD: Floor pan intact, scraping at maximum velocity!'",
+    "🏁 'It don't matter if you win by an inch or a mile. Winning's winning.'",
+    "🐎 'Eleanor... Don't you stall on me now, girl!' — Memphis Raines",
+    "☕ Converting Caffeine into Intellectual Property Compliance...",
+    "⚡ Searching through the eBay Matrix with Supercharged Precision!",
+    "🚗 'I need NOS. One of the big ones. No, make it two. By tonight.'",
+    "🧱 Careful! Stepped on a red 2x4 Lego brick! Enforcement Defense +100.",
+    "✨ 'I knew you were counterfeit when you walked in...' 🎶",
+    "🤖 Heimvis Core Online: All-seeing eye tracking rogue syndicates across all dimensions!",
+]
+

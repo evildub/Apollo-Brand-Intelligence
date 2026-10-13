@@ -14,7 +14,23 @@ import json
 import tempfile
 import shutil
 import unittest
-from datetime import datetime
+TEST_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(TEST_DIR)
+APOLLO_PKG = os.path.join(REPO_ROOT, "apollo")
+for p in [
+    REPO_ROOT,
+    APOLLO_PKG,
+    os.path.join(APOLLO_PKG, "core"),
+    os.path.join(APOLLO_PKG, "export"),
+    os.path.join(APOLLO_PKG, "compliance"),
+    os.path.join(APOLLO_PKG, "scrapers"),
+    os.path.join(APOLLO_PKG, "scrapers", "engines"),
+    os.path.join(APOLLO_PKG, "ui"),
+    os.path.join(APOLLO_PKG, "ui", "modals"),
+    os.path.join(APOLLO_PKG, "ui", "components"),
+]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
 import artemis_bridge
 from artemis_data_store import ArtemisDataStore, DEFAULT_ARTEMIS_DATA

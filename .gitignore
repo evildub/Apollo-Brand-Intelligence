@@ -66,6 +66,7 @@ session_vault.enc
 sessions/
 logs/
 cache/
+data/
 
 # Private Terms & Employer Protections (LOCAL ONLY - Non-negotiable)
 .agents/rules/private_terms.md

@@ -1,0 +1,1671 @@
+import json
+import os
+import sys
+import shutil
+import re
+import time
+import copy
+from datetime import datetime
+
+def get_base_dir():
+    """Return persistent user AppData directory to guarantee user configurations are never wiped by updates."""
+    appdata = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or os.path.expanduser("~")
+    user_dir = os.path.join(appdata, "Apollo_Brand_Intelligence")
+    os.makedirs(user_dir, exist_ok=True)
+    return user_dir
+
+DATA_FILE = os.path.join(get_base_dir(), "data.json")
+DOSSIERS_DIR = os.path.join(get_base_dir(), "dossiers")
+os.makedirs(DOSSIERS_DIR, exist_ok=True)
+
+DEFAULT_DATA = {
+    "settings": {},
+    "brands": {
+        "Toyota": {
+            "subs": {
+                "Lexus": ["ES", "RX", "GX", "IS", "LS"]
+            },
+            "models": ["Camry", "Corolla", "Tacoma", "Tundra", "RAV4",
+                       "Highlander", "4Runner", "Prius", "Supra", "Avalon"]
+        },
+        "General Motors": {
+            "subs": {
+                "Chevrolet": ["Corvette", "Camaro", "Silverado", "Blazer", "Malibu", "Tahoe", "Suburban"],
+                "GMC":       ["Sierra", "Canyon", "Yukon", "Terrain", "Acadia", "Envoy"],
+                "Buick":     ["Enclave", "Encore", "Envision", "LaCrosse"],
+                "Cadillac":  ["Escalade", "CT5", "CT4", "XT5", "XT6"]
+            },
+            "models": []
+        },
+        "Subaru": {
+            "subs": {},
+            "models": ["Outback", "Forester", "Impreza", "WRX", "Legacy",
+                       "Ascent", "Crosstrek", "BRZ", "Solterra"]
+        },
+        "Hyundai": {
+            "subs": {
+                "Kia": ["Sportage", "Sorento", "Telluride", "Stinger",
+                        "Soul", "Forte", "K5", "Carnival"],
+                "Genesis": ["G70", "G80", "G90", "GV70", "GV80"]
+            },
+            "models": ["Elantra", "Sonata", "Tucson", "Santa Fe",
+                       "Palisade", "Kona", "Veloster", "Ioniq"]
+        },
+        "Nike": {
+            "subs": {
+                "Jordan": ["Retro 1", "Retro 4", "Retro 11", "Spizike", "Jumpman"],
+                "Nike SB": ["Dunk Low", "Dunk High", "Stefan Janoski", "Travis Scott"],
+                "Sportswear": ["Tech Fleece", "Club Fleece", "Windrunner", "Center Swoosh"]
+            },
+            "models": ["Dunk Low", "Air Force 1", "Air Max 90", "Air Max 95", "Air Max Plus TN",
+                       "Tech Fleece Hoodie", "Tech Fleece Joggers", "VaporMax", "Cortez", "Blazer Mid", "Vintage Sweatshirt"]
+        }
+    },
+    "exclusions": [
+        "Toyota", "Honda", "Ford", "Chevrolet", "Dodge", "Jeep",
+        "Nissan", "Mazda", "Mitsubishi", "Volkswagen", "BMW",
+        "Mercedes", "Audi", "Hyundai", "Kia", "Subaru",
+        "aftermarket", "compatible", "fits"
+    ],
+    "inclusions": [
+        "jersey", "shirt", "hoodie", "jacket", "signed", "autograph", "memorabilia", "vintage", "card", "hat", "cap"
+    ]
+}
+
+
+class DataStore:
+    def __init__(self):
+        # Initial migration: check if local directory data.json exists and migrate to AppData
+        if not os.path.exists(DATA_FILE):
+            local_src = os.path.join(os.path.dirname(sys.executable if getattr(sys, "frozen", False) else __file__), "data.json")
+            if os.path.exists(local_src):
+                try:
+                    shutil.copyfile(local_src, DATA_FILE)
+                except Exception:
+                    pass
+
+        if os.path.exists(DATA_FILE):
+            loaded = None
+            for attempt in range(3):
+                try:
+                    with open(DATA_FILE, "r", encoding="utf-8") as f:
+                        loaded = json.load(f)
+                    break
+                except Exception:
+                    time.sleep(0.05)
+            self._data = loaded if isinstance(loaded, dict) else copy.deepcopy(DEFAULT_DATA)
+        else:
+            self._data = copy.deepcopy(DEFAULT_DATA)
+
+        # Ensure settings, exclusions, and generic inclusions
+        self._data.setdefault("settings", {})
+        self._data.setdefault("exclusions", list(DEFAULT_DATA.get("exclusions", [])))
+        self._data.setdefault("inclusions", list(DEFAULT_DATA.get("inclusions", [])))
+        
+        # Migrate or initialize brand profiles
+        if "brand_profiles" not in self._data or not isinstance(self._data["brand_profiles"], dict) or not self._data["brand_profiles"]:
+            self._data["brand_profiles"] = {}
+            if "brands" in self._data and isinstance(self._data["brands"], dict) and self._data["brands"]:
+                self._data["brand_profiles"]["Default"] = copy.deepcopy(self._data["brands"])
+            else:
+                self._data["brand_profiles"]["Default"] = copy.deepcopy(DEFAULT_DATA["brands"])
+        
+        # Ensure active_brand_profile
+        active_prof = self._data.get("active_brand_profile")
+        if not active_prof or active_prof not in self._data["brand_profiles"]:
+            active_prof = list(self._data["brand_profiles"].keys())[0] if self._data["brand_profiles"] else "Default"
+            if "Default" not in self._data["brand_profiles"]:
+                self._data["brand_profiles"]["Default"] = {}
+                active_prof = "Default"
+            self._data["active_brand_profile"] = active_prof
+            
+        # Ensure brands points to the active profile's brands dict
+        self._data["brands"] = self._data["brand_profiles"][active_prof]
+        
+        # Validate internal structure of each brand across all profiles
+        for prof_name, b_dict in self._data["brand_profiles"].items():
+            if not isinstance(b_dict, dict):
+                self._data["brand_profiles"][prof_name] = {}
+                continue
+            for brand, val in b_dict.items():
+                if not isinstance(val, dict):
+                    b_dict[brand] = {
+                        "subs": {}, "models": [], "inclusions": [],
+                        "result_brand_mode": "parent", "result_brand_override": "", "sub_overrides": {}
+                    }
+                else:
+                    val.setdefault("subs", {})
+                    val.setdefault("models", [])
+                    val.setdefault("inclusions", [])
+                    val.setdefault("result_brand_mode", "parent")
+                    val.setdefault("result_brand_override", "")
+                    val.setdefault("sub_overrides", {})
+
+        # Migrate or initialize Multi-Dossier staging vaults
+        if "dossiers" not in self._data or not isinstance(self._data["dossiers"], dict):
+            self._data["dossiers"] = {}
+            if "staged_dossier" in self._data and isinstance(self._data["staged_dossier"], list) and self._data["staged_dossier"]:
+                self._data["dossiers"]["Main Dossier"] = list(self._data["staged_dossier"])
+            else:
+                self._data["dossiers"]["Main Dossier"] = []
+        if not self._data["dossiers"]:
+            self._data["dossiers"]["Main Dossier"] = []
+
+    def _save(self):
+        # Sync active profile with self._data["brands"]
+        act = self.get_active_profile_name()
+        if "brand_profiles" in self._data and act in self._data["brand_profiles"]:
+            self._data["brand_profiles"][act] = self._data.get("brands", {})
+        tmp_file = f"{DATA_FILE}.tmp"
+        try:
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                json.dump(self._data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_file, DATA_FILE)
+        except Exception:
+            try:
+                with open(DATA_FILE, "w", encoding="utf-8") as f:
+                    json.dump(self._data, f, indent=2, ensure_ascii=False)
+            except Exception:
+                pass
+
+    @property
+    def data(self):
+        return self._data
+
+    # ── settings ──────────────────────────────────────────────────────────────
+    def get_setting(self, key, default=""):
+        return self._data.get("settings", {}).get(key, default)
+
+    def set_setting(self, key, value):
+        if self._data.get("settings", {}).get(key) == value:
+            return
+        self._data.setdefault("settings", {})[key] = value
+        self._save()
+
+    def is_wick_unlocked(self) -> bool:
+        return bool(self.get_setting("unlocked_wick", False)) or self.is_achievement_unlocked("the_impossible_task")
+
+    def unlock_wick(self):
+        self.set_setting("unlocked_wick", True)
+        self.unlock_achievement("the_impossible_task")
+
+    def is_brundo_unlocked(self) -> bool:
+        return bool(self.get_setting("unlocked_brundo", False)) or self.is_achievement_unlocked("k9_sentinel")
+
+    def unlock_brundo(self):
+        self.set_setting("unlocked_brundo", True)
+        self.unlock_achievement("k9_sentinel")
+
+    def is_fir_unlocked(self) -> bool:
+        return bool(self.get_setting("unlocked_fir", False)) or self.is_achievement_unlocked("rebel_frequency")
+
+    def unlock_fir(self):
+        self.set_setting("unlocked_fir", True)
+        self.unlock_achievement("rebel_frequency")
+
+    def is_cowboys_unlocked(self) -> bool:
+        return bool(self.get_setting("unlocked_cowboys", False)) or self.is_achievement_unlocked("lone_star")
+
+    def unlock_cowboys(self):
+        self.set_setting("unlocked_cowboys", True)
+        self.unlock_achievement("lone_star")
+
+    def is_stark_unlocked(self) -> bool:
+        return bool(self.get_setting("unlocked_stark", False)) or self.is_achievement_unlocked("privatized_takedown")
+
+    def unlock_stark(self):
+        self.set_setting("unlocked_stark", True)
+        self.unlock_achievement("privatized_takedown")
+
+    def is_ultron_unlocked(self) -> bool:
+        return bool(self.get_setting("unlocked_ultron", False)) or self.is_achievement_unlocked("no_strings")
+
+    def unlock_ultron(self):
+        self.set_setting("unlocked_ultron", True)
+        self.unlock_achievement("no_strings")
+
+    def is_joker_unlocked(self) -> bool:
+        return bool(self.get_setting("unlocked_joker", False)) or self.is_achievement_unlocked("agent_of_chaos")
+
+    def unlock_joker(self):
+        self.set_setting("unlocked_joker", True)
+        self.unlock_achievement("agent_of_chaos")
+
+    def is_interstellar_unlocked(self) -> bool:
+        return bool(self.get_setting("unlocked_interstellar", False)) or self.is_achievement_unlocked("quantum_gravity")
+
+    def unlock_interstellar(self):
+        self.set_setting("unlocked_interstellar", True)
+        self.unlock_achievement("quantum_gravity")
+
+    # ── Achievements & Career Enforcement Milestones ───────────────────────────
+    def get_achievements_data(self) -> dict:
+        """Return achievements dictionary containing lifetime stats and unlocked milestones."""
+        ach = self._data.setdefault("achievements", {
+            "lifetime_listings": 0,
+            "lifetime_searches": 0,
+            "unlocked": {}
+        })
+        if "lifetime_listings" not in ach:
+            ach["lifetime_listings"] = 0
+        if "lifetime_searches" not in ach:
+            ach["lifetime_searches"] = 0
+        if "unlocked" not in ach:
+            ach["unlocked"] = {}
+
+        # Sync with legacy settings
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if self.get_setting("unlocked_wick", False) and "the_impossible_task" not in ach["unlocked"]:
+            ach["unlocked"]["the_impossible_task"] = {"unlocked_at": now_str}
+        if self.get_setting("unlocked_brundo", False) and "k9_sentinel" not in ach["unlocked"]:
+            ach["unlocked"]["k9_sentinel"] = {"unlocked_at": now_str}
+        if self.get_setting("unlocked_fir", False) and "rebel_frequency" not in ach["unlocked"]:
+            ach["unlocked"]["rebel_frequency"] = {"unlocked_at": now_str}
+        if self.get_setting("unlocked_cowboys", False) and "lone_star" not in ach["unlocked"]:
+            ach["unlocked"]["lone_star"] = {"unlocked_at": now_str}
+        if self.get_setting("unlocked_stark", False) and "privatized_takedown" not in ach["unlocked"]:
+            ach["unlocked"]["privatized_takedown"] = {"unlocked_at": now_str}
+        if self.get_setting("unlocked_ultron", False) and "no_strings" not in ach["unlocked"]:
+            ach["unlocked"]["no_strings"] = {"unlocked_at": now_str}
+        if self.get_setting("unlocked_joker", False) and "agent_of_chaos" not in ach["unlocked"]:
+            ach["unlocked"]["agent_of_chaos"] = {"unlocked_at": now_str}
+        if self.get_setting("unlocked_interstellar", False) and "quantum_gravity" not in ach["unlocked"]:
+            ach["unlocked"]["quantum_gravity"] = {"unlocked_at": now_str}
+        return ach
+
+    def get_lifetime_listings(self) -> int:
+        return int(self.get_achievements_data().get("lifetime_listings", 0))
+
+    def increment_lifetime_listings(self, count: int) -> int:
+        if count <= 0:
+            return self.get_lifetime_listings()
+        ach = self.get_achievements_data()
+        ach["lifetime_listings"] = int(ach.get("lifetime_listings", 0)) + int(count)
+        self._save()
+        return ach["lifetime_listings"]
+
+    def increment_lifetime_searches(self, count: int = 1) -> int:
+        ach = self.get_achievements_data()
+        ach["lifetime_searches"] = int(ach.get("lifetime_searches", 0)) + int(count)
+        self._save()
+        return ach["lifetime_searches"]
+
+    def is_achievement_unlocked(self, ach_id: str) -> bool:
+        ach = self.get_achievements_data()
+        return ach_id in ach.get("unlocked", {})
+
+    def save_achievements_data(self, ach_data: dict) -> None:
+        """Save achievements dictionary to disk."""
+        self._data["achievements"] = ach_data
+        self._save()
+
+    def unlock_achievement(self, ach_id: str, metadata: dict = None) -> bool:
+        """Unlock an achievement. Returns True if newly unlocked, False if already unlocked."""
+        ach = self.get_achievements_data()
+        if ach_id in ach.get("unlocked", {}):
+            return False
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        entry = {"unlocked_at": now_str}
+        if metadata and isinstance(metadata, dict):
+            entry.update(metadata)
+        ach["unlocked"][ach_id] = entry
+
+        # Sync with legacy settings if relevant
+        if ach_id == "the_impossible_task":
+            self._data.setdefault("settings", {})["unlocked_wick"] = True
+        elif ach_id == "k9_sentinel":
+            self._data.setdefault("settings", {})["unlocked_brundo"] = True
+        elif ach_id == "rebel_frequency":
+            self._data.setdefault("settings", {})["unlocked_fir"] = True
+        elif ach_id == "lone_star":
+            self._data.setdefault("settings", {})["unlocked_cowboys"] = True
+        elif ach_id == "privatized_takedown":
+            self._data.setdefault("settings", {})["unlocked_stark"] = True
+        elif ach_id == "no_strings":
+            self._data.setdefault("settings", {})["unlocked_ultron"] = True
+        elif ach_id == "agent_of_chaos":
+            self._data.setdefault("settings", {})["unlocked_joker"] = True
+        elif ach_id == "quantum_gravity":
+            self._data.setdefault("settings", {})["unlocked_interstellar"] = True
+
+        self._save()
+        return True
+
+    # ── Brand Profiles / Multi-Workspace Support ─────────────────────────────
+    def get_brand_profiles(self) -> dict:
+        """Return dict of all brand profiles: {profile_name: {brand_name: {...}}}."""
+        return self._data.get("brand_profiles", {})
+
+    def get_profile_names(self) -> list[str]:
+        """Return list of all profile names, ensuring active/Default are prioritized."""
+        profs = list(self._data.get("brand_profiles", {}).keys())
+        if not profs:
+            profs = ["Default"]
+        return sorted(profs)
+
+    def get_active_profile_name(self) -> str:
+        """Return currently active brand profile name."""
+        name = self._data.get("active_brand_profile", "Default")
+        if name not in self._data.get("brand_profiles", {}):
+            if self._data.get("brand_profiles"):
+                name = list(self._data["brand_profiles"].keys())[0]
+            else:
+                name = "Default"
+                self._data.setdefault("brand_profiles", {})["Default"] = copy.deepcopy(DEFAULT_DATA["brands"])
+            self._data["active_brand_profile"] = name
+        return name
+
+    def set_active_profile(self, name: str) -> bool:
+        """Switch active brand profile and sync self._data['brands']."""
+        if not name or name not in self._data.get("brand_profiles", {}):
+            return False
+        self._data["active_brand_profile"] = name
+        self._data["brands"] = self._data["brand_profiles"][name]
+        self._save()
+        return True
+
+    def create_profile(self, name: str, initial_brands: dict = None) -> bool:
+        """Create a new named brand profile."""
+        name = name.strip()
+        if not name:
+            return False
+        profs = self._data.setdefault("brand_profiles", {})
+        if name in profs:
+            return False
+        profs[name] = copy.deepcopy(initial_brands) if isinstance(initial_brands, dict) else {}
+        self._save()
+        return True
+
+    def duplicate_profile(self, source_name: str, target_name: str) -> bool:
+        """Duplicate an existing brand profile to a new name."""
+        target_name = target_name.strip()
+        if not target_name:
+            return False
+        profs = self._data.setdefault("brand_profiles", {})
+        if source_name not in profs or target_name in profs:
+            return False
+        profs[target_name] = copy.deepcopy(profs[source_name])
+        self._save()
+        return True
+
+    def rename_profile(self, old_name: str, new_name: str) -> bool:
+        """Rename an existing brand profile."""
+        new_name = new_name.strip()
+        if not new_name or old_name == new_name:
+            return False
+        profs = self._data.setdefault("brand_profiles", {})
+        if old_name not in profs or new_name in profs:
+            return False
+        profs[new_name] = profs.pop(old_name)
+        if self._data.get("active_brand_profile") == old_name:
+            self._data["active_brand_profile"] = new_name
+            self._data["brands"] = profs[new_name]
+        self._save()
+        return True
+
+    def delete_profile(self, name: str) -> bool:
+        """Delete a brand profile (will not delete if it's the only remaining profile)."""
+        profs = self._data.setdefault("brand_profiles", {})
+        if name not in profs or len(profs) <= 1:
+            return False
+        del profs[name]
+        if self._data.get("active_brand_profile") == name:
+            new_active = list(profs.keys())[0]
+            self._data["active_brand_profile"] = new_active
+            self._data["brands"] = profs[new_active]
+        self._save()
+        return True
+
+    def bulk_import_brands_to_profile(self, profile_name: str, text: str) -> int:
+        """
+        Parse raw text and import brands/subs/models into the specified profile.
+        Supports:
+        - Plain newlines / comma separated brand names: "Dallas Cowboys", "Kansas City Chiefs"
+        - Hierarchical definitions: "Toyota -> Lexus -> RX" or "General Motors: Chevrolet: Corvette"
+        - CSV-style lines: "Brand, Sub, Model"
+        """
+        if not text or not text.strip():
+            return 0
+        profs = self._data.setdefault("brand_profiles", {})
+        if profile_name not in profs:
+            profs[profile_name] = {}
+        target_dict = profs[profile_name]
+
+        imported_count = 0
+        lines = text.strip().splitlines()
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            # Strip markdown list markers (- , * , 1. , etc.)
+            line = re.sub(r"^[\*\-\•\d+\.]+\s*", "", line).strip()
+            if not line:
+                continue
+
+            # Check for hierarchy delimiter: "->", "=>", ":", "/", ">"
+            delim = None
+            for d in ["->", "=>", ">", ":", "/"]:
+                if d in line:
+                    delim = d
+                    break
+
+            if delim:
+                parts = [p.strip().strip('"\'') for p in line.split(delim) if p.strip()]
+                if not parts:
+                    continue
+                parent = parts[0]
+                sub_brand_mode = False
+                if "[" in parent and "]" in parent:
+                    tag_m = re.search(r'\[(.*?)\]', parent)
+                    if tag_m:
+                        tag_content = tag_m.group(1).lower()
+                        if any(w in tag_content for w in ("sub", "team", "result", "individual", "breakout")):
+                            sub_brand_mode = True
+                        parent = re.sub(r'\[.*?\]', '', parent).strip()
+
+                if parent not in target_dict:
+                    target_dict[parent] = {
+                        "subs": {}, "models": [], "inclusions": [],
+                        "result_brand_mode": "sub_brand" if sub_brand_mode else "parent",
+                        "result_brand_override": "", "sub_overrides": {}
+                    }
+                    imported_count += 1
+                else:
+                    target_dict[parent].setdefault("subs", {})
+                    target_dict[parent].setdefault("models", [])
+                    target_dict[parent].setdefault("inclusions", [])
+                    target_dict[parent].setdefault("result_brand_mode", "sub_brand" if sub_brand_mode else "parent")
+                    target_dict[parent].setdefault("result_brand_override", "")
+                    target_dict[parent].setdefault("sub_overrides", {})
+                    if sub_brand_mode:
+                        target_dict[parent]["result_brand_mode"] = "sub_brand"
+                
+                if len(parts) == 2:
+                    # Parent -> Sub or Parent -> Model
+                    sub_or_model = parts[1]
+                    sub_parts = [sp.strip().strip('"\'') for sp in sub_or_model.split(",") if sp.strip()]
+                    for sp in sub_parts:
+                        if sp not in target_dict[parent]["models"]:
+                            target_dict[parent]["models"].append(sp)
+                elif len(parts) >= 3:
+                    sub = parts[1]
+                    target_dict[parent]["subs"].setdefault(sub, [])
+                    for m in parts[2:]:
+                        m_parts = [mp.strip().strip('"\'') for mp in m.split(",") if mp.strip()]
+                        for mp in m_parts:
+                            if mp not in target_dict[parent]["subs"][sub]:
+                                target_dict[parent]["subs"][sub].append(mp)
+            else:
+                # Check for comma-separated list of standalone brand names on this line
+                if "," in line and not line.startswith('"'):
+                    b_items = [b.strip().strip('"\'') for b in line.split(",") if b.strip()]
+                    for b in b_items:
+                        if b and b not in target_dict:
+                            target_dict[b] = {"subs": {}, "models": [], "inclusions": []}
+                            imported_count += 1
+                        elif b:
+                            target_dict[b].setdefault("subs", {})
+                            target_dict[b].setdefault("models", [])
+                            target_dict[b].setdefault("inclusions", [])
+                else:
+                    b_name = line.strip().strip('"\'')
+                    if b_name and b_name not in target_dict:
+                        target_dict[b_name] = {"subs": {}, "models": [], "inclusions": []}
+                        imported_count += 1
+                    elif b_name:
+                        target_dict[b_name].setdefault("subs", {})
+                        target_dict[b_name].setdefault("models", [])
+                        target_dict[b_name].setdefault("inclusions", [])
+
+        if self.get_active_profile_name() == profile_name:
+            self._data["brands"] = target_dict
+        self._save()
+        return imported_count
+
+    def export_profile_pack(self, profile_name: str, file_path: str) -> bool:
+        """Export a brand profile to an Apollo Brand Intelligence Pack file (.apollo-pack / .json)."""
+        profs = self._data.get("brand_profiles", {})
+        if profile_name not in profs:
+            return False
+        pack_data = {
+            "apollo_version": "3.0",
+            "pack_type": "brand_profile",
+            "profile_name": profile_name,
+            "exported_at": datetime.now().isoformat(),
+            "brands": profs[profile_name]
+        }
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(pack_data, f, indent=2, ensure_ascii=False)
+            return True
+        except Exception:
+            return False
+
+    def import_profile_pack(self, file_path: str, profile_name: str = None) -> tuple[bool, str]:
+        """Import a brand profile pack file into the DataStore."""
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                return False, "Invalid pack format: Root is not a JSON object."
+            
+            # Extract brands dict and suggested profile name
+            if "brands" in data and isinstance(data["brands"], dict):
+                pack_brands = data["brands"]
+                suggested_name = profile_name or data.get("profile_name") or os.path.splitext(os.path.basename(file_path))[0]
+            else:
+                # Raw brands dictionary
+                pack_brands = data
+                suggested_name = profile_name or os.path.splitext(os.path.basename(file_path))[0]
+            
+            suggested_name = suggested_name.strip() or "Imported Profile"
+            profs = self._data.setdefault("brand_profiles", {})
+            target_name = suggested_name
+            suffix = 1
+            while target_name in profs and profile_name is None:
+                target_name = f"{suggested_name} ({suffix})"
+                suffix += 1
+
+            profs[target_name] = copy.deepcopy(pack_brands)
+            for b_name, b_val in profs[target_name].items():
+                if not isinstance(b_val, dict):
+                    profs[target_name][b_name] = {"subs": {}, "models": [], "inclusions": []}
+                else:
+                    b_val.setdefault("subs", {})
+                    b_val.setdefault("models", [])
+                    b_val.setdefault("inclusions", [])
+            
+            self._save()
+            return True, target_name
+        except Exception as e:
+            return False, str(e)
+
+    # ── brands ────────────────────────────────────────────────────────────────
+    def get_brands(self):
+        return self._data.get("brands", {})
+
+    def get_all_brands(self):
+        return list(self._data.get("brands", {}).keys())
+
+    def add_parent_brand(self, name):
+        if name not in self._data["brands"]:
+            self._data["brands"][name] = {"subs": {}, "models": [], "inclusions": []}
+            self._save()
+
+    def get_brand_inclusions(self, brand_name: str) -> list[str]:
+        """Return mandatory brand-specific inclusion terms."""
+        brand_data = self._data.get("brands", {}).get(brand_name, {})
+        return list(brand_data.get("inclusions", []))
+
+    def set_brand_inclusions(self, brand_name: str, inclusions: list[str]):
+        """Persist mandatory brand-specific inclusion terms."""
+        if brand_name in self._data.get("brands", {}):
+            clean_inc = [str(x).strip() for x in inclusions if str(x).strip()]
+            self._data["brands"][brand_name]["inclusions"] = clean_inc
+            self._save()
+
+    def get_brand_result_config(self, brand_name: str) -> dict:
+        """Return the result brand output configuration for a parent brand."""
+        b_data = self._data.get("brands", {}).get(brand_name, {})
+        if not isinstance(b_data, dict):
+            return {"mode": "parent", "override": "", "sub_overrides": {}}
+        return {
+            "mode": b_data.get("result_brand_mode", "parent"),
+            "override": b_data.get("result_brand_override", ""),
+            "sub_overrides": dict(b_data.get("sub_overrides", {}))
+        }
+
+    def set_brand_result_mode(self, brand_name: str, mode: str = "parent", override: str = "", sub_overrides: dict = None) -> bool:
+        """Persist the result brand output configuration for a parent brand."""
+        if brand_name not in self._data.get("brands", {}):
+            return False
+        b_data = self._data["brands"][brand_name]
+        if not isinstance(b_data, dict):
+            b_data = {"subs": {}, "models": [], "inclusions": []}
+            self._data["brands"][brand_name] = b_data
+        b_data["result_brand_mode"] = mode if mode in ("parent", "sub_brand", "custom") else "parent"
+        b_data["result_brand_override"] = str(override).strip() if override else ""
+        if sub_overrides is not None:
+            b_data["sub_overrides"] = {str(k).strip(): str(v).strip() for k, v in sub_overrides.items() if str(k).strip()}
+        self._save()
+        return True
+
+    def get_brand_result_name(self, parent_name: str, matched_sub: str = None) -> str:
+        """Resolve the final Output Brand name according to configured taxonomy rules."""
+        if not parent_name:
+            return matched_sub or "Unassigned"
+        brands = self.get_brands()
+        b_data = brands.get(parent_name, {})
+        if not isinstance(b_data, dict):
+            return parent_name
+
+        # 1. Check if sub-brand has an explicit individual output override
+        if matched_sub:
+            sub_overrides = b_data.get("sub_overrides", {})
+            if isinstance(sub_overrides, dict) and matched_sub in sub_overrides and sub_overrides[matched_sub]:
+                return sub_overrides[matched_sub]
+
+        # 2. Check parent brand output mode
+        mode = b_data.get("result_brand_mode", "parent")
+        if mode == "sub_brand" and matched_sub:
+            return matched_sub
+        elif mode == "custom" and b_data.get("result_brand_override"):
+            return b_data.get("result_brand_override")
+        return b_data.get("result_brand_override") or parent_name
+
+    def update_brand_entry(self, old_name: str, new_name: str, models: list[str] = None, inclusions: list[str] = None,
+                           result_brand_mode: str = None, result_brand_override: str = None, sub_overrides: dict = None):
+        """Update brand name, models list, mandatory inclusion keywords, and result brand mapping in a single atomic action."""
+        if old_name not in self._data.get("brands", {}):
+            return
+        b_data = self._data["brands"].pop(old_name)
+        if models is not None:
+            b_data["models"] = [str(m).strip() for m in models if str(m).strip()]
+        if inclusions is not None:
+            b_data["inclusions"] = [str(inc).strip() for inc in inclusions if str(inc).strip()]
+        if result_brand_mode is not None:
+            b_data["result_brand_mode"] = result_brand_mode
+        if result_brand_override is not None:
+            b_data["result_brand_override"] = str(result_brand_override).strip()
+        if sub_overrides is not None:
+            b_data["sub_overrides"] = {str(k).strip(): str(v).strip() for k, v in sub_overrides.items() if str(k).strip()}
+        target_name = new_name.strip() or old_name
+        self._data["brands"][target_name] = b_data
+        self._save()
+
+    def add_sub_brand(self, parent, name):
+        if parent in self._data["brands"]:
+            self._data["brands"][parent]["subs"].setdefault(name, [])
+            self._save()
+
+    def add_model(self, parent, sub, model):
+        try:
+            subs = self._data["brands"][parent]["subs"]
+            if sub in subs:
+                if model not in subs[sub]:
+                    subs[sub].append(model)
+            else:
+                models = self._data["brands"][parent].setdefault("models", [])
+                if model not in models:
+                    models.append(model)
+            self._save()
+        except KeyError:
+            pass
+
+    def remove_brand_item(self, name):
+        """Remove a brand/sub/model by name (searches all levels)."""
+        brands = self._data["brands"]
+        if name in brands:
+            del brands[name]
+            self._save()
+            return
+        for parent, data in brands.items():
+            if name in data.get("subs", {}):
+                del data["subs"][name]
+                self._save()
+                return
+            if name in data.get("models", []):
+                data["models"].remove(name)
+                self._save()
+                return
+            for sub, models in data.get("subs", {}).items():
+                if name in models:
+                    models.remove(name)
+                    self._save()
+                    return
+
+    def remove_multiple_brands(self, names: list[str]):
+        """Remove multiple brand items in one save operation."""
+        for name in names:
+            self.remove_brand_item(name)
+
+    def purge_all_brands(self):
+        """Permanently purge all brands, sub-brands, models, and inclusions from the Brand Registry."""
+        self._data["brands"] = {}
+        self._save()
+
+    def reorder_parent_brands(self, new_order: list[str]):
+        """Persist new parent brand ordering."""
+        new_brands = {}
+        for k in new_order:
+            if k in self._data["brands"]:
+                new_brands[k] = self._data["brands"][k]
+        for k, v in self._data["brands"].items():
+            if k not in new_brands:
+                new_brands[k] = v
+        self._data["brands"] = new_brands
+        self._save()
+
+    def reorder_models(self, parent_name: str, sub_name: str, new_models: list[str]):
+        """Persist new model ordering for a parent or sub-brand."""
+        if parent_name in self._data["brands"]:
+            if sub_name and sub_name in self._data["brands"][parent_name].get("subs", {}):
+                self._data["brands"][parent_name]["subs"][sub_name] = new_models
+            else:
+                self._data["brands"][parent_name]["models"] = new_models
+            self._save()
+
+    def reorder_subs(self, parent_name: str, new_subs: list[str]):
+        """Persist new sub-brand ordering under a parent brand."""
+        if parent_name in self._data["brands"]:
+            existing_subs = self._data["brands"][parent_name].get("subs", {})
+            new_sub_dict = {}
+            for s in new_subs:
+                if s in existing_subs:
+                    new_sub_dict[s] = existing_subs[s]
+            for s, v in existing_subs.items():
+                if s not in new_sub_dict:
+                    new_sub_dict[s] = v
+            self._data["brands"][parent_name]["subs"] = new_sub_dict
+            self._save()
+
+    def get_terms_for_brand(self, brand_name):
+        """Return the brand name + all its models as search terms."""
+        brands = self._data["brands"]
+        terms = [brand_name]
+        if brand_name in brands:
+            terms.extend(brands[brand_name].get("models", []))
+            for sub, models in brands[brand_name].get("subs", {}).items():
+                terms.append(sub)
+                terms.extend(models)
+            return terms
+        for parent, data in brands.items():
+            if brand_name in data.get("subs", {}):
+                terms.extend(data["subs"][brand_name])
+                return terms
+        return terms
+
+    # ── exclusions ────────────────────────────────────────────────────────────
+    def get_exclusions(self):
+        return self._data.get("exclusions", [])
+
+    get_generic_exclusions = get_exclusions
+
+    def add_exclusion(self, term):
+        if term not in self._data["exclusions"]:
+            self._data["exclusions"].append(term)
+            self._save()
+
+    def remove_exclusion(self, term):
+        if term in self._data["exclusions"]:
+            self._data["exclusions"].remove(term)
+            self._save()
+
+    # ── generic / modifier inclusions ─────────────────────────────────────────
+    def get_inclusions(self):
+        return self._data.setdefault("inclusions", [
+            "jersey", "shirt", "hoodie", "jacket", "signed", "autograph", "memorabilia", "vintage", "card", "hat", "cap"
+        ])
+
+    get_generic_inclusions = get_inclusions
+
+    def add_inclusion(self, term):
+        term = str(term).strip()
+        if not term:
+            return
+        incs = self.get_inclusions()
+        if term not in incs:
+            incs.append(term)
+            self._data["inclusions"] = incs
+            self._save()
+
+    def remove_inclusion(self, term):
+        term = str(term).strip()
+        incs = self.get_inclusions()
+        if term in incs:
+            incs.remove(term)
+            self._data["inclusions"] = incs
+            self._save()
+
+    # ── Multi-Dossier Staging Vault Persistence ──────────────────────────────
+    def _get_dossier_snapshot_path(self, name: str) -> str:
+        safe_name = re.sub(r'[\\/*?:"<>| ]', "_", name).strip("_") or "vault"
+        return os.path.join(DOSSIERS_DIR, f"{safe_name}.json")
+
+    def get_dossiers(self) -> dict:
+        """Return dictionary of all named dossiers: {name: [items]}."""
+        return self._data.setdefault("dossiers", {"Main Dossier": []})
+
+    def get_dossier_names(self) -> list[str]:
+        """Return list of all named dossiers."""
+        names = list(self.get_dossiers().keys())
+        if not names:
+            self._data.setdefault("dossiers", {})["Main Dossier"] = []
+            names = ["Main Dossier"]
+        return names
+
+    def get_dossier(self, name: str) -> list:
+        """Retrieve items for a specific named dossier."""
+        return list(self.get_dossiers().get(name, []))
+
+    def save_dossier(self, name: str, items: list):
+        """Persist items to a named dossier with dual-tier crash recovery snapshotting."""
+        name = name.strip() or "Main Dossier"
+        dossiers = self.get_dossiers()
+        dossiers[name] = list(items) if items else []
+        if name == "Main Dossier" or len(dossiers) == 1:
+            self._data["staged_dossier"] = dossiers[name]
+        self._save()
+
+        # Dual-tier safety snapshot for crash protection
+        try:
+            snap_path = self._get_dossier_snapshot_path(name)
+            tmp_snap = f"{snap_path}.tmp"
+            with open(tmp_snap, "w", encoding="utf-8") as f:
+                json.dump({"vault_name": name, "items": dossiers[name]}, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_snap, snap_path)
+        except Exception:
+            pass
+
+    def create_dossier(self, name: str, initial_items: list = None) -> bool:
+        """Create a new named dossier vault."""
+        name = name.strip()
+        if not name:
+            return False
+        dossiers = self.get_dossiers()
+        if name in dossiers:
+            return False
+        dossiers[name] = list(initial_items) if initial_items else []
+        self._save()
+        try:
+            snap_path = self._get_dossier_snapshot_path(name)
+            with open(snap_path, "w", encoding="utf-8") as f:
+                json.dump({"vault_name": name, "items": dossiers[name]}, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+        return True
+
+    def rename_dossier(self, old_name: str, new_name: str) -> bool:
+        """Rename an existing dossier vault."""
+        new_name = new_name.strip()
+        if not new_name or old_name == new_name:
+            return False
+        dossiers = self.get_dossiers()
+        if old_name not in dossiers or new_name in dossiers:
+            return False
+        dossiers[new_name] = dossiers.pop(old_name)
+        self._save()
+        try:
+            old_snap = self._get_dossier_snapshot_path(old_name)
+            if os.path.exists(old_snap):
+                os.remove(old_snap)
+            new_snap = self._get_dossier_snapshot_path(new_name)
+            with open(new_snap, "w", encoding="utf-8") as f:
+                json.dump({"vault_name": new_name, "items": dossiers[new_name]}, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+        return True
+
+    def delete_dossier(self, name: str) -> bool:
+        """Delete a dossier vault (prevents deleting last vault)."""
+        dossiers = self.get_dossiers()
+        if name not in dossiers or len(dossiers) <= 1:
+            return False
+        del dossiers[name]
+        if name == "Main Dossier" or not dossiers.get("Main Dossier"):
+            self._data["staged_dossier"] = []
+        self._save()
+        try:
+            snap_path = self._get_dossier_snapshot_path(name)
+            if os.path.exists(snap_path):
+                os.remove(snap_path)
+        except Exception:
+            pass
+        return True
+
+    def purge_staged_cache_and_vacuum(self) -> dict:
+        """Purge all temporary staged dossier listings, cached search scratchpads, and vacuum data.json.
+        Leaves themes, brands, exclusions, inclusions, presets, column widths, and achievements completely intact."""
+        before_bytes = os.path.getsize(DATA_FILE) if os.path.exists(DATA_FILE) else 0
+
+        # 1. Clear staged scratchpads across all dossiers
+        self._data["staged_dossier"] = []
+        if "dossiers" in self._data and isinstance(self._data["dossiers"], dict):
+            for k in list(self._data["dossiers"].keys()):
+                self._data["dossiers"][k] = []
+
+        # 2. Compact enforcement registry to keep only recent entries if excessively bloated (> 2,000)
+        reg = self._data.get("enforcement_registry", {})
+        if len(reg) > 2000:
+            sorted_keys = sorted(reg.keys(), key=lambda k: reg[k].get("last_seen", ""), reverse=True)
+            self._data["enforcement_registry"] = {k: reg[k] for k in sorted_keys[:1000]}
+
+        # 3. Clean up dossier snapshot directory
+        purged_files = 0
+        if os.path.exists(DOSSIERS_DIR):
+            for f in os.listdir(DOSSIERS_DIR):
+                if f.endswith(".json") or f.endswith(".tmp"):
+                    try:
+                        os.remove(os.path.join(DOSSIERS_DIR, f))
+                        purged_files += 1
+                    except Exception:
+                        pass
+
+        # 4. Save and compact data.json
+        self._save()
+        after_bytes = os.path.getsize(DATA_FILE) if os.path.exists(DATA_FILE) else 0
+        freed_mb = max(0.0, (before_bytes - after_bytes) / (1024 * 1024))
+
+        return {
+            "freed_mb": freed_mb,
+            "before_bytes": before_bytes,
+            "after_bytes": after_bytes,
+            "purged_snapshots": purged_files
+        }
+
+    def clear_dossier(self, name: str):
+        """Clear all listings from a specific dossier vault."""
+        dossiers = self.get_dossiers()
+        if name in dossiers:
+            dossiers[name] = []
+            if name == "Main Dossier":
+                self._data["staged_dossier"] = []
+            self._save()
+            try:
+                snap_path = self._get_dossier_snapshot_path(name)
+                with open(snap_path, "w", encoding="utf-8") as f:
+                    json.dump({"vault_name": name, "items": []}, f, indent=2, ensure_ascii=False)
+            except Exception:
+                pass
+
+    def get_total_staged_count(self) -> int:
+        """Return total count of listings across all staged dossiers."""
+        return sum(len(items) for items in self.get_dossiers().values() if isinstance(items, list))
+
+    def get_all_dossiers_combined(self) -> list:
+        """Combine all listings across all dossiers into a single deduplicated list."""
+        combined = []
+        seen_keys = set()
+        for d_name, items in self.get_dossiers().items():
+            if not isinstance(items, list):
+                continue
+            for it in items:
+                u = str(it.get("url", "")).split("?")[0].lower()
+                iid = str(it.get("item_id", "")).strip()
+                k = f"u::{u}" if u else f"id::{it.get('marketplace', '')}::{iid}"
+                if k not in seen_keys:
+                    seen_keys.add(k)
+                    combined.append(it)
+        return combined
+
+    # Backward compatibility helpers
+    def get_staged_dossier(self) -> list:
+        """Retrieve default staged dossier listings."""
+        dossiers = self.get_dossiers()
+        if "Main Dossier" in dossiers:
+            return list(dossiers["Main Dossier"])
+        if dossiers:
+            return list(dossiers[list(dossiers.keys())[0]])
+        return []
+
+    def save_staged_dossier(self, items: list):
+        """Save to default Main Dossier."""
+        self.save_dossier("Main Dossier", items)
+
+    def clear_staged_dossier(self):
+        """Clear default Main Dossier."""
+        self.clear_dossier("Main Dossier")
+
+    # ── presets / portfolio bundles ───────────────────────────────────────────
+    def get_presets(self):
+        default_presets = {
+            "🏢 Dub's Automotive Portfolio (Toyota, GM, Subaru, Hyundai/Kia)": [
+                "Toyota", "Lexus", "General Motors", "Chevrolet", "ACDelco", "Subaru", "Hyundai", "Kia"
+            ],
+            "🏁 Toyota & Lexus Full Sweep": [
+                "Toyota", "Lexus"
+            ],
+            "💎 GM & ACDelco Big 4 (Chevy, GMC, Buick, Cadillac, ACDelco)": [
+                "General Motors", "Chevrolet", "GMC", "Buick", "Cadillac", "ACDelco"
+            ],
+            "🔥 MOPAR & Honda Suite (Dodge, Jeep, Honda, Acura)": [
+                "Dodge", "Jeep", "Chrysler", "RAM", "Honda", "Acura"
+            ],
+            "🌐 Complete All-Brands Store Sweep": list(self.get_brands().keys())
+        }
+        presets = self._data.setdefault("presets", default_presets)
+        return presets
+
+    def save_preset(self, name, preset_payload):
+        """Save a portfolio preset. Accepts either a list of brands or a full snapshot dict."""
+        presets = self.get_presets()
+        if isinstance(preset_payload, dict):
+            presets[name] = {
+                "brands": list(preset_payload.get("brands", [])),
+                "generic_excludes": list(preset_payload.get("generic_excludes", [])),
+                "generic_includes": list(preset_payload.get("generic_includes", [])),
+                "custom_includes": list(preset_payload.get("custom_includes", [])),
+                "condition": preset_payload.get("condition", "all")
+            }
+        else:
+            presets[name] = list(preset_payload)
+        self._data["presets"] = presets
+        self._save()
+
+    def delete_preset(self, name):
+        presets = self.get_presets()
+        if name in presets:
+            del presets[name]
+            self._data["presets"] = presets
+            self._save()
+
+    # ── Enforcement & Recidivism Registry (A2C2 / Brand Protection) ──────────
+    def get_enforcement_registry(self):
+        return self._data.setdefault("enforcement_registry", {})
+
+    def record_enforcement_scan(self, seller_or_store: str, items: list, brand_name: str = "", auto_save: bool = True):
+        """Record harvested results for a seller into the permanent enforcement registry."""
+        if not seller_or_store or not seller_or_store.strip():
+            return
+        seller = seller_or_store.strip()
+        reg = self.get_enforcement_registry()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        entry = reg.setdefault(seller, {
+            "seller_handle": seller,
+            "first_detected": now_str,
+            "last_scanned": now_str,
+            "total_infringements": 0,
+            "total_clean_items": 0,
+            "total_value": 0.0,
+            "total_listings": 0,
+            "items": [],
+            "brands_targeted": [],
+            "product_types": [],
+            "locations": [],
+            "country": "Unresolved",
+            "threat_badge": "",
+            "risk_tier": "Low",
+            "historical_scan_count": 0,
+            "strike_history": []
+        })
+
+        entry["last_scanned"] = now_str
+        entry["historical_scan_count"] = entry.get("historical_scan_count", 0) + 1
+
+        if brand_name and brand_name not in entry.get("brands_targeted", []):
+            entry.setdefault("brands_targeted", []).append(brand_name)
+
+        existing_items = entry.setdefault("items", [])
+        existing_ids = {it.get("item_id") for it in existing_items if it.get("item_id")}
+        
+        entry_brands = set(entry.get("brands_targeted", []))
+        entry_pts = set(entry.get("product_types", []))
+        entry_locs = set(entry.get("locations", []))
+        
+        try:
+            current_total_value = float(entry.get("total_value", 0.0) or 0.0)
+        except (ValueError, TypeError):
+            current_total_value = 0.0
+
+        flagged_items = []
+        for itm in items:
+            raw_score = itm.get("threat_score", 0)
+            try:
+                t_score = float(raw_score) if raw_score not in (None, "", "None", "N/A") else 0.0
+            except (ValueError, TypeError):
+                t_score = 0.0
+
+            is_cf = (
+                itm.get("high_risk") or 
+                itm.get("counterfeit") or 
+                itm.get("visual_counterfeit") or
+                t_score >= 70.0 or 
+                any(kw in str(itm.get("threat_badge", "")).lower() for kw in ("counterfeit", "syndicate", "flagged", "3pl", "high"))
+            )
+            if is_cf:
+                entry["total_infringements"] = entry.get("total_infringements", 0) + 1
+                flagged_items.append({
+                    "item_id": itm.get("item_id"),
+                    "title": itm.get("title"),
+                    "price": itm.get("price"),
+                    "threat_score": t_score,
+                    "threat_badge": itm.get("threat_badge", ""),
+                    "timestamp": now_str
+                })
+            else:
+                entry["total_clean_items"] = entry.get("total_clean_items", 0) + 1
+
+            # Aggregate item cards, prices, and locations
+            iid = itm.get("item_id")
+            if iid and iid not in existing_ids:
+                existing_ids.add(iid)
+                # Keep up to 500 items per seller in data.json to protect memory and file size
+                if len(existing_items) < 500:
+                    existing_items.append(dict(itm))
+                
+                # Parse numeric price
+                p_str = str(itm.get("price", "0"))
+                m_p = re.search(r"[\d,]+(?:\.\d+)?", p_str)
+                if m_p:
+                    try:
+                        p_val = float(m_p.group(0).replace(",", ""))
+                        current_total_value += p_val
+                    except Exception:
+                        pass
+
+            b = itm.get("brand")
+            if b and b not in ("Unknown", ""): entry_brands.add(b)
+            pt = itm.get("product_type")
+            if pt and pt not in ("Accessories", ""): entry_pts.add(pt)
+            loc = itm.get("location")
+            if loc: entry_locs.add(loc)
+            
+            orig = itm.get("seller_origin") or itm.get("country")
+            if orig and orig != "Unknown" and (not entry.get("country") or entry.get("country") == "Unresolved"):
+                entry["country"] = orig
+            tb = itm.get("threat_badge")
+            if tb and not entry.get("threat_badge"):
+                entry["threat_badge"] = tb
+
+        entry["total_value"] = round(current_total_value, 2)
+        entry["total_listings"] = len(existing_ids) if existing_ids else len(existing_items)
+        entry["brands_targeted"] = sorted(list(entry_brands))
+        entry["product_types"] = sorted(list(entry_pts))
+        entry["locations"] = sorted(list(entry_locs))
+
+        total_bad = entry.get("total_infringements", 0)
+        total_good = entry.get("total_clean_items", 0)
+        total_all = total_bad + total_good
+
+        if total_bad >= 20 or (total_all > 0 and (total_bad / total_all) >= 0.5 and total_bad >= 5):
+            entry["risk_tier"] = "🚨 Critical Recidivist (Syndicate)"
+        elif total_bad >= 5:
+            entry["risk_tier"] = "⚠ High Risk (Repeat Offender)"
+        elif total_bad >= 1:
+            entry["risk_tier"] = "🟡 Moderate (Flagged)"
+        else:
+            entry["risk_tier"] = "🟢 Clean / Low"
+
+        if flagged_items:
+            entry.setdefault("strike_history", []).append({
+                "scan_date": now_str,
+                "flagged_count": len(flagged_items),
+                "sample_items": flagged_items[:5]
+            })
+
+        if auto_save:
+            self._save()
+
+    def record_enforcement_scans_batch(self, seller_items_map: dict, brand_name: str = "", progress_callback=None):
+        """
+        Record harvested results for multiple sellers in a single high-performance batch pass,
+        persisting to disk exactly once at the end.
+        """
+        if not seller_items_map:
+            return
+        total = len(seller_items_map)
+        for idx, (seller, s_items) in enumerate(seller_items_map.items()):
+            self.record_enforcement_scan(seller, s_items, brand_name=brand_name, auto_save=False)
+            if progress_callback and (idx % 250 == 0 or idx == total - 1):
+                progress_callback(idx + 1, total)
+        self._save()
+
+    def save_enforcement_registry(self, reg_dict: dict):
+        """Persist updated enforcement registry dictionary."""
+        self._data["enforcement_registry"] = reg_dict
+        self._save()
+
+    def delete_registry_entry(self, seller_handle: str):
+        """Remove a seller record from the enforcement registry."""
+        if not seller_handle:
+            return
+        reg = self.get_enforcement_registry()
+        clean = seller_handle.strip()
+        if clean in reg:
+            del reg[clean]
+            self._save()
+        else:
+            # Also check case-insensitive match
+            for k in list(reg.keys()):
+                if k.lower() == clean.lower():
+                    del reg[k]
+                    self._save()
+                    break
+
+    def clear_enforcement_registry(self):
+        """Clear all records in the enforcement registry."""
+        self._data["enforcement_registry"] = {}
+        self._save()
+
+    def get_seller_intel(self, seller_handle: str) -> dict:
+        """Retrieve cached threat intel profile for a seller."""
+        intel_cache = self._data.setdefault("seller_intel_cache", {})
+        return intel_cache.get(seller_handle.strip(), {})
+
+    def set_seller_intel(self, seller_handle: str, country: str, member_since: str = ""):
+        """Cache resolved location & age for a seller handle."""
+        if not seller_handle or not seller_handle.strip():
+            return
+        intel_cache = self._data.setdefault("seller_intel_cache", {})
+        intel_cache[seller_handle.strip()] = {
+            "country": country,
+            "member_since": member_since,
+            "resolved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        self._save()
+
+    COUNTRY_FLAGS = {
+        "china": "🇨🇳", "cn": "🇨🇳", "hong kong": "🇭🇰", "hk": "🇭🇰",
+        "united states": "🇺🇸", "us": "🇺🇸", "usa": "🇺🇸",
+        "united kingdom": "🇬🇧", "uk": "🇬🇧", "gb": "🇬🇧",
+        "france": "🇫🇷", "fr": "🇫🇷",
+        "germany": "🇩🇪", "de": "🇩🇪",
+        "spain": "🇪🇸", "es": "🇪🇸",
+        "italy": "🇮🇹", "it": "🇮🇹",
+        "poland": "🇵🇱", "pl": "🇵🇱",
+        "mexico": "🇲🇽", "mx": "🇲🇽",
+        "brazil": "🇧🇷", "br": "🇧🇷",
+        "argentina": "🇦🇷", "ar": "🇦🇷",
+        "colombia": "🇨🇴", "co": "🇨🇴",
+        "chile": "🇨🇱", "cl": "🇨🇱",
+        "peru": "🇵🇪", "pe": "🇵🇪",
+        "netherlands": "🇳🇱", "nl": "🇳🇱",
+        "belgium": "🇧🇪", "be": "🇧🇪",
+        "japan": "🇯🇵", "jp": "🇯🇵",
+        "canada": "🇨🇦", "ca": "🇨🇦",
+        "australia": "🇦🇺", "au": "🇦🇺",
+        "turkey": "🇹🇷", "tr": "🇹🇷",
+        "vietnam": "🇻🇳", "vn": "🇻🇳",
+        "taiwan": "🇹🇼", "tw": "🇹🇼",
+        "thailand": "🇹🇭", "th": "🇹🇭",
+        "india": "🇮🇳", "in": "🇮🇳",
+    }
+
+    def compute_threat_assessment(self, origin: str, location: str = "", seller_name: str = "") -> dict:
+        """
+        Compute high-risk cross-border threat badge, burner handle identification, and 3PL hub assessment.
+        """
+        orig_clean = str(origin or "").strip().lower()
+        loc_clean = str(location or "").strip().lower()
+        s_name = str(seller_name or "").strip()
+
+        # Burner / disposable machine-generated handle detection (e.g. F20250910190122, ELITEELITE20220923105415, NASCIMENTOANDRE20231123084227)
+        is_burner_handle = False
+        if s_name and s_name not in ("Mercado Libre Seller", "Unknown", "Unresolved") and not s_name.startswith("MeLi_Seller_"):
+            digit_count = sum(c.isdigit() for c in s_name)
+            is_burner_handle = bool(
+                re.search(r'\d{8,}$', s_name) or
+                re.search(r'(?:201\d|202\d|203\d)(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{2,}', s_name) or
+                re.search(r'^[a-zA-Z]{1,6}\d{6,}$', s_name) or
+                re.search(r'^(?:user|usuario|vendedor|cliente)[_\d-]+$', s_name.lower()) or
+                (len(s_name) >= 8 and digit_count >= 6 and (digit_count / len(s_name)) >= 0.45)
+            )
+
+        # Foreign high-risk manufacturing / counterfeit syndication hubs
+        is_foreign_risk = any(k in orig_clean for k in (
+            "china", "cn", "hong kong", "hk", "shenzhen", "guangdong", "zhejiang", "yiwu", "beijing", "shanghai",
+            "india", "delhi", "mumbai", "jaipur", "bangalore", "pakistan", "vietnam", "thailand", "taiwan"
+        )) or any(k in loc_clean for k in (
+            "china", "hong kong", "shenzhen", "guangdong", "yiwu", "beijing", "shanghai", "india", "pakistan"
+        ))
+
+        # Domestic delivery & 3PL fulfillment warehouse indicators
+        is_domestic_delivery = bool(re.search(
+            r'\b(united states|usa|us|california|ca|nj|new jersey|tx|texas|ky|kentucky|uk|united kingdom|germany|de|france|fr|spain|es|italy|it|poland|pl)\b',
+            loc_clean
+        ))
+
+        is_3pl = is_foreign_risk and is_domestic_delivery
+
+        country_resolved = "Unknown"
+        # Prioritize registered origin over item shipping location
+        for cname in self.COUNTRY_FLAGS.keys():
+            if re.search(r'\b' + re.escape(cname) + r'\b', orig_clean):
+                country_resolved = cname.title()
+                break
+        if country_resolved == "Unknown":
+            for cname in self.COUNTRY_FLAGS.keys():
+                if re.search(r'\b' + re.escape(cname) + r'\b', loc_clean):
+                    country_resolved = cname.title()
+                    break
+
+        badge = "❓ Unresolved"
+        is_high = False
+
+        if is_burner_handle:
+            badge = "🚩 Suspicious Burner Handle"
+            is_high = True
+        elif is_3pl:
+            badge = "🚨 Foreign Drop-Ship Hub"
+            is_high = True
+        elif is_foreign_risk:
+            badge = "⚠ Cross-Border Direct"
+            is_high = True
+        elif any(c in orig_clean for c in ("mexico", "brazil", "argentina", "colombia", "chile", "peru")):
+            badge = "🌎 Latin America Hub"
+            is_high = False
+        elif any(c in orig_clean for c in ("united kingdom", "uk", "france", "germany", "spain", "italy", "poland", "netherlands", "belgium")):
+            badge = "🇪🇺 European Direct"
+            is_high = False
+        elif bool(re.search(r'\b(united states|usa|us)\b', orig_clean)):
+            badge = "🇺🇸 Domestic Verified"
+            is_high = False
+        elif orig_clean and orig_clean not in ("unknown", "unresolved", ""):
+            badge = f"🌍 {country_resolved}"
+            is_high = False
+        elif loc_clean:
+            if any(k in loc_clean for k in ("maker", "artisan", "creator", "global maker", "etsy")):
+                badge = "🧶 Commercial Maker (Etsy)"
+            elif is_3pl or any(k in loc_clean for k in ("warehouse", "distribution", "logistics", "fulfillment", "hub", "center")):
+                badge = "❓ Warehouse (Unresolved Origin)"
+            else:
+                badge = "❓ Unresolved Origin"
+            is_high = False
+
+        return {
+            "country": country_resolved if country_resolved != "Unknown" else (origin or "Unresolved"),
+            "badge": badge,
+            "is_high_risk": is_high,
+            "is_3pl_hub": is_3pl,
+            "is_burner_handle": is_burner_handle
+        }
+
+    # ── Universal Compatibility Fluff & Multi-Brand Spam Detection ─────────────
+    COMPETING_CAR_BRANDS = [
+        "toyota", "lexus", "scion", "honda", "acura", "ford", "lincoln",
+        "chevrolet", "chevy", "gmc", "cadillac", "buick", "dodge", "ram", "chrysler", "jeep",
+        "nissan", "infiniti", "subaru", "hyundai", "kia", "genesis",
+        "mazda", "mitsubishi", "volkswagen", "vw", "audi", "porsche",
+        "bmw", "mercedes", "benz", "volvo", "land rover", "jaguar"
+    ]
+
+    HIGH_RISK_COMPONENTS = [
+        "spark plug", "ignition coil", "oil filter", "air filter", "cabin filter",
+        "emblem", "badge", "grille logo", "center cap", "wheel cap", "hubcap",
+        "key fob", "remote key", "smart key", "key case",
+        "oxygen sensor", "o2 sensor", "mass air flow", "maf sensor", "fuel injector", "fuel pump",
+        "trd", "hellcat", "mopar", "denso", "brembo", "motorcraft", "acdelco"
+    ]
+
+    UNIVERSAL_FLUFF_CATEGORIES = [
+        "seat cover", "seat cushion", "floor mat", "trunk mat", "cargo liner",
+        "phone holder", "phone mount", "cup holder",
+        "windshield sunshade", "sun shade", "sunshade", "car cover", "sunstrip",
+        "wiper blade", "wiper refill", "wiper arm",
+        "steering wheel cover", "steering wheel wrap",
+        "led strip", "interior ambient light", "underglow",
+        "air freshener", "diffuser", "perfume",
+        "door edge guard", "anti-collision strip", "bumper guard",
+        "obd2 scanner", "diagnostic tool", "code reader",
+        "blind spot mirror", "trash can", "organizer bag"
+    ]
+
+    def is_universal_fluff(self, title: str, product_type: str = "") -> tuple[bool, str]:
+        """
+        Evaluate if listing is non-enforceable universal accessory fluff or multi-brand title spam.
+        CRITICAL: Never suppresses high-risk counterfeit components (plugs, coils, filters, emblems, fobs).
+        Returns (is_fluff: bool, reason: str).
+        """
+        if not title:
+            return False, ""
+        t_low = title.lower()
+
+        # 1. High-Risk Component Exemption (NEVER SUPPRESS!)
+        for comp in self.HIGH_RISK_COMPONENTS:
+            if re.search(r'\b' + re.escape(comp) + r'\b', t_low):
+                return False, ""
+
+        # 2. Multi-Brand Title Spam (3+ competing car brands in title)
+        brand_hits = [b for b in self.COMPETING_CAR_BRANDS if re.search(r'\b' + re.escape(b) + r'\b', t_low)]
+        if len(set(brand_hits)) >= 3:
+            top_3 = sorted(set(brand_hits))[:3]
+            return True, f"Multi-Brand Spam ({len(set(brand_hits))} brands: {', '.join(top_3)})"
+
+        # 3. Compatibility Keyword + Universal Fluff Category
+        has_compat = bool(re.search(r'\b(fits|for|compatible with|replacement for|suitable for|pour|para|für|adaptable a)\b', t_low))
+        for fluff_cat in self.UNIVERSAL_FLUFF_CATEGORIES:
+            if re.search(r'\b' + re.escape(fluff_cat) + r's?\b', t_low):
+                if has_compat:
+                    return True, f"Universal Compatibility ({fluff_cat.title()})"
+                if product_type and fluff_cat in product_type.lower():
+                    return True, f"Universal Fluff ({fluff_cat.title()})"
+
+        return False, ""
+
+    def get_column_visibility(self) -> dict:
+        """Get column visibility configuration, defaulting to all visible except thumbnail."""
+        defaults = {
+            "brand": True,
+            "product_type": True,
+            "title": True,
+            "item_id": True,
+            "price": True,
+            "seller": True,
+            "seller_origin": True,
+            "threat_badge": True,
+            "location": True,
+            "thumbnail": False,
+            "url": True
+        }
+        saved = self._data.setdefault("settings", {}).get("column_visibility", {})
+        merged = defaults.copy()
+        merged.update(saved)
+        return merged
+
+    def set_column_visibility(self, visibility_dict: dict):
+        """Persist column visibility dictionary."""
+        self._data.setdefault("settings", {})["column_visibility"] = visibility_dict
+        self._save()
+
+    def set_single_column_visibility(self, col: str, visible: bool):
+        """Update single column visibility state."""
+        current = self.get_column_visibility()
+        current[col] = bool(visible)
+        self.set_column_visibility(current)
+
+    def get_show_analyst_hints(self) -> bool:
+        """Check if analyst hover onboarding tooltips are enabled."""
+        return self._data.setdefault("settings", {}).get("show_analyst_hints", True)
+
+    def set_show_analyst_hints(self, enabled: bool):
+        """Set analyst hover onboarding tooltips setting."""
+        self._data.setdefault("settings", {})["show_analyst_hints"] = bool(enabled)
+        self._save()
+
+    # ── authorized dealer whitelist ───────────────────────────────────────────
+    def get_whitelist(self) -> dict:
+        """Get dictionary of all whitelisted sellers/dealers."""
+        return self._data.setdefault("whitelist", {})
+
+    def is_seller_whitelisted(self, seller_handle: str, marketplace: str = "") -> bool:
+        """Check if seller handle is on authorized dealer whitelist, respecting marketplace scope."""
+        if not seller_handle:
+            return False
+        clean = str(seller_handle).strip().lower()
+        mp_clean = str(marketplace).strip().lower()
+        wl = self.get_whitelist()
+        for k, v in wl.items():
+            if str(k).strip().lower() == clean:
+                target_mp = str(v.get("marketplace", "All Marketplaces")).lower()
+                if "all" in target_mp or not mp_clean or target_mp in mp_clean or mp_clean in target_mp:
+                    return True
+        return False
+
+    def add_to_whitelist(self, seller_handle: str, brand: str = "General", dealer_name: str = "", notes: str = "", marketplace: str = "All Marketplaces"):
+        """Add or update an authorized dealer on the whitelist."""
+        if not seller_handle:
+            return
+        clean = str(seller_handle).strip()
+        wl = self.get_whitelist()
+        import datetime
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        orig_date = wl.get(clean, {}).get("date_added") or wl.get(clean, {}).get("added_at") or now_str
+
+        wl[clean] = {
+            "brand": brand or "General",
+            "dealer_name": dealer_name or "Authorized Dealership",
+            "notes": notes or "",
+            "marketplace": marketplace or "All Marketplaces",
+            "date_added": orig_date,
+            "date_updated": now_str
+        }
+        self._save()
+
+    def remove_from_whitelist(self, seller_handle: str):
+        """Remove a seller from the authorized dealer whitelist."""
+        if not seller_handle:
+            return
+        clean = str(seller_handle).strip().lower()
+        wl = self.get_whitelist()
+        found_key = None
+        for k in wl.keys():
+            if str(k).strip().lower() == clean:
+                found_key = k
+                break
+        if found_key and found_key in wl:
+            del wl[found_key]
+            self._save()
+
+    def get_document_intel_presets(self) -> dict:
+        """Return editable document and technical standards presets."""
+        defaults = {
+            "vehicle_manuals": [
+                "service manual", "workshop manual", "wiring diagram",
+                "electrical schematic", "repair guide", "factory manual",
+                "ECU pinout", "shop manual"
+            ],
+            "oem_standards": [
+                "GMW", "GMW*", "material specification",
+                "engineering standard", "test procedure", "WSS-M", "MS-"
+            ],
+            "benign_exclusions": [
+                "10-K", "annual report", "investor presentation",
+                "quarterly earnings", "proxy statement", "sustainability report",
+                "gamer", "gaming", "workspace", "podcast", "music",
+                "casio", "g-shock", "watch", "bezel", "strap"
+            ]
+        }
+        return self._data.get("document_intel", defaults)
+
+    def set_document_intel_presets(self, presets: dict):
+        """Update and persist editable document intelligence presets."""
+        self._data["document_intel"] = presets
+        self._save()
+
+    def get_product_taxonomy(self) -> dict:
+        """Return editable product type taxonomy organized by industry."""
+        return self._data.get("product_taxonomy", DEFAULT_PRODUCT_TAXONOMY)
+
+    def set_product_taxonomy(self, taxonomy: dict):
+        """Persist custom product type taxonomy organized by industry."""
+        self._data["product_taxonomy"] = taxonomy
+        self._save()
+
+    def reset_product_taxonomy(self) -> dict:
+        """Reset product type taxonomy back to factory defaults."""
+        self._data["product_taxonomy"] = json.loads(json.dumps(DEFAULT_PRODUCT_TAXONOMY))
+        self._save()
+        return self._data["product_taxonomy"]
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  CRASH RESILIENCY & LIVE SESSION AUTOSAVE
+    # ══════════════════════════════════════════════════════════════════════════
+    def get_session_file_path(self) -> str:
+        """Return the absolute path to the live autosave session file."""
+        return os.path.join(get_base_dir(), "active_session.json")
+
+    def save_active_session(self, results: list, query: str = "", brand: str = "", market: str = "", extra_meta: dict = None) -> bool:
+        """Atomically persist current working session to disk to prevent data loss on crash."""
+        if not results:
+            self.clear_active_session()
+            return True
+        session_file = self.get_session_file_path()
+        tmp_file = session_file + f".tmp.{os.getpid()}"
+        payload = {
+            "saved_at": datetime.now().isoformat(),
+            "query": query,
+            "brand": brand,
+            "market": market,
+            "count": len(results),
+            "meta": extra_meta or {},
+            "results": results
+        }
+        try:
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False)
+            os.replace(tmp_file, session_file)
+            return True
+        except Exception:
+            try:
+                if os.path.exists(tmp_file):
+                    os.remove(tmp_file)
+            except Exception:
+                pass
+            return False
+
+    def get_active_session(self) -> dict:
+        """Retrieve previously crashed or active un-cleared session if available."""
+        session_file = self.get_session_file_path()
+        if not os.path.exists(session_file):
+            return None
+        try:
+            with open(session_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and data.get("results") and isinstance(data["results"], list) and len(data["results"]) > 0:
+                return data
+        except Exception:
+            pass
+        return None
+
+    def clear_active_session(self):
+        """Clear active session file when user explicitly resets or cleans the results table."""
+        session_file = self.get_session_file_path()
+        try:
+            if os.path.exists(session_file):
+                os.remove(session_file)
+        except Exception:
+            pass
+
+
+DEFAULT_PRODUCT_TAXONOMY = {
+    "🚗 Automotive & Powersports": {
+        "Spark Plugs": ["spark plug", "sparkplug", "iridium", "platinum plug"],
+        "Headlights / Lamps": ["headlight", "headlamp", "tail light", "fog light", "lamp assembly", "led headlight", "turn signal"],
+        "Brake Pads / Rotors": ["brake pad", "brake rotor", "caliper", "brake shoe", "brake disc", "brake kit"],
+        "Oil / Fuel Filters": ["oil filter", "fuel filter", "air filter", "cabin filter", "oil strainer"],
+        "Ignition Coils": ["ignition coil", "coil pack", "coil-on-plug", "spark coil"],
+        "Emblems / Badges": ["emblem", "badge", "logo", "grille emblem", "trunk emblem", "hood ornament", "nameplate"],
+        "Key Fobs / Cases": ["key fob", "remote key", "smart key", "key shell", "key case", "transponder key"],
+        "Water / Fuel Pumps": ["water pump", "coolant pump", "fuel pump", "high pressure fuel pump"],
+        "Oxygen & Air Sensors": ["oxygen sensor", "o2 sensor", "lambda sensor", "maf sensor", "mass air flow", "map sensor"],
+        "Turbochargers & Boost": ["turbocharger", "turbo", "wastegate", "blow off valve", "intercooler"],
+        "Suspension & Steering": ["control arm", "ball joint", "tie rod", "sway bar", "strut assembly", "shock absorber"]
+    },
+    "👕 Apparel & Fashion Merch": {
+        "T-Shirts & Tops": ["t-shirt", "tee shirt", "tshirt", "graphic tee", "tank top", "crop top", "v-neck"],
+        "Hoodies & Sweatshirts": ["hoodie", "sweatshirt", "pullover", "crewneck", "fleece", "sweater"],
+        "Hats & Caps": ["hat", "cap", "snapback", "dad hat", "beanie", "trucker hat", "bucket hat", "visor"],
+        "Jackets & Outerwear": ["jacket", "coat", "windbreaker", "bomber jacket", "parka", "vest"],
+        "Pants & Leggings": ["leggings", "joggers", "sweatpants", "pants", "shorts", "trousers"],
+        "Footwear & Shoes": ["shoes", "sneakers", "boots", "slides", "sandals", "loafers", "kicks"],
+        "Bags & Backpacks": ["backpack", "tote bag", "duffle bag", "fanny pack", "messenger bag", "crossbody bag", "wallet", "purse"],
+        "Jewelry & Watches": ["watch", "bracelet", "necklace", "ring", "earrings", "pendant", "chain", "bezel", "watch glass"]
+    },
+    "🛠 Tools & Industrial Hardware": {
+        "Power Tools": ["cordless drill", "impact driver", "angle grinder", "circular saw", "reciprocating saw", "rotary tool"],
+        "Hand Tools": ["wrench", "socket set", "pliers", "screwdriver", "hammer", "ratchet", "hex key", "allen wrench"],
+        "Blades & Drill Bits": ["saw blade", "drill bit", "router bit", "carbide blade", "diamond blade"],
+        "Measuring & Levels": ["tape measure", "laser level", "caliper", "multimeter", "micrometer"],
+        "Hardware & Fasteners": ["screws", "bolts", "nuts", "anchors", "rivets", "washers", "clamps"]
+    },
+    "🏠 Appliances, Home & Living": {
+        "Drinkware & Mugs": ["mug", "coffee mug", "tumbler", "travel mug", "water bottle", "flask", "glassware"],
+        "Wall Art & Posters": ["poster", "canvas print", "wall art", "metal print", "art print", "tapestry", "framed print"],
+        "Bedding & Pillows": ["pillow", "throw pillow", "cushion", "blanket", "throw blanket", "duvet cover"],
+        "Phone Cases & Tech": ["phone case", "iphone case", "samsung case", "airpods case", "laptop sleeve", "mousepad", "desk mat"],
+        "Stickers & Decals": ["sticker", "decal", "vinyl sticker", "bumper sticker", "die cut sticker"],
+        "Kitchen Appliances": ["air fryer", "blender", "coffee maker", "toaster", "food processor", "microwave"]
+    },
+    "💊 Pharmaceuticals & Veterinary": {
+        "Dewormers & Parasiticides": ["safeguard", "dewormer", "antiparasitario", "ivermectin", "suspension", "paste", "drench", "anthelmintic", "fenbendazole"],
+        "Flea, Tick & Pest": ["flea", "tick", "frontline", "bravecto", "seresto", "nexgard", "simparica"],
+        "Supplements & Vitamins": ["supplement", "vitamins", "probiotic", "omega 3", "joint support"]
+    },
+    "📱 Electronics, Audio & Computing": {
+        "Headphones & Audio": ["headphones", "earbuds", "wireless earbuds", "bluetooth speaker", "soundbar", "microphone"],
+        "Chargers & Power": ["charger", "fast charger", "usb-c cable", "power bank", "magsafe", "charging station"],
+        "Computer Components": ["graphics card", "gpu", "cpu", "motherboard", "ram memory", "ssd drive", "power supply"]
+    }
+}
+

@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "apollo-brand-intelligence"
+version = "3.4.0"
+description = "Enterprise Brand Protection, Threat Intelligence & Multi-Marketplace Analysis Suite"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Proprietary / Confidential"}
+authors = [
+    {name = "Apollo Engineering Team"}
+]
+dependencies = [
+    "beautifulsoup4>=4.12.0",
+    "curl_cffi>=0.7.0",
+    "openpyxl>=3.1.2",
+    "pillow>=10.0.0",
+    "playwright>=1.40.0",
+    "pypdf>=4.0.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+voice = [
+    "SpeechRecognition>=3.10.0",
+    "pyaudio>=0.2.14",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pyinstaller>=6.0.0",
+]
+
+[project.scripts]
+apollo = "run_apollo:main"

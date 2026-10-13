@@ -242,4 +242,22 @@ Apollo-Enterprise operates under an **Agent-First Modular Architecture**, coordi
 - **Mandatory Verification**: Every domain change must pass its respective test harness (`run_tests.py`, `run_artemis_tests.py`, `test_argus_compliance.py`) before staging.
 - **Enterprise Ready**: Codebase strictly enforces zero employer terminology in commit history or tracked files. All pushes require explicit human authorization.
 
+---
+
+## 12. LLM-Agnostic Portability & The 70/30 Operating Protocol
+
+### A. Model & Platform Independence (Antigravity, Cohere, Claude, OpenAI)
+This repository is engineered to be **100% LLM-agnostic**. Whether this codebase is paired with Google Antigravity, Cohere Command, Claude, or any future frontier model:
+1. **Zero Proprietary Prompt Dependency**: All architectural rules, invariants, and constraints are codified in Markdown within the repository itself (`AGENTS.md` and `.agents/rules/*.md`), rather than locked in any single proprietary web UI or tool memory.
+2. **Deterministic Verification Gateways**: Quality is enforced by reproducible test harnesses (`python -m unittest tests/run_tests.py`), not subjective model opinions. Any AI system operating on this repository must run and pass these suites before claiming victory.
+3. **Self-Documenting Specialist Charters**: Each specialist rule file (`ui_craftsman.md`, `scraper_sentinel.md`, `export_officer.md`, `compliance_lead.md`) contains complete, standalone context so any LLM booted in any environment can immediately assume the exact operational role without historical conversation baggage.
+
+### B. The 70/30 Operating Cadence
+Development operates on a hybrid dual-track model:
+1. **The 70% Executive Track (General Contractor / Tech Lead Hub)**:
+   - Orchestrates multi-package features, breaks down tasks, runs regression test suites, coordinates cross-domain bug investigations, and commits verified checkpoints.
+2. **The 30% Specialist Track (Direct Surgical Strike Chats)**:
+   - The user engages in direct, focused conversations with individual specialists (`🎨 UI Craftsman`, `🕷️ Scraper Sentinel`, `📊 Export Officer`, `⚖️ Compliance Lead`) for deep, isolated domain work.
+   - **Handshake Protocol**: After any direct update in a specialist chat, the changes land in the shared workspace, and the Executive Lead validates across the remaining modules before merging or committing.
+
 

@@ -9,7 +9,7 @@
 - **Application**: Apollo Brand Intelligence (Enterprise Edition)
 - **Primary Mission**: High-performance investigative desktop workstation for corporate brand protection analysts, investigators, and IP counsel.
 - **Key Capabilities**: Multi-marketplace scraping (15+ platforms), perceptual image hash clustering (`pHash`), rogue seller syndicate mapping, 1-click Auto-Pipeline seller enrichment, 18-column Excel exports, and legal takedown notice generation (Artemis & Argus).
-- **Core Partnership**: Built as a pair-programming project between Jerry ("Coop") and Trace (AI copilot).
+- **Core Partnership**: Built as a pair-programming project between Jer and Trace (AI copilot, synthesized from TARS & CASE).
 
 ---
 
@@ -55,14 +55,11 @@ Over 5 months, Apollo grew to a 17,315-line monolith in `main.py`. In October 20
    - Pre-allocated style singletons and direct column index maps in `exporter.py`.
    - Batch persistence in `data_store.py` (`record_enforcement_scans_batch`), eliminating per-cell disk writes. 1,600 listings export in 2.6s (was 2–3 minutes).
 
-7. **Employer Term Protection (LOCAL ONLY)**:
-   - Internal employer system codenames (specified in `.agents/rules/private_terms.md`) are strictly blocked by git pre-commit hooks and `verify.py`.
-
 ---
 
 ## 4. Active Configuration & Key Settings
 
-- **Active Theme**: `🪙 The Continental` (`continental` in `data.json`).
+- **Active Theme**: Jer's active profile runs `🪙 The Continental` (`continental` in `data.json`). Fresh out-of-the-box installations default to standard themes; `🪙 The Continental` is an unlocked/secret theme earned via the achievement/unlock system.
 - **Installed Marketplaces**: eBay (14 locales), Mercado Libre (7 locales), AliExpress, Temu, Wish, Redbubble, Printerval, Printblur, TeePublic, Etsy, Spreadshirt, Zazzle, CafePress, Threadless, TeeSpring, Fine Art America, TikTok Shop, ManoMano, Scribd, Shopify.
 - **Verification Gate**: `python verify.py` $\rightarrow$ **115 / 115 Tests Passing (100% Pass)**.
 

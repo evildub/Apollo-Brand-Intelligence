@@ -657,9 +657,16 @@ class RedbubbleScraper:
                                     except Exception as ap_err:
                                         logger.debug(f"Apollo state parse error: {ap_err}")
 
-                    # ── Strategy 3: DOM Product Link & Card Extraction ───────────
+                    # ── Strategy 3: DOM Product Link & 'Explore More Styles' Carousel Extraction ───────────
                     if not parent_variants:
-                        for a in soup.select('a[href*="/i/"]'):
+                        # Scan all product links across the page, giving special priority to
+                        # modern 'Explore more styles' / 'Other styles' carousel and grid drawers
+                        product_anchors = soup.select(
+                            'div[class*="styles__"], div[class*="Carousel"], div[aria-label*="styles" i] a[href*="/i/"], '
+                            'section[aria-label*="styles" i] a[href*="/i/"], div[data-testid*="styles"] a[href*="/i/"], '
+                            'a[href*="/i/"], a[href*="/works/"]'
+                        )
+                        for a in product_anchors:
                             href = a.get("href", "")
                             if not href:
                                 continue
@@ -674,12 +681,14 @@ class RedbubbleScraper:
                             raw_text = a.get_text(" ", strip=True)
                             m_price = re.search(r'\$[\d,.]+', raw_text)
                             price_str = m_price.group(0) if m_price else str(parent.get("price") or "$19.99")
-                            desc = raw_text.replace(price_str, "").replace("From", "").strip() or "Merchandise"
+                            desc = raw_text.replace(price_str, "").replace("From", "").replace("Explore more styles", "").replace("Explore styles", "").strip() or "Merchandise"
 
-                            img = a.select_one("img")
+                            # Search inside anchor and parent container for high-res mockup image
+                            container = a.find_parent("div")
+                            img = a.select_one("img") or (container.select_one("img") if container else None)
                             img_url = ""
                             if img:
-                                img_url = img.get("src") or img.get("data-src") or ""
+                                img_url = img.get("src") or img.get("data-src") or img.get("srcset", "").split(" ")[0] or ""
                                 if img_url.startswith("//"):
                                     img_url = f"https:{img_url}"
 

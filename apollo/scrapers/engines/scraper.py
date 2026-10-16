@@ -271,7 +271,7 @@ class EbayScraper:
                         items.append(item)
                 break
 
-        if items:
+        if items and self._has_next_page(html, 1, len(page_items)):
             page = 2
             while page <= MAX_PAGES:
                 if stop_event and stop_event.is_set():
@@ -296,7 +296,7 @@ class EbayScraper:
                         items.append(item)
                         new_found += 1
 
-                if new_found == 0 or len(page_items) < 10:
+                if new_found == 0 or len(page_items) < 10 or not self._has_next_page(html, page, len(page_items)):
                     break
                 page += 1
                 time.sleep(random.uniform(1.0, 2.0))
@@ -377,6 +377,62 @@ class EbayScraper:
                                pause_event: threading.Event = None) -> list[dict]:
         """Search across pages using a single browser session with stop/pause support."""
         items = []
+    def _has_next_page(self, html: str, current_page: int, current_page_items_count: int) -> bool:
+        """
+        Determine whether a search or store page actually has a subsequent page.
+        Returns False if:
+        - The current page returned fewer than 20 items (indicating last/only page).
+        - The DOM has an explicit next page button marked disabled or aria-disabled='true'.
+        - No active pagination link matching the next page number exists.
+        - Total result count declared on the page indicates <= current item count.
+        """
+        if current_page_items_count == 0:
+            return False
+        if current_page_items_count < 20:
+            return False
+        if not html:
+            return False
+
+        h_low = html.lower()
+
+        # Check total results counter if present (e.g., '14 results for', '45 results')
+        m_tot = re.search(r'([\d,]+)\s+results?', h_low)
+        if m_tot:
+            try:
+                tot_val = int(m_tot.group(1).replace(",", ""))
+                if tot_val <= current_page_items_count * current_page:
+                    return False
+            except Exception:
+                pass
+
+        # Check if next button is explicitly disabled
+        # eBay uses: .pagination__next, a[aria-label='Next page'], a[type='next']
+        if re.search(r'<a[^>]+aria-label=["\']next page["\'][^>]+aria-disabled=["\']true["\']', h_low) or \
+           re.search(r'class=["\'][^"\']*pagination__next[^"\']*["\'][^>]+aria-disabled=["\']true["\']', h_low) or \
+           re.search(r'class=["\'][^"\']*pagination__next--disabled[^"\']*["\']', h_low):
+            return False
+
+        # Look for explicit Next Page anchor or next page number link
+        next_p_str = str(current_page + 1)
+        has_next_link = (
+            'aria-label="next page"' in h_low or
+            "pagination__next" in h_low or
+            f'_pgn={next_p_str}' in h_low or
+            f'data-page="{next_p_str}"' in h_low or
+            f'class="pagination__item">{next_p_str}</a>' in h_low or
+            f'class="pagination__item" >{next_p_str}</a>' in h_low or
+            f'>{next_p_str}</span>' in h_low
+        )
+        return has_next_link
+
+    def _search_playwright(self, store_info: dict, include_term: str,
+                           excludes: list[str], condition: str = "all",
+                           stop_event: threading.Event = None,
+                           pause_event: threading.Event = None,
+                           domain: str = "",
+                           log_callback=None) -> list[dict]:
+        items = []
+        seen_ids = set()
         seller_label = store_info.get("store_name") or store_info.get("seller") or ""
         active_dom = self._clean_ebay_domain(domain or store_info.get("domain", "ebay.com"))
         host = f"www.{active_dom}" if not active_dom.startswith("www.") and "cafr." not in active_dom else active_dom
@@ -421,13 +477,6 @@ class EbayScraper:
                 """)
 
                 page = context.pages[0] if context.pages else context.new_page()
-
-                # Warm up session with authentic eBay cookies on active domain
-                try:
-                    page.goto(f"https://{host}", wait_until="domcontentloaded", timeout=12000)
-                    time.sleep(1.8)
-                except Exception:
-                    pass
 
                 # If item URL was passed, resolve the actual seller username from the listing
                 if store_info.get("is_item") and store_info.get("item_id"):
@@ -567,7 +616,7 @@ class EbayScraper:
                         break
 
                 # If items found on Page 1, paginate remaining pages with the confirmed handle
-                if items:
+                if items and self._has_next_page(html, 1, len(page_items)):
                     page_num = 2
                     max_crawl_limit = MAX_PAGES if target_slug else 2
                     while page_num <= max_crawl_limit:
@@ -610,7 +659,7 @@ class EbayScraper:
                                 items.append(item)
                                 new_found += 1
 
-                        if new_found == 0 or len(page_items) < 10:
+                        if new_found == 0 or len(page_items) < 10 or not self._has_next_page(html, page_num, len(page_items)):
                             break
 
                         page_num += 1

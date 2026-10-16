@@ -5945,22 +5945,7 @@ class EbayTool(tk.Tk):
                                 reverse_locale_probe=False,
                                 log_callback=self._log
                             )
-                            # Cold-start retry: If the initial search term returned 0 results due to cold session / edge handshake, auto-retry once after 2.5s jitter
-                            if not items and not self.stop_event.is_set() and getattr(self, "_is_first_ebay_sweep", False):
-                                self._is_first_ebay_sweep = False
-                                self._log(f"  🔄 [Cold-Start Handshake] Session settling on eBay edge — auto-retrying '{actual_term}'...")
-                                time.sleep(random.uniform(2.0, 3.0))
-                                items = self.scraper.search(
-                                    store_raw,
-                                    actual_term,
-                                    job["excludes"],
-                                    condition=job.get("condition", "all"),
-                                    stop_event=self.stop_event,
-                                    pause_event=self.pause_event,
-                                    domain=domain,
-                                    reverse_locale_probe=False,
-                                    log_callback=self._log
-                                )
+                            # Remove artificial cold-start retry that was triggering rapid-sequence anti-bot challenges
                             self._is_first_ebay_sweep = False
                     else:
                         self._log(f"  ⚠ [{platform_name}] Unknown marketplace dispatch: skipped eBay fallback to preserve marketplace isolation.")
@@ -6318,16 +6303,44 @@ class EbayTool(tk.Tk):
         if children:
             self.result_tree.selection_set(children)
 
+    @staticmethod
+    def _merge_listing_records(base_item: dict, incoming_item: dict) -> dict:
+        """
+        Merge two listing records for the same item, ensuring populated/enriched
+        fields are always preserved over blank, placeholder, or default values.
+        """
+        merged = dict(base_item)
+        GENERIC_STRINGS = {
+            "unknown", "accessories", "$0.00", "0.00", "none", "",
+            "ebay seller", "e-commerce merchant", "global search",
+            "imported listing", "imported web listing"
+        }
+
+        for k, v in incoming_item.items():
+            curr_val = merged.get(k)
+            curr_str = str(curr_val).strip().lower() if curr_val is not None else ""
+            in_str = str(v).strip().lower() if v is not None else ""
+
+            # If current field is empty or generic, take the incoming value if it's richer
+            if curr_str in GENERIC_STRINGS or not curr_val:
+                if v and in_str not in GENERIC_STRINGS:
+                    merged[k] = v
+            # Otherwise if incoming has specific visual or threat intelligence, preserve it
+            elif k in ("image_url", "thumbnail", "phash", "seller_origin", "threat_score", "threat_badge", "country", "member_since"):
+                if v and in_str not in GENERIC_STRINGS and curr_str in GENERIC_STRINGS:
+                    merged[k] = v
+
+        return merged
+
     def _deduplicate_results(self):
-        """Deduplicate harvested listings by item ID and URL across active session."""
+        """Deduplicate harvested listings by item ID and URL across active session, merging metadata so rich rows are never lost."""
         if not self.results:
             messagebox.showinfo("Deduplicate", "No harvested listings in results table to deduplicate.")
             return
 
         initial_len = len(self.results)
-        seen_ids = set()
-        seen_urls = set()
-        unique_items = []
+        item_map = {}
+        unique_order = []
 
         for it in self.results:
             iid = str(it.get("item_id", "")).strip()
@@ -6336,20 +6349,27 @@ class EbayTool(tk.Tk):
             url = str(it.get("url", "")).strip().lower()
             norm_url = url.split("?")[0] if url else ""
 
-            if (scoped_id and scoped_id in seen_ids) or (norm_url and norm_url in seen_urls):
+            key = scoped_id or norm_url
+            if not key:
+                unique_order.append(it)
                 continue
 
-            if scoped_id: seen_ids.add(scoped_id)
-            if norm_url: seen_urls.add(norm_url)
-            unique_items.append(it)
+            if key not in item_map:
+                item_map[key] = it
+                unique_order.append(key)
+            else:
+                # Merge into the existing record, keeping the richer fields
+                item_map[key] = self._merge_listing_records(item_map[key], it)
+
+        unique_items = [item_map[k] if isinstance(k, str) else k for k in unique_order]
 
         purged = initial_len - len(unique_items)
         if purged > 0:
             self.results = unique_items
             self.seen_item_ids = {self._normalize_item_url(it.get("url", "")) for it in self.results if it.get("url")}
             self._repopulate_results_table()
-            self._log(f"🧹 Purged {purged} duplicate listings from results table.")
-            self._show_themed_info("Deduplication Complete", f"Removed {purged} duplicate listings.\n\n{len(self.results)} unique listings remain.", icon="🧹")
+            self._log(f"🧹 Purged {purged} duplicate listings from results table (metadata safely merged).")
+            self._show_themed_info("Deduplication Complete", f"Consolidated {purged} duplicate listings.\n\n{len(self.results)} unique, enriched listings remain.", icon="🧹")
         else:
             self._show_themed_info("Deduplication Complete", "No duplicates found.\n\nAll listings are unique.", icon="✓")
 
@@ -7438,7 +7458,34 @@ class EbayTool(tk.Tk):
                         item["threat_badge"] = assessment.get("badge", item.get("threat_badge", "Unresolved"))
                         item["threat_score"] = assessment.get("score", item.get("threat_score", "UNKNOWN"))
                         updated_count += 1
-                        self.after(0, lambda c=idx, t=len(target_items): self._status(f"Refreshed {c}/{t} listings..."))
+
+                        # Live stream updated row directly into the visible treeview table
+                        def _live_update_row(_tree_iid=iid, _itm=dict(item), _c=idx, _t=len(target_items)):
+                            try:
+                                if self.result_tree.exists(_tree_iid):
+                                    raw_o = _itm.get("seller_origin", "")
+                                    o_flag = self.data_store.COUNTRY_FLAGS.get(raw_o.lower(), "🌍") if raw_o and raw_o != "Unknown" else ""
+                                    o_disp = f"{o_flag} {raw_o}".strip() if raw_o and raw_o != "Unknown" else ""
+                                    self.result_tree.item(_tree_iid, values=(
+                                        _itm.get("brand", ""),
+                                        _itm.get("product_type", ""),
+                                        _itm.get("title", ""),
+                                        _itm.get("item_id", ""),
+                                        normalize_price_string(_itm.get("price", "")),
+                                        _itm.get("seller", ""),
+                                        o_disp,
+                                        _itm.get("threat_badge", ""),
+                                        _itm.get("location", ""),
+                                        _itm.get("image_url", ""),
+                                        _itm.get("url", ""),
+                                    ))
+                                    if _itm.get("image_url"):
+                                        self._fetch_inline_thumbnail(_tree_iid, _itm["image_url"])
+                            except Exception:
+                                pass
+                            self._status(f"Refreshed {_c}/{_t} listings...")
+
+                        self.after(0, _live_update_row)
                 except Exception as e:
                     logger.debug(f"Rescrape error on {url}: {e}")
 
@@ -10217,6 +10264,8 @@ class EbayTool(tk.Tk):
                                 try: self.data_store.add_or_update_listing(it)
                                 except Exception: pass
                             threats_scored_count += 1
+                            if threats_scored_count % 5 == 0:
+                                self.after(0, lambda: self._repopulate_results_table())
 
                     # For creator, POD, and Etsy items, preserve specialized badges & score if unset
                     for it in active_items:
@@ -10233,6 +10282,8 @@ class EbayTool(tk.Tk):
                             try: self.data_store.add_or_update_listing(it)
                             except Exception: pass
                             threats_scored_count += 1
+                            if threats_scored_count % 5 == 0:
+                                self.after(0, lambda: self._repopulate_results_table())
 
             except Exception as ex:
                 self._log(f"❌ [Auto-Pipeline] Error during pipeline execution: {ex}")
@@ -12173,6 +12224,14 @@ class EbayTool(tk.Tk):
                     if m_p:
                         try: total_val += float(m_p.group(0).replace(",", ""))
                         except ValueError: pass
+                elif dedup_key:
+                    # Merge metadata into existing listing if incoming record has richer data
+                    for ex_idx, ex_item in enumerate(self.results):
+                        ex_iid = ex_item.get("item_id")
+                        ex_key = ex_iid if ex_iid else ex_item.get("url")
+                        if ex_key == dedup_key:
+                            self.results[ex_idx] = self._merge_listing_records(ex_item, item)
+                            break
                 elif not dedup_key:
                     self.results.append(item)
                     newly_added.append(item)

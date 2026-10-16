@@ -59,6 +59,16 @@ Apollo-Enterprise/
    - **Never** push to remote repositories (`git push`), create tags, or publish releases without explicit user instruction.
 5. **Credential & Data Hygiene**:
    - Never commit session cookies, `.db`/`.sqlite3` files, `data.json`, `artemis_data.json`, `session_vault.enc`, client PII, or internal environment markers.
+6. **Cold-Start Map & Token Discipline**:
+   - **Never Read `apollo/app.py` End-to-End**: Use grep/symbol search first, then read only the targeted 80–150 line slice.
+   - **Canonical vs. Root Shim Map** (Always edit canonical modules under `apollo/`; never edit root compatibility shims):
+     - UI Coordinator: `apollo/app.py` (never `main.py`)
+     - Modals: `apollo/ui/modals/*.py` (never inline inside `apollo/app.py`)
+     - Themes & Dialogs: `apollo/ui/themes.py`, `apollo/ui/dialogs.py` (never `theme_definitions.py`)
+     - Scrapers: `apollo/scrapers/engines/*_scraper.py` & `apollo/scrapers/registry.py` (never root `*_scraper.py` shims)
+     - Export & Contracts: `apollo/core/contracts.py`, `apollo/export/exporter.py` (never `exporter.py`)
+     - Compliance & Disclosure: `apollo/compliance/artemis.py`, `apollo/compliance/vero_parser.py` (never `vero_pdf_parser.py`)
+   - **Targeted Verification First**: Do not run the full 65-second `python verify.py` on routine edits unless requested; use `<2s` targeted checks (`verify.check_private_terms()`, `verify.check_package_imports()`, or a single `unittest` class).
 
 ---
 
@@ -67,15 +77,16 @@ Apollo-Enterprise/
 1. **Non-Blocking Main Thread**:
    - Network I/O, Playwright browser automation, perceptual image hashing (`compute_phash`), and openpyxl workbook generation must run on background daemon threads or `ThreadPoolExecutor` workers.
 2. **Theme Continuity & Dialog Routing**:
-   - All colors must resolve dynamically from `apollo.ui.theme_engine.THEMES`.
+   - All colors must resolve dynamically from `apollo.ui.themes.THEMES`.
    - Never invoke native unstyled `tkinter.messagebox` directly; route all user prompts through `ThemedMessageBoxProxy` (`apollo/ui/dialogs.py`).
    - All `ttk.Progressbar` instances must apply themed trough and accent styles.
 3. **Multi-Monitor Modal Centering**:
    - Every `tk.Toplevel` dialog or modal must position itself relative to its parent window via `center_window_on_parent(win, parent, width, height)` and bind `self.transient(parent)`.
 4. **Recursive Mousewheel Binding**:
    - Any scrollable `tk.Canvas` container must bind `<MouseWheel>` across the canvas, inner frame, and all descendant widgets recursively.
-5. **Toolbar Stability**:
+5. **Toolbar & Menu Alignment Stability**:
    - The primary top toolbar layout is fixed. Expose new tools or utilities through `⚙ Settings ▾`, context menus, or keyboard shortcuts.
+   - All leading icons in `self.settings_menu` and `_show_result_context_menu` must use single-codepoint `East_Asian_Width=W` characters (`unicodedata.east_asian_width(c) == 'W'`) without `\ufe0f` variation selectors.
 
 ---
 

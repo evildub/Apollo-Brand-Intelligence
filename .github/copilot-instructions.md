@@ -31,6 +31,17 @@
    - **Never** run `git push` or publish to a remote without explicit authorization from Jer.
    - Never commit local runtime artifacts (`data.json`, `artemis_data.json`, `session_vault.enc`, `data/`, `sessions/`) or internal environment identifiers.
 
+4. **Model Cold-Start & Token Guardrails (All LLMs)**:
+   - **Never Read `apollo/app.py` End-to-End**: `apollo/app.py` is 13,500+ lines. Always use symbol or grep search first, then read only the targeted 80–150 line range.
+   - **Canonical vs. Root Shim Map** (Never edit root-level compatibility shims; always edit the canonical package module):
+     - UI & Main Orchestrator $\rightarrow$ `apollo/app.py` (never `main.py`)
+     - Standalone Modals $\rightarrow$ `apollo/ui/modals/*.py` (never add inline modals to `apollo/app.py`)
+     - Themes & Dialogs $\rightarrow$ `apollo/ui/themes.py`, `apollo/ui/dialogs.py` (never `theme_definitions.py`)
+     - Marketplace Scrapers $\rightarrow$ `apollo/scrapers/engines/*_scraper.py` & `apollo/scrapers/registry.py` (never root `*_scraper.py` shims)
+     - Contracts & Export $\rightarrow$ `apollo/core/contracts.py`, `apollo/export/exporter.py` (never `exporter.py`)
+     - Compliance & Disclosure $\rightarrow$ `apollo/compliance/artemis.py`, `apollo/compliance/vero_parser.py` (never `vero_pdf_parser.py`)
+   - **No Unsolicited Full-Suite Runs**: Do not run the 65-second `python verify.py` on routine edits unless asked. Prefer `<2s` targeted checks (`python -c "import verify; assert verify.check_private_terms() and verify.check_package_imports()"` or `python -m unittest tests.run_tests.<TestClass>`).
+
 ---
 
 ## 2. Package Architecture & Domain Responsibilities
@@ -50,8 +61,8 @@
 ```
 
 1. **UI Craftsman** ([`.agents/rules/ui_craftsman.md`](../.agents/rules/ui_craftsman.md)):
-   - **Scope**: `apollo/ui/theme_engine.py` (24 unified palettes), `apollo/ui/dialogs.py`, `apollo/ui/modals/*` (16 modals), `apollo/ui/components/*`.
-   - **Rules**: Route all alerts through `ThemedMessageBoxProxy` (zero native white messageboxes); position every `tk.Toplevel` with `center_window_on_parent(win, parent, width, height)`; bind `<MouseWheel>` recursively on scrollable canvases; keep top toolbar row frozen.
+   - **Scope**: `apollo/ui/themes.py` (24 unified palettes), `apollo/ui/dialogs.py`, `apollo/ui/modals/*` (22 modals).
+   - **Rules**: Route all alerts through `ThemedMessageBoxProxy` (zero native white messageboxes); position every `tk.Toplevel` with `center_window_on_parent(win, parent, width, height)`; bind `<MouseWheel>` recursively on scrollable canvases; keep top toolbar row frozen; enforce `East_Asian_Width=W` icons across all menus.
 
 2. **Scraper Sentinel** ([`.agents/rules/scraper_sentinel.md`](../.agents/rules/scraper_sentinel.md)):
    - **Scope**: `apollo/scrapers/registry.py` (`ScraperRegistry`), `apollo/scrapers/batch_importer.py`, `apollo/scrapers/engines/*` (21 engines).

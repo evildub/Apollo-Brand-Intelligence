@@ -19,18 +19,18 @@ Over 5 months, Apollo grew to a 17,315-line monolith in `main.py`. In October 20
 
 1. **Domain Package Isolation**:
    - `apollo/core/`: Persistence, session encryption, perceptual catalog, contracts, and APIs.
-   - `apollo/ui/`: Theme engine (23 palettes), dialogs, multi-monitor centering, and 7 modals.
-   - `apollo/scrapers/`: `ScraperRegistry` factory and 15+ marketplace engines.
-   - `apollo/export/`: `ExcelExporter` (18-column contract) and VeRO disclosure parser.
+   - `apollo/ui/`: Theme engine (24 unified palettes), dialogs, multi-monitor centering, and 16 isolated modals in `apollo/ui/modals/`.
+   - `apollo/scrapers/`: `ScraperRegistry` factory and 21 marketplace/POD engines.
+   - `apollo/export/`: `ExcelExporter` (18-column A–R contract) and unified VeRO disclosure parser.
    - `apollo/compliance/`: Artemis legal rights engine and Argus monitoring sentinel.
 
 2. **Surgical Monolith Peeling**:
-   - `apollo/app.py` was peeled by 846 lines: theme dictionaries, quote catalogs, `center_window_on_parent`, and `ThemedMessageBoxProxy` now import cleanly from their respective sub-packages.
-   - Decoupled scraper initialization using `ScraperRegistry`.
+   - `apollo/app.py` was peeled by ~3,780 lines (down to ~13,540 lines): theme dictionaries, quote catalogs, `center_window_on_parent`, `ThemedMessageBoxProxy`, and all 6 remaining inline modals (`ExportProgressModal`, `MultiLocaleModal`, `ConnectedNetworkModal`, `ReverseVisualModal`, `WhitelistManagerModal`, `AnalystGuideModal`) now live cleanly in their respective sub-packages.
+   - Wired `ScraperRegistry` into `EbayTool` while maintaining backward-compatible scraper attributes.
 
 3. **Immutable Contracts (`apollo/core/contracts.py`)**:
-   - `ListingRecord`: Typed dataclass representing detected listings.
-   - `EXPORT_COLUMNS`: Standardized 18-column layout.
+   - `ListingRecord`: Typed dataclass synchronized with production dictionary keys (`url`/`listing_url`, `image_url`/`thumbnail`, `brand`/`brand_targeted`).
+   - `EXPORT_HEADERS` & `EXPORT_COLUMNS`: Single source of truth for the standardized 18-column (A–R) Excel layout imported directly by `ExcelExporter`.
 
 ---
 

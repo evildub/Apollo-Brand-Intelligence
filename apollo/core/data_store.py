@@ -77,12 +77,19 @@ class DataStore:
     def __init__(self):
         # Initial migration: check if local directory data.json exists and migrate to AppData
         if not os.path.exists(DATA_FILE):
-            local_src = os.path.join(os.path.dirname(sys.executable if getattr(sys, "frozen", False) else __file__), "data.json")
-            if os.path.exists(local_src):
-                try:
-                    shutil.copyfile(local_src, DATA_FILE)
-                except Exception:
-                    pass
+            if getattr(sys, "frozen", False):
+                candidate_dirs = [os.path.dirname(sys.executable)]
+            else:
+                here = os.path.dirname(os.path.abspath(__file__))
+                candidate_dirs = [os.path.abspath(os.path.join(here, "..", "..")), here]
+            for d in candidate_dirs:
+                local_src = os.path.join(d, "data.json")
+                if os.path.exists(local_src):
+                    try:
+                        shutil.copyfile(local_src, DATA_FILE)
+                        break
+                    except Exception:
+                        pass
 
         if os.path.exists(DATA_FILE):
             loaded = None

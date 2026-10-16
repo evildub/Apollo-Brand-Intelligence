@@ -6,6 +6,7 @@ Mercado Libre, ManoMano, TeePublic, Etsy, etc.).
 """
 
 import os
+import sys
 import json
 import logging
 import threading
@@ -150,7 +151,12 @@ class SessionVault:
     """Manages persistent browser contexts and credential health for all marketplaces."""
 
     def __init__(self, base_dir: Optional[str] = None):
-        self.base_dir = base_dir or os.path.dirname(os.path.abspath(__file__))
+        if base_dir:
+            self.base_dir = base_dir
+        elif getattr(sys, "frozen", False):
+            self.base_dir = os.path.dirname(sys.executable)
+        else:
+            self.base_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
         self._active_connect_threads: Dict[str, threading.Thread] = {}
         self._active_contexts: Dict[str, Any] = {}
         self._stop_events: Dict[str, threading.Event] = {}

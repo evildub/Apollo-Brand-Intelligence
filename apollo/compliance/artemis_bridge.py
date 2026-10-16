@@ -128,26 +128,31 @@ def launch_artemis_process(theme_key: Optional[str] = None) -> bool:
         except Exception:
             pass
 
-    # 2. Look for standalone artemis.py in project directory
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    py_path = os.path.join(base_dir, "artemis.py")
-    kwargs = _get_detached_popen_kwargs(base_dir)
-    if os.path.exists(py_path):
-        try:
-            python_exe = sys.executable
-            subprocess.Popen([python_exe, py_path] + cmd_args, **kwargs)
-            return True
-        except Exception:
-            pass
+    # 2. Look for standalone artemis.py in compliance package or project root
+    compliance_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.abspath(os.path.join(compliance_dir, "..", ".."))
+    work_dir = repo_root if os.path.isdir(repo_root) else compliance_dir
+    kwargs = _get_detached_popen_kwargs(work_dir)
 
-    # 3. Fallback: try python main.py --artemis
-    main_path = os.path.join(base_dir, "main.py")
-    if os.path.exists(main_path):
-        try:
-            python_exe = sys.executable
-            subprocess.Popen([python_exe, main_path, "--artemis"] + cmd_args, **kwargs)
-            return True
-        except Exception:
-            pass
+    for py_path in (os.path.join(compliance_dir, "artemis.py"), os.path.join(repo_root, "artemis.py")):
+        if os.path.exists(py_path):
+            try:
+                subprocess.Popen([sys.executable, py_path] + cmd_args, **kwargs)
+                return True
+            except Exception:
+                pass
+
+    # 3. Fallback: try python run_apollo.py --artemis or apollo/app.py --artemis
+    for entry_path in (
+        os.path.join(repo_root, "run_apollo.py"),
+        os.path.join(repo_root, "apollo", "app.py"),
+        os.path.join(compliance_dir, "main.py"),
+    ):
+        if os.path.exists(entry_path):
+            try:
+                subprocess.Popen([sys.executable, entry_path, "--artemis"] + cmd_args, **kwargs)
+                return True
+            except Exception:
+                pass
 
     return False

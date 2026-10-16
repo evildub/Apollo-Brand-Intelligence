@@ -42,6 +42,9 @@ hidden_imports_apollo = [
     'apollo.ui.modals.product_type_modal', 'apollo.ui.modals.session_vault_modal',
     'apollo.ui.modals.syndicate_hunter_modal', 'apollo.ui.modals.system_diagnostics',
     'apollo.ui.modals.vero_disclosure_modal', 'apollo.ui.modals.visual_catalog_modal',
+    'apollo.ui.modals.export_progress_modal', 'apollo.ui.modals.multi_locale_modal',
+    'apollo.ui.modals.connected_network_modal', 'apollo.ui.modals.reverse_visual_modal',
+    'apollo.ui.modals.whitelist_manager_modal', 'apollo.ui.modals.analyst_guide_modal',
     'apollo.scrapers', 'apollo.scrapers.registry', 'apollo.scrapers.batch_importer',
     'apollo.scrapers.engines.scraper', 'apollo.scrapers.engines.aliexpress_scraper',
     'apollo.scrapers.engines.wish_scraper', 'apollo.scrapers.engines.temu_scraper',
@@ -73,7 +76,9 @@ hidden_imports_apollo = [
     'brand_registry_modal', 'dossier_manager_modal', 'field_guide_modal',
     'multi_sector_modal', 'product_type_modal', 'session_vault_modal',
     'syndicate_hunter_modal', 'system_diagnostics', 'vero_disclosure_modal',
-    'visual_catalog_modal', 'tooltip', 'batch_importer', 'theme_definitions'
+    'visual_catalog_modal', 'export_progress_modal', 'multi_locale_modal',
+    'connected_network_modal', 'reverse_visual_modal', 'whitelist_manager_modal',
+    'analyst_guide_modal', 'tooltip', 'batch_importer', 'theme_definitions'
 ]
 
 a_apollo = Analysis(

@@ -16,26 +16,26 @@ The **Export Officer** safeguards the final output of every investigation. Data 
 
 ## 2. Invariants & Non-Negotiable Rules
 
-### A. The Strict 18-Column Export Contract
-- The standard corporate investigative export must strictly maintain column order, names, and casing:
-  1. `Item ID`
-  2. `Title`
-  3. `Seller`
-  4. `Price`
-  5. `Marketplace`
-  6. `Threat Score`
-  7. `Threat Level`
-  8. `Brand Targeted`
-  9. `Infringement Category`
-  10. `Listing URL`
-  11. `Seller Profile URL`
-  12. `Location / Origin`
-  13. `Date Discovered`
-  14. `Status`
-  15. `Evidence Hash (pHash)`
-  16. `Image URL`
-  17. `Enforcement Priority`
-  18. `Analyst Notes`
+### A. The Strict 18-Column Export Contract (Columns A–R)
+- The standard corporate investigative export (`apollo/core/contracts.py` $\rightarrow$ `EXPORT_HEADERS`) must strictly maintain exact column letters, blank spacers, names, and casing:
+  - `A`: `Title`
+  - `B`: `URL`
+  - `C`: `Thumbnail`
+  - `D`: `` (blank spacer)
+  - `E`: `Item ID`
+  - `F`: `` (blank spacer)
+  - `G`: `` (blank spacer)
+  - `H`: `Marketplace`
+  - `I`: `` (blank spacer)
+  - `J`: `Seller Name`
+  - `K`: `` (blank spacer)
+  - `L`: `` (blank spacer)
+  - `M`: `Brand`
+  - `N`: `Price`
+  - `O`: `Item Location`
+  - `P`: `Product Type`
+  - `Q`: `Seller Origin (Registered)`
+  - `R`: `Threat Assessment (3PL Hub / Origin)`
 
 ### B. openpyxl Professional Formatting Invariant
 - **Auto-Column Sizing**: Compute maximum character length per column and apply `column_dimensions[col].width = max(len + 3, min_width)`.

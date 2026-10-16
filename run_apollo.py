@@ -46,9 +46,32 @@ if APOLLO_COMPONENTS not in sys.path:
 
 from apollo.app import EbayTool, APP_VERSION
 
+
 def main():
+    if "--artemis" in sys.argv:
+        from apollo.compliance.artemis import ArtemisApp
+        theme_k = None
+        for i, a in enumerate(sys.argv):
+            if a == "--theme" and i + 1 < len(sys.argv):
+                theme_k = sys.argv[i + 1]
+                break
+        artemis_app = ArtemisApp(initial_theme_key=theme_k)
+        artemis_app.mainloop()
+        return
+
+    if "--argus" in sys.argv:
+        import tkinter as tk
+        from apollo.compliance.argus_compliance_modal import ArgusComplianceModal
+        root = tk.Tk()
+        root.withdraw()
+        argus_modal = ArgusComplianceModal(master=root)
+        argus_modal.protocol("WM_DELETE_WINDOW", lambda: root.destroy())
+        root.mainloop()
+        return
+
     app = EbayTool()
     app.mainloop()
+
 
 if __name__ == "__main__":
     main()

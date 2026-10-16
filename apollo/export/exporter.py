@@ -21,26 +21,7 @@ from collections import defaultdict
 # M  = Brand
 # N  = Price   ← extra, added at end of required cols
 
-HEADERS = {
-    "A": "Title",
-    "B": "URL",
-    "C": "Thumbnail",
-    "D": "",
-    "E": "Item ID",
-    "F": "",
-    "G": "",
-    "H": "Marketplace",
-    "I": "",
-    "J": "Seller Name",
-    "K": "",
-    "L": "",
-    "M": "Brand",
-    "N": "Price",
-    "O": "Item Location",
-    "P": "Product Type",
-    "Q": "Seller Origin (Registered)",
-    "R": "Threat Assessment (3PL Hub / Origin)",
-}
+from apollo.core.contracts import EXPORT_HEADERS as HEADERS
 
 HEADER_FILL  = PatternFill("solid", fgColor="2B2D42")
 HEADER_FONT  = Font(bold=True, color="FFFFFF", name="Segoe UI", size=10)

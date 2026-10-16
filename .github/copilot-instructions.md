@@ -68,7 +68,7 @@ Apollo-Enterprise operates under an **Agent-First Modular Architecture**. When e
 3. **📊 Export Officer** (`.agents/rules/export_officer.md`):
    - **Domain**: `apollo/export/*`, `apollo/core/contracts.py`, Excel/CSV generation, VeRO disclosures.
    - **Invariants**:
-     - Strict 18-Column Export Contract (`Item ID`, `Title`, `Seller`, `Price`, `Marketplace`, `Threat Score`, `Threat Level`, `Brand Targeted`, `Infringement Category`, `Listing URL`, `Seller Profile URL`, `Location / Origin`, `Date Discovered`, `Status`, `Evidence Hash (pHash)`, `Image URL`, `Enforcement Priority`, `Analyst Notes`).
+     - Strict 18-Column Export Contract (Columns A–R: `A=Title`, `B=URL`, `C=Thumbnail`, `D=""`, `E=Item ID`, `F=""`, `G=""`, `H=Marketplace`, `I=""`, `J=Seller Name`, `K=""`, `L=""`, `M=Brand`, `N=Price`, `O=Item Location`, `P=Product Type`, `Q=Seller Origin (Registered)`, `R=Threat Assessment (3PL Hub / Origin)`).
      - openpyxl auto-column widths (`max(len + 3, min)`), themed headers, frozen top row.
      - Zero data loss: Output row count must match memory dataset count.
      - Clean VeRO disclosure parsing into Enforcement Registry.

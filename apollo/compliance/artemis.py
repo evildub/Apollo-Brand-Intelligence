@@ -23,6 +23,20 @@ if sys.platform == "win32":
     except Exception:
         pass
 
+# Ensure standalone subprocess invocation resolves apollo package and UI/compliance modules
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
+for _p in (
+    _REPO_ROOT,
+    os.path.join(_REPO_ROOT, "apollo"),
+    _HERE,
+    os.path.join(_REPO_ROOT, "apollo", "ui"),
+    os.path.join(_REPO_ROOT, "apollo", "ui", "modals"),
+    os.path.join(_REPO_ROOT, "apollo", "core"),
+):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 from artemis_bridge import (
     get_artemis_base_dir,
     get_pending_artemis_batches,
@@ -89,12 +103,22 @@ class ArtemisApp(tk.Tk):
         target = window or self
         try:
             base_dir = os.path.dirname(os.path.abspath(__file__))
-            for ico_name in ("artemis.ico", "artemis.png", "apollo.ico"):
-                p = os.path.join(base_dir, ico_name)
-                if os.path.exists(p):
-                    if p.endswith(".ico"):
-                        target.iconbitmap(p)
-                    return
+            repo_root = os.path.abspath(os.path.join(base_dir, "..", ".."))
+            candidate_dirs = [repo_root, base_dir]
+            if hasattr(sys, "_MEIPASS"):
+                candidate_dirs.append(sys._MEIPASS)
+            if hasattr(sys, "executable"):
+                exe_dir = os.path.dirname(sys.executable)
+                candidate_dirs.extend([exe_dir, os.path.join(exe_dir, "_internal")])
+            for d in candidate_dirs:
+                if not d or not os.path.isdir(d):
+                    continue
+                for ico_name in ("artemis.ico", "artemis.png", "apollo.ico"):
+                    p = os.path.join(d, ico_name)
+                    if os.path.exists(p):
+                        if p.endswith(".ico"):
+                            target.iconbitmap(p)
+                        return
         except Exception:
             pass
 

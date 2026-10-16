@@ -99,18 +99,39 @@ def check_private_terms() -> bool:
 def check_package_imports() -> bool:
     log_step("2. Verifying Modular Package Architecture & Contracts...")
     test_code = """
+import os
 import apollo
 import apollo.core.contracts as c
 import apollo.ui.theme_engine as te
+import apollo.ui.theme_definitions as td
 import apollo.ui.dialogs as d
 import apollo.scrapers.registry as sr
 import apollo.export.exporter as exp
+import apollo.export.vero_parser as vp
+import apollo.export.vero_pdf_parser as vpp
 import apollo.compliance.artemis_bridge as ab
+from apollo.core.session_vault import SessionVault
+from apollo.ui.modals.export_progress_modal import ExportProgressModal
+from apollo.ui.modals.multi_locale_modal import MultiLocaleModal
+from apollo.ui.modals.connected_network_modal import ConnectedNetworkModal
+from apollo.ui.modals.reverse_visual_modal import ReverseVisualModal
+from apollo.ui.modals.whitelist_manager_modal import WhitelistManagerModal
+from apollo.ui.modals.analyst_guide_modal import AnalystGuideModal
 
-# Verify ListingRecord contract
+# Verify ListingRecord & 18-Column Export Contract alignment
 rec = c.ListingRecord(item_id='1', title='T', seller='S', price='$10', marketplace='eBay', listing_url='http://')
-assert rec.item_id == '1'
-assert len(te.THEMES) >= 20
+assert rec.item_id == '1' and rec.url == 'http://'
+assert c.EXPORT_HEADERS is exp.HEADERS
+assert len(c.EXPORT_COLUMNS) == 18 and c.EXPORT_COLUMNS[0] == 'Title' and c.EXPORT_COLUMNS[4] == 'Item ID'
+
+# Verify deduplicated theme and VeRO parser shims
+assert te.THEMES is td.THEMES and len(te.THEMES) >= 24
+assert vp.parse_vero_text is vpp.parse_vero_text
+
+# Verify SessionVault resolves to repository root
+sv = SessionVault()
+assert os.path.normcase(sv.base_dir) == os.path.normcase(os.getcwd())
+
 assert callable(d.center_window_on_parent)
 assert callable(sr.ScraperRegistry)
 """

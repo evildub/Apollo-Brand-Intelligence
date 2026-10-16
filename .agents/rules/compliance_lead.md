@@ -36,8 +36,8 @@ The **Compliance Lead** commands the legal enforcement and post-investigation co
   - `STATUS_ENDED`: Listing concluded normally (out of stock, ended by seller).
   - `STATUS_BLOCKED`: Bot-shield, region lock, or verification challenge encountered.
 
-### D. Absolute Employer Term Isolation
-- Strict compliance with `.agents/rules/private_terms.md`: Never allow internal client codenames, employer identifiers, or proprietary base-of-record terms into git commits, exports, or public notices.
+### D. Data & Credential Sanitization
+- Never commit live LOA documents, personal signatory credentials, client PII, or restricted environment identifiers into tracked repository files or test fixtures.
 
 ---
 

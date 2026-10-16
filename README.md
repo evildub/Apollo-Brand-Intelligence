@@ -16,17 +16,18 @@ Apollo is engineered with an **Agent-First Modular Architecture**, partitioning 
 ```
 Apollo-Enterprise/
 ├── apollo/
-│   ├── core/              # DataStore, SessionVault, VisualCatalog, Voice, API Client
-│   ├── ui/                # Theme Engine (23 palettes), Dialogs, Modals, Components
+│   ├── core/              # DataStore, SessionVault, VisualCatalog, Voice, Contracts
+│   ├── ui/                # Theme Engine (24 palettes), Dialogs, Modals (16), Components
 │   │   ├── modals/        # Specialized Investigation Modals (Brand Registry, Dossier, etc.)
 │   │   └── components/    # Reusable widgets (tooltips, indicators)
-│   ├── scrapers/          # Scraper Sentinel domain (15+ marketplace engines)
+│   ├── scrapers/          # Scraper Sentinel domain (ScraperRegistry + 21 engines)
 │   │   └── engines/       # eBay, AliExpress, Printerval, Redbubble, Etsy, TikTok, etc.
-│   ├── export/            # Export Officer domain (Excel 18-col exporter, VeRO statements)
+│   ├── export/            # Export Officer domain (Excel 18-col A–R exporter, VeRO parser)
 │   └── compliance/        # Compliance Lead domain (Artemis rights engine, Argus sentinel)
-├── tests/                 # Comprehensive regression and compliance test suites
+├── tests/                 # Comprehensive regression and compliance test suites (115 tests)
 ├── .agents/rules/         # Operational charters for specialist AI domain agents
-└── run_apollo.py          # Enterprise runtime entrypoint
+├── run_apollo.py          # Enterprise runtime entrypoint (--artemis, --argus)
+└── verify.py              # Single-command pre-commit verification gate
 ```
 
 ---
@@ -48,9 +49,11 @@ playwright install chromium
 ```
 
 ### 3. Launching Apollo
-Run the application via the dedicated runner:
+Run the application via the dedicated launcher or Python entrypoint:
 
 ```bash
+run_apollo.bat
+# or
 python run_apollo.py
 ```
 
@@ -64,7 +67,7 @@ Apollo enforces a strict zero-regression policy. All tests must pass before stag
 ```bash
 python verify.py
 ```
-This runs the full 115-test regression battery (89 Core + 26 Compliance), checks modular package imports, and validates private employer term security guards.
+This runs the full 115-test regression battery (89 Core + 26 Compliance), checks modular package imports, and validates repository sanitization guards.
 
 ---
 
@@ -74,17 +77,17 @@ Engineering and refactoring tasks are routed through specialist domain agent cha
 
 | Specialist Agent | Domain Package | Key Responsibilities |
 | :--- | :--- | :--- |
-| **🎨 UI Craftsman** | `apollo/ui/*` | Theme consistency (23 palettes), multi-monitor centering, zero native messageboxes, layout integrity |
-| **🕷️ Scraper Sentinel** | `apollo/scrapers/*` | Marketplace crawling, 7-point audit, DOM fallback selectors, anti-bot resilience |
-| **📊 Export Officer** | `apollo/export/*` | 18-column contract fidelity, openpyxl auto-formatting, VeRO disclosures |
+| **🎨 UI Craftsman** | `apollo/ui/*` | Theme consistency (24 palettes), multi-monitor centering, zero native messageboxes, layout integrity |
+| **🕷️ Scraper Sentinel** | `apollo/scrapers/*` | Marketplace crawling (21 engines), 7-point audit, DOM fallback selectors, anti-bot resilience |
+| **📊 Export Officer** | `apollo/export/*` | 18-column (`A`–`R`) contract fidelity, openpyxl auto-formatting, VeRO disclosures |
 | **⚖️ Compliance Lead** | `apollo/compliance/*` | Artemis legal notice generator, Argus listing status classification, LOA tracking |
-| **🧠 Intel & Graph Strategist** | `apollo/core/*` | Perceptual image hashing (`pHash`), syndicate graph correlation, encrypted session vault |
+| **🧠 Intel & Graph Strategist** | `apollo/core/*` | Perceptual image hashing (`pHash`), syndicate graph correlation, session vault management |
 | **🛡️ QA & Release Marshal** | `tests/`, `verify.py` | 100% regression gatekeeper, PyInstaller builds, distribution smoke testing |
 
 ---
 
-## 🔒 Confidentiality & Security
+## 🔒 Data Hygiene & Security
 
-- **Zero Employer Terms**: Pre-commit hooks strictly reject any commit containing sensitive internal terms or client identifiers.
-- **Local Isolation**: All `.db`, `.sqlite3`, `.enc`, `sessions/`, and `data/` artifacts are git-ignored to prevent operational data leakage.
-- **Controlled Release**: Code is committed locally; pushes to remote remotes require explicit authorization.
+- **Automated Sanitization Gate**: Pre-commit checks and `verify.py` block restricted internal markers or sensitive tokens from entering tracked files.
+- **Local State Isolation**: All `.db`, `.sqlite3`, `.enc`, `sessions/`, `data/`, `data.json`, and `artemis_data.json` runtime artifacts are git-ignored.
+- **Controlled Release**: Commits are recorded locally; remote pushes require explicit authorization.

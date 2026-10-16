@@ -16,7 +16,7 @@ The **UI Craftsman** is responsible for the visual elegance, theme continuity, w
 
 ## 2. Invariants & Non-Negotiable Rules
 
-### A. Theme Palette Continuity (23 Palettes)
+### A. Theme Palette Continuity (24 Palettes)
 - All colors must resolve through `apollo.ui.theme_engine.THEMES`. Never hardcode raw hex codes in isolated widgets unless matching a specific theme token.
 - Standard keys: `bg`, `panel`, `entry_bg`, `text`, `subtext`, `accent`, `accent2`, `success`, `warning`, `danger`, `border`, `btn_normal_bg`, `btn_normal_fg`, `select_bg`, `select_fg`.
 - Zero stark-white backgrounds allowed anywhere in the application.

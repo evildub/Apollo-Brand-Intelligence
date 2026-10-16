@@ -1027,7 +1027,7 @@ class EbayTool(tk.Tk):
                 variable=self.col_vis_vars[col_key],
                 command=lambda ck=col_key: self._toggle_column_visibility(ck)
             )
-        self.settings_menu.add_cascade(label="👁 Column Visibility ▾", menu=self.col_menu)
+        self.settings_menu.add_cascade(label="👀 Column Visibility ▾", menu=self.col_menu)
 
         self.settings_menu.add_separator()
 
@@ -1053,28 +1053,32 @@ class EbayTool(tk.Tk):
             command=self._on_toggle_ambient_flow
         )
         self.settings_menu.add_checkbutton(
-            label="🎙 Voice Command Mode (Windows SAPI)",
+            label="🎤 Voice Command Mode (Windows SAPI)",
             variable=self.voice_enabled_var,
             command=self._toggle_voice_control
         )
 
         self.settings_menu.add_separator()
 
-        # 4. Investigation, Taxonomy & Session Configuration
+        # 4. Brand Library, Investigation, Taxonomy & Session Configuration
         self.settings_menu.add_command(
-            label="🕸 Syndicate Hunter (Ctrl+Y)...",
-            command=self._open_syndicate_hunter_modal
+            label="👑 Brand Library & Profiles...",
+            command=self._open_brand_registry_modal
         )
         self.settings_menu.add_command(
-            label="🛡 Authorized Dealer Whitelist...",
-            command=self._open_whitelist_manager_window
-        )
-        self.settings_menu.add_command(
-            label="🏷 Product Types & Taxonomy...",
+            label="🧩 Product Types & Taxonomy...",
             command=self._open_product_type_manager
         )
         self.settings_menu.add_command(
-            label="🔐 Session Vault & API Keys...",
+            label="✅ Authorized Dealer Whitelist...",
+            command=self._open_whitelist_manager_window
+        )
+        self.settings_menu.add_command(
+            label="🎯 Syndicate Hunter (Ctrl+Y)...",
+            command=self._open_syndicate_hunter_modal
+        )
+        self.settings_menu.add_command(
+            label="🔐 Session, Accounts & API Vault...",
             command=self._open_session_vault_modal
         )
 
@@ -1092,7 +1096,7 @@ class EbayTool(tk.Tk):
             selectcolor=t["accent"]
         )
         self.intel_pack_menu.add_command(
-            label="📦 Export Intelligence Pack...",
+            label="📤 Export Intelligence Pack...",
             command=self._export_intel_pack_dialog
         )
         self.intel_pack_menu.add_command(
@@ -1109,11 +1113,11 @@ class EbayTool(tk.Tk):
             command=self._launch_artemis_ui
         )
         self.settings_menu.add_command(
-            label="🛰 Argus Compliance Sentinel...",
+            label="📡 Argus Compliance Sentinel...",
             command=self._open_argus_compliance_modal
         )
         self.settings_menu.add_command(
-            label="⚖ Enforcement Registry...",
+            label="📜 Enforcement Registry...",
             command=self._open_enforcement_registry_window
         )
         self.settings_menu.add_command(
@@ -1141,7 +1145,7 @@ class EbayTool(tk.Tk):
             command=self._open_field_guide_modal
         )
         self.settings_menu.add_command(
-            label="ℹ About Apollo...",
+            label="🧭 About Apollo...",
             command=self._show_about_dialog
         )
 
@@ -7528,7 +7532,7 @@ class EbayTool(tk.Tk):
 
         # 2. Direct Listing Inspection & Editing
         menu.add_command(label="🌐 Open Listing in Browser", command=lambda: self._open_url(None))
-        menu.add_command(label="✏ Edit Listing Values (F2)", command=self._edit_selected_listing)
+        menu.add_command(label="📝 Edit Listing Values (F2)", command=self._edit_selected_listing)
         menu.add_command(label="🔄 Refresh / Rescrape Selected (F5)", command=self._rescrape_selected_listings)
         menu.add_separator()
 
@@ -7536,12 +7540,12 @@ class EbayTool(tk.Tk):
         menu.add_command(label="🏪 Enrich Selected Seller Names", command=self._enrich_sellers)
         menu.add_command(label="🌍 Resolve Threat Intel & Origin", command=self._enrich_seller_threat_intel)
         menu.add_command(label="➕ Add Seller to Stores Box", command=self._add_selected_result_seller_to_stores)
-        menu.add_command(label="🛡 Whitelist Seller (Authorized Dealer)", command=self._whitelist_selected_result_seller)
+        menu.add_command(label="✅ Whitelist Seller (Authorized Dealer)", command=self._whitelist_selected_result_seller)
         menu.add_separator()
 
         # 4. Network & Visual Intelligence
         menu.add_command(label="🔗 Connected Seller Network Hunter", command=self._open_connected_network_scanner)
-        menu.add_command(label="🕸 Investigate in Syndicate Hunter (Ctrl+Y)", command=self._open_syndicate_hunter_for_selected)
+        menu.add_command(label="🎯 Investigate in Syndicate Hunter (Ctrl+Y)", command=self._open_syndicate_hunter_for_selected)
 
         # ── Nested Reverse Visual Search Submenu ──
         vis_menu = tk.Menu(menu, tearoff=0, bg=t["panel"], fg=t["text"],
@@ -7593,7 +7597,7 @@ class EbayTool(tk.Tk):
                 label=m_label,
                 command=lambda mc=m_code: self._reverse_visual_search_selected(marketplace="Mercado Libre", region=mc)
             )
-        vis_menu.add_cascade(label="🛍 Mercado Libre Countries ▾", menu=meli_sub)
+        vis_menu.add_cascade(label="🏪 Mercado Libre Countries ▾", menu=meli_sub)
 
         # Other platforms
         vis_menu.add_command(label="🛒 eBay (Global)", command=lambda: self._reverse_visual_search_selected(marketplace="eBay"))
@@ -7610,7 +7614,7 @@ class EbayTool(tk.Tk):
         cat_menu.add_command(label="🔴 Mark Photo as Known Counterfeit", command=self._mark_selected_as_visual_counterfeit)
         cat_menu.add_separator()
         cat_menu.add_command(label="🔄 Re-Scan Visual Matches (All Listings)", command=self._rescan_visual_matches)
-        menu.add_cascade(label="🖼 Visual Threat Catalog ▾", menu=cat_menu)
+        menu.add_cascade(label="📷 Visual Threat Catalog ▾", menu=cat_menu)
 
         menu.add_separator()
 
@@ -7618,18 +7622,18 @@ class EbayTool(tk.Tk):
         menu.add_command(label="💾 Export to Excel (Ctrl+E)", command=self._export)
         menu.add_command(label="🌐 Multi-Locale Expander...", command=self._open_multi_locale_expander)
         menu.add_command(label="🏹 Dispatch Selected to Artemis Queue", font=("Segoe UI", 9, "bold"), command=self._dispatch_selected_to_artemis)
-        menu.add_command(label="🏹 Launch Artemis Rights Engine...", command=self._launch_artemis_ui)
+        menu.add_command(label="🎯 Launch Artemis Rights Engine...", command=self._launch_artemis_ui)
         menu.add_separator()
 
         # 6. Clipboard & Selection
         menu.add_command(label="📋 Copy Selected URLs", command=self._copy_selected_urls)
         menu.add_command(label="📋 Copy All URLs", command=self._copy_all_listing_urls)
-        menu.add_command(label="☑ Select All (Ctrl+A)", command=self._select_all_results)
+        menu.add_command(label="🔢 Select All (Ctrl+A)", command=self._select_all_results)
         menu.add_separator()
 
         # 7. Destructive / Cleanup Actions (Anchored at Bottom)
-        menu.add_command(label="✕ Remove Selected (Del)", command=self._remove_selected_results)
-        menu.add_command(label="🗑 Clear All Results", command=self._clear_results)
+        menu.add_command(label="❌ Remove Selected (Del)", command=self._remove_selected_results)
+        menu.add_command(label="🧹 Clear All Results", command=self._clear_results)
         
         try:
             menu.tk_popup(event.x_root, event.y_root)

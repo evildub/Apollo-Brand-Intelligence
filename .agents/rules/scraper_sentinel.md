@@ -42,13 +42,13 @@ Any change, refactoring, or engine addition MUST be verified across all 7 operat
 - **Akamai Challenge Pages**: Automated detection (`"Something went wrong on our end"`, `"Error Page | eBay"`) must trigger exponential backoff and `page.reload(wait_until="domcontentloaded")`.
 - **Cloudflare Turnstile Challenges**: Must offer interactive session authentication via `launch_interactive_auth()`.
 
-### E. Registry Decoupling
-- All scrapers must reside in `apollo/scrapers/engines/` and register inside `apollo/scrapers/registry.py`.
-- Never introduce hardcoded scraper imports directly inside UI view files.
+### E. Canonical Engine Location & Registry Decoupling
+- **Canonical Files**: All scraper implementations reside in `apollo/scrapers/engines/*_scraper.py`. Root-level `*_scraper.py` files are thin backward-compatible re-export shims—NEVER edit root shims directly; always edit the canonical module in `apollo/scrapers/engines/`.
+- **Registry Wiring**: `EbayTool.__init__` initializes `self.scraper_registry = ScraperRegistry()` (`apollo/scrapers/registry.py`) and binds `self.<attr> = self.scraper_registry.get("<key>")`. Any new scraper must be registered in `ScraperRegistry._register_defaults()`.
 
 ---
 
-## 3. Verification Protocol
-1. Verify with real live queries against the actual target platform (synthetic tests do not prove anti-bot bypass).
-2. Validate extracted seller identity against actual page avatars/badges.
-3. Run `python -m unittest tests/run_tests.py` and confirm 100% test pass.
+## 3. Verification Protocol (Token-Efficient)
+1. Verify with targeted live or unit checks against the specific scraper being modified (`python -m unittest tests.run_tests.<TestClassName>`).
+2. Validate extracted seller identity and URL normalization against actual page structure.
+3. Run fast architectural/security checks (`python -c "import verify; assert verify.check_package_imports(); assert verify.check_private_terms()"`) on routine edits; reserve the full 65-second 115-test suite for major refactors or explicit user requests.

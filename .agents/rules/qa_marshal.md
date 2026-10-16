@@ -34,12 +34,13 @@ When authorized by the user to produce an executable or release:
 3. **Smoke Testing**: Launch the compiled `.exe` via automated subprocess smoke check to verify clean boot.
 4. **Distribution Packaging**: Compress into `ApolloBrandIntelligence-vX.Y.Z.zip` and verify zip checksum before release.
 
-### D. Single-Command Test Verification (`verify.py`)
-- The Marshal maintains `verify.py` as the canonical health check for the entire codebase.
+### D. Token-Efficient Verification vs. Full Suite (`verify.py`)
+- **Iterative Edits (<3s)**: During routine bugfixes or scraper adjustments, run targeted test classes (`python -m unittest tests.run_tests.<TestClass>`) plus `python -c "import verify; assert verify.check_package_imports(); assert verify.check_private_terms()"` instead of running the full 65-second suite on every turn.
+- **Full Suite (`python verify.py`)**: Run the full 115-test suite before release builds, major multi-package refactors, or when explicitly requested by the user.
 
 ---
 
 ## 3. Verification Protocol
-1. Run `python verify.py` before any release or major merge.
-2. Validate git hooks are active in `.git/hooks/`.
+1. Run fast sanitization & import checks (`verify.check_private_terms()`, `verify.check_package_imports()`) before every commit.
+2. Run `python verify.py` before any release or major merge.
 3. Confirm working tree cleanliness before tagging.

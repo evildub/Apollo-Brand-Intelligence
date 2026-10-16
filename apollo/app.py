@@ -326,6 +326,7 @@ class EbayTool(tk.Tk):
         self.smart_triage_var = tk.BooleanVar(value=True)
         self.show_fluff_var = tk.BooleanVar(value=False)
         self.store_full_sweep_var = tk.BooleanVar(value=False)
+        self.auto_syndicate_var = tk.BooleanVar(value=False)
 
         # Load saved theme
         saved_theme_key = self.data_store.get_setting("theme", "apollo_exec")
@@ -1600,6 +1601,13 @@ class EbayTool(tk.Tk):
         q_btn_row1.pack(fill="x", padx=8, pady=(4, 2))
         self.themed_widgets["bg_frames"].append(q_btn_row1)
 
+        self.auto_syndicate_cb = tk.Checkbutton(q_btn_row1, text="🎯 Auto-Syndicate",
+                                                variable=self.auto_syndicate_var,
+                                                bg=t["bg"], fg=t["accent"], selectcolor=t["entry_bg"],
+                                                activebackground=t["bg"], font=FONT_SM)
+        self.auto_syndicate_cb.pack(side="left", padx=(0, 4))
+        self.themed_widgets["checks"].append(self.auto_syndicate_cb)
+
         self.run_btn = self._btn(q_btn_row1, "▶  Run", self._run_queue, accent=True)
         self.run_btn.pack(side="left", fill="x", expand=True, padx=(0, 3))
 
@@ -1716,6 +1724,9 @@ class EbayTool(tk.Tk):
         self.btn_stash_dossier.pack(side="right", padx=2)
         self.btn_view_dossier = self._btn(toolbar, self._get_dossier_btn_label(), self._view_or_restore_dossier)
         self.btn_view_dossier.pack(side="right", padx=(2, 6))
+
+        self.btn_syndicate_sweep = self._btn(toolbar, "🎯 Syndicate Hunter", self._run_syndicate_sweep_on_results)
+        self.btn_syndicate_sweep.pack(side="right", padx=2)
 
         # ── 1.5 Live Search Filter Bar ────────────────────────────────────────
         filter_bar = tk.Frame(frame, bg=t["panel"], pady=4, padx=8)
@@ -5327,6 +5338,34 @@ class EbayTool(tk.Tk):
         if not self.pause_event.is_set():
             self._toggle_pause()
 
+    def _enrich_item_origin_from_cache(self, item: dict, fallback_seller: str = ""):
+        """
+        Instant seller origin pre-fill from DataStore persistent cache.
+        Pre-populates seller registered country, flag, and 3PL threat assessment
+        for all newly scraped items across current and subsequent brand sweeps.
+        """
+        if not hasattr(self, "data_store") or not self.data_store:
+            return
+        seller_name = str(item.get("seller", "") or fallback_seller).replace("🛡", "").replace("(Authorized)", "").strip()
+        GENERIC = {"unknown", "resolving...", "ebay seller", "printerval seller", "mercado libre seller", "printblur seller", "vinted user", "redbubble artist", "n/a"}
+        if not seller_name or any(g in seller_name.lower() for g in GENERIC):
+            return
+
+        cached_intel = self.data_store.get_seller_intel(seller_name)
+        if cached_intel and cached_intel.get("country") and cached_intel["country"] != "Unknown":
+            item["seller_origin"] = cached_intel["country"]
+            if cached_intel.get("member_since"):
+                item["member_since"] = cached_intel["member_since"]
+        elif item.get("seller_origin") and item["seller_origin"] != "Unknown":
+            self.data_store.set_seller_intel(seller_name, item["seller_origin"])
+
+        if item.get("seller_origin") and item["seller_origin"] != "Unknown":
+            loc = item.get("location", "")
+            assessment = self.data_store.compute_threat_assessment(item["seller_origin"], loc, seller_name=seller_name)
+            item["seller_flag"] = assessment.get("flag", "🌍")
+            if not item.get("threat_badge") and assessment.get("badge"):
+                item["threat_badge"] = assessment["badge"]
+                item["threat_score"] = assessment.get("score", "UNKNOWN")
 
     def _process_queue(self, is_headless=True, default_mkt="eBay", meli_c="Mexico", meli_d="2 Pages (100)", vinted_c="United Kingdom", vinted_d="2 Pages (192)", ali_d="3 Pages (180)"):
         # Ensure all scrapers honor current headless background mode
@@ -6025,6 +6064,7 @@ class EbayTool(tk.Tk):
                         item["keyword"] = "🏪 Full Sweep" if include_term == "*" else include_term
                         if "marketplace" not in item or not item["marketplace"]:
                             item["marketplace"] = mkt_tag
+                        self._enrich_item_origin_from_cache(item, fallback_seller=store_raw if store_raw else "")
 
                         item_id = str(item.get("item_id", "")).strip()
                         seller_str = str(item.get("seller", "")).strip().lower()
@@ -6112,6 +6152,7 @@ class EbayTool(tk.Tk):
                                     if not item.get("product_type"): item["product_type"] = auto_pt or self._detect_product_type(title)
                                 item["keyword"] = "🏪 Full Sweep" if include_term == "*" else include_term
                                 if "marketplace" not in item or not item["marketplace"]: item["marketplace"] = mkt_tag
+                                self._enrich_item_origin_from_cache(item, fallback_seller=store_raw if store_raw else "")
                                 item_id = item.get("item_id")
                                 seller_str = str(item.get("seller", "")).strip().lower()
                                 dedup_key = f"{item_id}::{seller_str}" if item_id and seller_str and seller_str != "mercado libre seller" else (item_id or item.get("url"))
@@ -6183,6 +6224,10 @@ class EbayTool(tk.Tk):
             self._status(msg)
             self._log(f"✓ Run complete — {total} listings harvested.")
             self._show_themed_info("Sweep Complete", f"Successfully harvested {total} listings across targets!\n\nClick 'Export' or 'Stash to Vault' to save.", icon="🎉")
+            if hasattr(self, "auto_syndicate_var") and self.auto_syndicate_var.get() and self.results:
+                self._status("🎯 Auto-Syndicate enabled: Launching visual syndicate sweep...")
+                self._log("🎯 Auto-Syndicate trigger: Initiating visual network sweep on harvested results...")
+                self.after(500, self._run_syndicate_sweep_on_results)
 
         if total > 0 and hasattr(self, "data_store"):
             self.data_store.increment_lifetime_listings(total)
@@ -8096,6 +8141,8 @@ class EbayTool(tk.Tk):
             add_tooltip(self.hr_cb, "Isolate confirmed 3PL drop-ship hubs, Vinted NWT replica risks, burner handles, and visual clones in 1 click.", theme_provider=t_func, is_enabled_callback=e_func)
         if hasattr(self, "hb_cb"):
             add_tooltip(self.hb_cb, "Hide verified authentic packaging matched against the Green Catalog.", theme_provider=t_func, is_enabled_callback=e_func)
+        if hasattr(self, "auto_syndicate_cb"):
+            add_tooltip(self.auto_syndicate_cb, "Automatically detect and cluster cross-seller photo clones via 64-bit DCT pHash.", theme_provider=t_func, is_enabled_callback=e_func)
         
         if hasattr(self, "btn_export"):
             add_tooltip(self.btn_export, "Export all current results to Excel (.xlsx) matching Standard Upload template (Ctrl+E).", theme_provider=t_func, is_enabled_callback=e_func)
@@ -8105,6 +8152,8 @@ class EbayTool(tk.Tk):
             add_tooltip(self.btn_copy_urls, "Copy all listing URLs in the results table to clipboard.", theme_provider=t_func, is_enabled_callback=e_func)
         if hasattr(self, "btn_threat_enrich"):
             add_tooltip(self.btn_threat_enrich, "Resolve seller country origin and identify 3PL drop-shipping forwarding hubs.", theme_provider=t_func, is_enabled_callback=e_func)
+        if hasattr(self, "btn_syndicate_sweep"):
+            add_tooltip(self.btn_syndicate_sweep, "Run on-demand visual syndicate sweep across listings in results to harvest connected clone storefronts.", theme_provider=t_func, is_enabled_callback=e_func)
         if hasattr(self, "btn_network_scan"):
             add_tooltip(self.btn_network_scan, "Scan for connected seller syndicates sharing phone, email, or physical addresses.", theme_provider=t_func, is_enabled_callback=e_func)
         if hasattr(self, "btn_rescrape"):
@@ -8835,6 +8884,144 @@ class EbayTool(tk.Tk):
             if len(values) > 5:
                 target_seller = str(values[5]).strip()
         self._open_syndicate_hunter_modal(target_seller=target_seller)
+
+    def _run_syndicate_sweep_on_results(self):
+        """
+        On-demand visual syndicate & connected seller network sweep.
+        Analyzes active session listings, extracts merchandising carousels / visual clusters,
+        and appends newly discovered listings to the Results table.
+        """
+        if not self.results:
+            messagebox.showinfo("Syndicate Hunter", "No harvested listings in current session to sweep.")
+            return
+
+        selected_iids = self.result_tree.selection()
+        target_items = []
+        if selected_iids:
+            for item_iid in selected_iids:
+                vals = self.result_tree.item(item_iid)["values"]
+                if len(vals) > 3:
+                    item_id = str(vals[3]).strip()
+                    for it in self.results:
+                        if str(it.get("item_id", "")).strip() == item_id:
+                            target_items.append(it)
+                            break
+        else:
+            target_items = list(self.results)
+
+        # Focus sweep on listings with valid item_ids or URLs
+        valid_targets = []
+        seen_sweep_ids = set()
+        for it in target_items:
+            iid = str(it.get("item_id", "")).strip()
+            url = it.get("url", "")
+            if (iid or url) and (iid not in seen_sweep_ids if iid else True):
+                if iid:
+                    seen_sweep_ids.add(iid)
+                valid_targets.append(it)
+
+        if not valid_targets:
+            messagebox.showinfo("Syndicate Hunter", "No valid listing targets identified for syndicate sweep.")
+            return
+
+        self._status(f"🎯 Running Syndicate Hunter sweep across {len(valid_targets)} listing(s)...")
+        self._log(f"🎯 Initiating Syndicate Hunter sweep across {len(valid_targets)} candidate listing(s)...")
+        self.progress.start()
+        self.stop_event.clear()
+        self.stop_btn.config(state="normal")
+
+        def _worker():
+            total_discovered = 0
+            new_items = []
+            try:
+                for idx, itm in enumerate(valid_targets, 1):
+                    if self.stop_event.is_set():
+                        break
+
+                    itm_id = str(itm.get("item_id", "")).strip()
+                    itm_url = itm.get("url", "")
+                    itm_img = itm.get("image_url", "")
+                    mkt = self._detect_item_marketplace(itm)
+
+                    self._status(f"🎯 Syndicate sweep [{idx}/{len(valid_targets)}]: Inspecting network for {itm.get('seller', 'listing')}...")
+
+                    discovered = []
+                    try:
+                        if mkt == "ebay" and hasattr(self, "scraper") and self.scraper:
+                            discovered = self.scraper.find_connected_network(itm_id, itm_url, itm_img)
+                        elif mkt == "printerval" and hasattr(self, "printerval_scraper") and self.printerval_scraper:
+                            discovered = self.printerval_scraper.find_connected_network(itm_id, itm_url, itm_img)
+                        elif mkt == "redbubble" and hasattr(self, "redbubble_scraper") and self.redbubble_scraper:
+                            discovered = self.redbubble_scraper.find_connected_network(itm_id, itm_url, itm_img)
+                        elif mkt == "mercadolibre" and hasattr(self, "mercadolibre_scraper") and self.mercadolibre_scraper:
+                            discovered = self.mercadolibre_scraper.find_connected_network(itm_id, itm_url, itm_img)
+                        elif hasattr(self, "scraper") and self.scraper:
+                            discovered = self.scraper.find_connected_network(itm_id, itm_url, itm_img)
+                    except Exception as err:
+                        self._log(f"  ⚠ Network extraction notice on {itm_id or itm_url}: {err}")
+                        discovered = []
+
+                    for cand in discovered:
+                        cand_id = str(cand.get("item_id", "")).strip()
+                        cand_url = str(cand.get("url", "")).strip()
+                        cand_mkt = cand.get("marketplace") or itm.get("marketplace") or "eBay"
+                        dedup_key = cand_url.lower().split("?")[0] if cand_url else cand_id
+
+                        if dedup_key and dedup_key not in self.seen_item_ids and cand_id not in self.seen_item_ids:
+                            if cand_id:
+                                self.seen_item_ids.add(cand_id)
+                                self.seen_item_ids.add(f"{cand_mkt}_{cand_id}")
+                            if cand_url:
+                                self.seen_item_ids.add(dedup_key)
+
+                            cand["brand"] = cand.get("brand") or itm.get("brand", "Unassigned")
+                            cand["product_type"] = cand.get("product_type") or itm.get("product_type", "")
+                            cand["keyword"] = "🎯 Syndicate Hunter"
+                            cand["marketplace"] = cand_mkt
+                            if not cand.get("threat_badge"):
+                                cand["threat_badge"] = "🚨 Visual Syndicate"
+                            cand["threat_score"] = max(safe_int_score(cand.get("threat_score")), 85)
+
+                            # Check seller cache for origin
+                            c_seller = str(cand.get("seller", "")).replace("🛡", "").replace("(Authorized)", "").strip()
+                            if hasattr(self, "data_store") and c_seller:
+                                s_intel = self.data_store.get_seller_intel(c_seller)
+                                if s_intel and s_intel.get("country") and s_intel["country"] != "Unknown":
+                                    cand["seller_origin"] = s_intel["country"]
+                                    if s_intel.get("member_since"):
+                                        cand["member_since"] = s_intel["member_since"]
+
+                            self.results.append(cand)
+                            new_items.append(cand)
+                            total_discovered += 1
+
+                            # Stream UI in batches of 5
+                            if len(new_items) >= 5:
+                                batch = list(new_items)
+                                new_items.clear()
+                                self.after(0, lambda b=batch: self._update_results_table(b))
+
+                if new_items:
+                    batch = list(new_items)
+                    new_items.clear()
+                    self.after(0, lambda b=batch: self._update_results_table(b))
+
+            except Exception as e:
+                self._log(f"❌ Syndicate Hunter sweep encountered an error: {e}")
+
+            def _done():
+                self.progress.stop()
+                self.stop_btn.config(state="disabled")
+                self._status(f"🎯 Syndicate sweep finished: Added {total_discovered} connected listings.")
+                self._log(f"🎯 Syndicate Hunter sweep completed: Discovered and appended {total_discovered} connected listing(s).")
+                if total_discovered > 0:
+                    self._show_themed_info("Syndicate Sweep Complete", f"Discovered {total_discovered} connected listing(s) from network carousels and visual clusters.\n\nAppended to Results table.", icon="🎯")
+                else:
+                    self._show_themed_info("Syndicate Sweep Complete", "No additional connected network listings found.", icon="🎯")
+
+            self.after(0, _done)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _enrich_seller_threat_intel(self):
         """
@@ -10473,10 +10660,52 @@ class EbayTool(tk.Tk):
                         except Exception:
                             pass
 
+                        # Option A: Intra-Session & Vault Cross-Seller pHash Auto-Clustering
+                        clone_match_info = None
+                        try:
+                            target_item = next((itm for itm in self.results if itm.get("image_url") in (url, image_url)), None)
+                            t_seller = str(target_item.get("seller", "")).replace("🛡", "").replace("(Authorized)", "").strip().lower() if target_item else ""
+                            if target_item and h:
+                                # 1. Intra-session cross-seller clone detection
+                                for other in self.results:
+                                    if other is target_item:
+                                        continue
+                                    other_h = other.get("phash")
+                                    if not other_h:
+                                        continue
+                                    o_seller = str(other.get("seller", "")).replace("🛡", "").replace("(Authorized)", "").strip().lower()
+                                    if t_seller and o_seller and t_seller != o_seller and t_seller not in ("unknown", "n/a", "ebay seller", "printerval seller") and o_seller not in ("unknown", "n/a", "ebay seller", "printerval seller"):
+                                        if hamming_distance(h, other_h) <= 5:
+                                            clone_match_info = {"seller": other.get("seller"), "type": "session"}
+                                            target_item["visual_clone_seller"] = other.get("seller")
+                                            target_item["visual_counterfeit"] = True
+                                            if not other.get("threat_badge") or "Benign" not in str(other.get("threat_badge")):
+                                                other["threat_badge"] = f"🚨 Visual Clone: {target_item.get('seller')}"
+                                                other["visual_counterfeit"] = True
+                                                other["threat_score"] = max(safe_int_score(other.get("threat_score")), 90)
+                                            break
+
+                                # 2. Saved Vaults (Dossiers) cross-investigation clone detection
+                                if not clone_match_info and hasattr(self, "data_store") and self.data_store:
+                                    for v_name in self.data_store.get_dossier_names():
+                                        v_items = self.data_store.get_dossier(v_name)
+                                        for v_item in v_items:
+                                            v_h = v_item.get("phash")
+                                            if v_h and hamming_distance(h, v_h) <= 5:
+                                                v_seller = v_item.get("seller", "Vault")
+                                                clone_match_info = {"seller": f"Vault '{v_name}' ({v_seller})", "type": "vault"}
+                                                target_item["vault_clone"] = v_name
+                                                target_item["visual_counterfeit"] = True
+                                                break
+                                        if clone_match_info:
+                                            break
+                        except Exception:
+                            pass
+
                         # Prepare scaled canvas (pure PIL, safe in worker thread)
                         canvas = self._get_scaled_canvas(pil_img, sz_px) if sz_px > 0 else None
 
-                        def _on_main_thread(c=canvas, target_url=url, match=v_match, size_k=sz_key):
+                        def _on_main_thread(c=canvas, target_url=url, match=v_match, clone_info=clone_match_info, size_k=sz_key):
                             self._pending_thumb_urls.discard(target_url)
                             if not self.winfo_exists():
                                 return
@@ -10506,6 +10735,21 @@ class EbayTool(tk.Tk):
                                             if len(vals_list) > 7:
                                                 vals_list[7] = badge_text
                                                 self.result_tree.item(row_id, values=vals_list)
+                            elif clone_info:
+                                badge_text = f"🚨 Visual Clone: {clone_info['seller']}"
+                                for itm in self.results:
+                                    if itm.get("image_url") == target_url or itm.get("image_url") == image_url:
+                                        if not itm.get("threat_badge") or "Benign" not in str(itm.get("threat_badge")):
+                                            itm["threat_badge"] = badge_text
+                                            itm["visual_counterfeit"] = True
+                                            itm["threat_score"] = max(safe_int_score(itm.get("threat_score")), 90)
+                                        break
+                                for row_id in self._url_to_iids.get(target_url, ()):
+                                    if self.result_tree.exists(row_id):
+                                        vals_list = list(self.result_tree.item(row_id, "values"))
+                                        if len(vals_list) > 7 and (not vals_list[7] or "Benign" not in str(vals_list[7])):
+                                            vals_list[7] = badge_text
+                                            self.result_tree.item(row_id, values=vals_list)
 
                             # Apply photo if thumbnail mode is active
                             if c and self.thumb_size_var.get() != "Off (Text Only)" and self.thumb_size_var.get() == size_k:

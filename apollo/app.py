@@ -5990,6 +5990,7 @@ class EbayTool(tk.Tk):
                         self._log(f"  ⚠ [{platform_name}] Unknown marketplace dispatch: skipped eBay fallback to preserve marketplace isolation.")
                         items = []
 
+                    items = items or []
                     new_items = []
                     filtered_out_count = 0
                     filtered_reasons = {}
@@ -6137,6 +6138,7 @@ class EbayTool(tk.Tk):
                                 reverse_locale_probe=False,
                                 log_callback=self._log
                             )
+                            items = items or []
                             for item in items:
                                 title = item.get("title", "")
                                 passed_excl, matched_ex = self._check_strict_exclusions(title, job.get("excludes", []))

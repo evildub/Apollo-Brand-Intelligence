@@ -161,7 +161,7 @@ class EbayScraper:
                     stop_event=stop_event,
                     pause_event=pause_event,
                     log_callback=log_callback
-                )
+                ) or []
                 new_in_dom = 0
                 for it in dom_items:
                     iid = it.get("item_id")
@@ -203,7 +203,7 @@ class EbayScraper:
                 stop_event=stop_event,
                 pause_event=pause_event,
                 log_callback=log_callback
-            )
+            ) or []
 
         self.is_bot_challenge = False
         self.blocked_store_name = ""
@@ -222,15 +222,15 @@ class EbayScraper:
 
         if HAS_PLAYWRIGHT:
             try:
-                items = self._search_via_playwright(
-                    store_info, include_term, cleaned_excludes, condition, seen_ids,
-                    domain=active_dom,
-                    stop_event=stop_event, pause_event=pause_event
-                )
+                items = self._search_playwright(
+                    store_info, include_term, cleaned_excludes, condition=condition,
+                    stop_event=stop_event, pause_event=pause_event,
+                    domain=active_dom, log_callback=log_callback
+                ) or []
                 if items or (stop_event and stop_event.is_set()) or self.is_bot_challenge:
-                    return items
+                    return items or []
             except Exception:
-                pass
+                items = []
 
         # Fallback to requests search
         page = 1
@@ -317,9 +317,9 @@ class EbayScraper:
                     stop_event=stop_event,
                     pause_event=pause_event,
                     log_callback=log_callback
-                )
+                ) or []
 
-        return items
+        return items or []
 
     def _get_user_data_dir(self) -> str:
         """Return dedicated persistent user data directory for Playwright."""
@@ -369,14 +369,6 @@ class EbayScraper:
             import webbrowser
             webbrowser.open(url)
 
-    def _search_via_playwright(self, store_info: dict,
-                               include_term: str, excludes: list[str],
-                               condition: str, seen_ids: set,
-                               domain: str = "ebay.com",
-                               stop_event: threading.Event = None,
-                               pause_event: threading.Event = None) -> list[dict]:
-        """Search across pages using a single browser session with stop/pause support."""
-        items = []
     def _has_next_page(self, html: str, current_page: int, current_page_items_count: int) -> bool:
         """
         Determine whether a search or store page actually has a subsequent page.

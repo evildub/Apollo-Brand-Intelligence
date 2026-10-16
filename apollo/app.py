@@ -1031,7 +1031,12 @@ class EbayTool(tk.Tk):
 
         self.settings_menu.add_separator()
 
-        # 3. Automation, Audio & UI Toggles
+        # 3. Runtime & UI Toggles
+        self.settings_menu.add_checkbutton(
+            label="👻 Stealth / Headless Browser Mode",
+            variable=self.headless_var,
+            command=self._toggle_headless
+        )
         self.settings_menu.add_checkbutton(
             label="🔔 Audio Chimes & Threat Alerts",
             variable=self.sound_enabled_var,
@@ -1048,73 +1053,77 @@ class EbayTool(tk.Tk):
             command=self._on_toggle_ambient_flow
         )
         self.settings_menu.add_checkbutton(
-            label="👻 Stealth / Headless Browser Mode",
-            variable=self.headless_var,
-            command=self._toggle_headless
-        )
-        self.settings_menu.add_checkbutton(
-            label="🎙️ Voice Command Mode (Offline Windows SAPI)",
+            label="🎙 Voice Command Mode (Windows SAPI)",
             variable=self.voice_enabled_var,
             command=self._toggle_voice_control
         )
 
         self.settings_menu.add_separator()
 
-        # 4. Analyst Intelligence Packs & Sharing
+        # 4. Investigation, Taxonomy & Session Configuration
         self.settings_menu.add_command(
-            label="📦 Export Intelligence Pack...",
-            command=self._export_intel_pack_dialog
-        )
-        self.settings_menu.add_command(
-            label="📥 Import Intelligence Pack...",
-            command=self._import_intel_pack_dialog
-        )
-
-        self.settings_menu.add_separator()
-
-        # 5. Modals & Configuration
-        self.settings_menu.add_command(
-            label="🛡 Enforcement Registry...",
-            command=self._open_enforcement_registry_window
-        )
-        self.settings_menu.add_command(
-            label="🏹 Artemis Rights Engine...",
-            command=self._launch_artemis_ui
-        )
-        self.settings_menu.add_command(
-            label="🛡 Whitelist Manager...",
-            command=self._open_whitelist_manager_window
-        )
-        self.settings_menu.add_separator()
-        self.settings_menu.add_command(
-            label="📄 VeRO Seller Disclosure Parser...",
-            command=self._open_vero_disclosure_modal
-        )
-        self.settings_menu.add_command(
-            label="🔐 Session Vault & API Keys...",
-            command=self._open_session_vault_modal
-        )
-        self.settings_menu.add_command(
-            label="🕸 Syndicate Hunter...",
+            label="🕸 Syndicate Hunter (Ctrl+Y)...",
             command=self._open_syndicate_hunter_modal
+        )
+        self.settings_menu.add_command(
+            label="🛡 Authorized Dealer Whitelist...",
+            command=self._open_whitelist_manager_window
         )
         self.settings_menu.add_command(
             label="🏷 Product Types & Taxonomy...",
             command=self._open_product_type_manager
         )
         self.settings_menu.add_command(
-            label="📚 Analyst Field Guide (F1)...",
-            command=self._open_field_guide_modal
+            label="🔐 Session Vault & API Keys...",
+            command=self._open_session_vault_modal
         )
-        self.settings_menu.add_command(
-            label="ℹ About Apollo...",
-            command=self._show_about_dialog
+
+        # Intelligence Packs Submenu
+        self.intel_pack_menu = tk.Menu(
+            self.settings_menu,
+            tearoff=0,
+            bg=t["panel"],
+            fg=t["text"],
+            activebackground=t["accent"],
+            activeforeground="black" if str(t.get("name","")).startswith("⚡") else "white",
+            bd=1,
+            relief="solid",
+            activeborderwidth=0,
+            selectcolor=t["accent"]
         )
+        self.intel_pack_menu.add_command(
+            label="📦 Export Intelligence Pack...",
+            command=self._export_intel_pack_dialog
+        )
+        self.intel_pack_menu.add_command(
+            label="📥 Import Intelligence Pack...",
+            command=self._import_intel_pack_dialog
+        )
+        self.settings_menu.add_cascade(label="📦 Intelligence Packs ▾", menu=self.intel_pack_menu)
+
         self.settings_menu.add_separator()
+
+        # 5. Compliance, Legal & Enforcement Suite
         self.settings_menu.add_command(
-            label="👁 Argus Compliance Sentinel...",
+            label="🏹 Artemis Rights Engine...",
+            command=self._launch_artemis_ui
+        )
+        self.settings_menu.add_command(
+            label="🛰 Argus Compliance Sentinel...",
             command=self._open_argus_compliance_modal
         )
+        self.settings_menu.add_command(
+            label="⚖ Enforcement Registry...",
+            command=self._open_enforcement_registry_window
+        )
+        self.settings_menu.add_command(
+            label="📄 VeRO Seller Disclosure Parser...",
+            command=self._open_vero_disclosure_modal
+        )
+
+        self.settings_menu.add_separator()
+
+        # 6. System & Maintenance
         self.settings_menu.add_command(
             label="🩺 System Diagnostics...",
             command=self._open_system_diagnostics
@@ -1122,6 +1131,18 @@ class EbayTool(tk.Tk):
         self.settings_menu.add_command(
             label="🧹 Purge Staged Cache & Vacuum DB...",
             command=self._purge_staged_cache_dialog
+        )
+
+        self.settings_menu.add_separator()
+
+        # 7. Help & About (Anchored at Bottom)
+        self.settings_menu.add_command(
+            label="📚 Analyst Field Guide (F1)...",
+            command=self._open_field_guide_modal
+        )
+        self.settings_menu.add_command(
+            label="ℹ About Apollo...",
+            command=self._show_about_dialog
         )
 
         self.theme_combo = None
@@ -2046,7 +2067,7 @@ class EbayTool(tk.Tk):
                 cb.configure(bg=cb.master["bg"], fg=fg_col, selectcolor=check_select, activebackground=cb.master["bg"])
             except Exception: pass
 
-        for m in (getattr(self, "settings_menu", None), getattr(self, "col_menu", None), getattr(self, "theme_menu", None)):
+        for m in (getattr(self, "settings_menu", None), getattr(self, "col_menu", None), getattr(self, "theme_menu", None), getattr(self, "intel_pack_menu", None)):
             if m:
                 try: m.configure(bg=t["panel"], fg=t["text"], selectcolor=t["accent"], activebackground=t["accent"], activeforeground=t.get("select_fg", "black" if is_bright else "white"))
                 except Exception: pass
@@ -7495,27 +7516,32 @@ class EbayTool(tk.Tk):
                     has_etsy_items = True
                     break
 
+        # 1. Primary Pipeline & Platform-Specific Actions
         menu.add_command(label="⚡ Run Auto-Pipeline for Selected", font=("Segoe UI", 9, "bold"), command=lambda: self._run_hero_pipeline(selected_only=True))
-        menu.add_separator()
-
         if has_pod_items:
             menu.add_command(label="👕 Expand POD Design Variants (50-74 Products)", font=("Segoe UI", 9, "bold"), command=self._expand_pod_variants_selected)
         if has_redbubble_items:
             menu.add_command(label="🎨 Sweep Artist's Full Portfolio (Find All Designs)", font=("Segoe UI", 9, "bold"), command=self._sweep_redbubble_artist_selected)
         if has_etsy_items:
             menu.add_command(label="🧶 Verify Etsy Highlights (Handpicked vs Made)", font=("Segoe UI", 9, "bold"), command=self._verify_etsy_highlights_selected)
-        if has_pod_items or has_redbubble_items or has_etsy_items:
-            menu.add_separator()
+        menu.add_separator()
 
+        # 2. Direct Listing Inspection & Editing
+        menu.add_command(label="🌐 Open Listing in Browser", command=lambda: self._open_url(None))
         menu.add_command(label="✏ Edit Listing Values (F2)", command=self._edit_selected_listing)
-        menu.add_command(label="🔄 Refresh / Rescrape Selected", command=self._rescrape_selected_listings)
-        menu.add_command(label="🔄 Re-Scan Visual Matches (All Listings)", command=self._rescan_visual_matches)
+        menu.add_command(label="🔄 Refresh / Rescrape Selected (F5)", command=self._rescrape_selected_listings)
         menu.add_separator()
-        menu.add_command(label="💾 Export to Excel (Ctrl+E)", command=self._export)
-        menu.add_command(label="🌐 Multi-Locale Expander", command=self._open_multi_locale_expander)
+
+        # 3. Seller & Storefront Operations
+        menu.add_command(label="🏪 Enrich Selected Seller Names", command=self._enrich_sellers)
+        menu.add_command(label="🌍 Resolve Threat Intel & Origin", command=self._enrich_seller_threat_intel)
+        menu.add_command(label="➕ Add Seller to Stores Box", command=self._add_selected_result_seller_to_stores)
+        menu.add_command(label="🛡 Whitelist Seller (Authorized Dealer)", command=self._whitelist_selected_result_seller)
         menu.add_separator()
+
+        # 4. Network & Visual Intelligence
         menu.add_command(label="🔗 Connected Seller Network Hunter", command=self._open_connected_network_scanner)
-        menu.add_command(label="🕸 Investigate in Syndicate Hunter", command=self._open_syndicate_hunter_for_selected)
+        menu.add_command(label="🕸 Investigate in Syndicate Hunter (Ctrl+Y)", command=self._open_syndicate_hunter_for_selected)
 
         # ── Nested Reverse Visual Search Submenu ──
         vis_menu = tk.Menu(menu, tearoff=0, bg=t["panel"], fg=t["text"],
@@ -7577,22 +7603,31 @@ class EbayTool(tk.Tk):
 
         menu.add_cascade(label="📸 Reverse Visual Search (Sweep by Photo) ▾", menu=vis_menu)
 
-        menu.add_command(label="🟢 Mark Packaging as Known Benign", command=self._mark_selected_as_visual_benign)
-        menu.add_command(label="🔴 Mark Photo as Known Counterfeit", command=self._mark_selected_as_visual_counterfeit)
-        menu.add_command(label="🏪 Add Seller to Stores Box", command=self._add_selected_result_seller_to_stores)
-        menu.add_command(label="🏪 Enrich Selected Seller Names", command=self._enrich_sellers)
-        menu.add_command(label="🌍 Resolve Threat Intel & Origin", command=self._enrich_seller_threat_intel)
-        menu.add_command(label="🧶 Verify Etsy Highlights (Handpicked vs Made)", command=self._verify_etsy_highlights_selected)
-        menu.add_command(label="🛡 Whitelist Seller (Authorized Dealer)", command=self._whitelist_selected_result_seller)
+        # ── Nested Visual Threat Catalog Submenu ──
+        cat_menu = tk.Menu(menu, tearoff=0, bg=t["panel"], fg=t["text"],
+                           activebackground=t["accent"], activeforeground="black" if t.get("name","").startswith("⚡") else "white")
+        cat_menu.add_command(label="🟢 Mark Packaging as Known Benign", command=self._mark_selected_as_visual_benign)
+        cat_menu.add_command(label="🔴 Mark Photo as Known Counterfeit", command=self._mark_selected_as_visual_counterfeit)
+        cat_menu.add_separator()
+        cat_menu.add_command(label="🔄 Re-Scan Visual Matches (All Listings)", command=self._rescan_visual_matches)
+        menu.add_cascade(label="🖼 Visual Threat Catalog ▾", menu=cat_menu)
+
         menu.add_separator()
-        menu.add_command(label="☑ Select All (Ctrl+A)", command=self._select_all_results)
-        menu.add_command(label="🌐 Open Listing in Browser", command=lambda: self._open_url(None))
-        menu.add_command(label="📋 Copy Selected URLs", command=self._copy_selected_urls)
-        menu.add_command(label="📋 Copy All URLs", command=self._copy_all_listing_urls)
-        menu.add_separator()
+
+        # 5. Export & Legal Enforcement Dispatch
+        menu.add_command(label="💾 Export to Excel (Ctrl+E)", command=self._export)
+        menu.add_command(label="🌐 Multi-Locale Expander...", command=self._open_multi_locale_expander)
         menu.add_command(label="🏹 Dispatch Selected to Artemis Queue", font=("Segoe UI", 9, "bold"), command=self._dispatch_selected_to_artemis)
         menu.add_command(label="🏹 Launch Artemis Rights Engine...", command=self._launch_artemis_ui)
         menu.add_separator()
+
+        # 6. Clipboard & Selection
+        menu.add_command(label="📋 Copy Selected URLs", command=self._copy_selected_urls)
+        menu.add_command(label="📋 Copy All URLs", command=self._copy_all_listing_urls)
+        menu.add_command(label="☑ Select All (Ctrl+A)", command=self._select_all_results)
+        menu.add_separator()
+
+        # 7. Destructive / Cleanup Actions (Anchored at Bottom)
         menu.add_command(label="✕ Remove Selected (Del)", command=self._remove_selected_results)
         menu.add_command(label="🗑 Clear All Results", command=self._clear_results)
         

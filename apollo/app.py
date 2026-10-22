@@ -19,7 +19,7 @@ from PIL import Image, ImageTk
 import ctypes
 
 logger = logging.getLogger("Apollo")
-APP_VERSION = "3.4.1"
+APP_VERSION = "3.4.2"
 VERSION = APP_VERSION
 
 def _sleep_interruptible(duration_sec: float, stop_event=None, pause_event=None, skip_event=None, step_sec: float = 0.04) -> bool:

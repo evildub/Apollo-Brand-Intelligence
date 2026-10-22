@@ -29,13 +29,13 @@ if exist "artemis.png" copy /Y "artemis.png" "dist\Apollo Brand Intelligence\art
 if exist "README.md" copy /Y "README.md" "dist\Apollo Brand Intelligence\README.md" >nul
 
 echo [4/5] Packaging Release Zip Archive...
-powershell -NoProfile -Command "Compress-Archive -Path 'dist\Apollo Brand Intelligence' -DestinationPath 'dist\ApolloBrandIntelligence-v3.4.1.zip' -Force"
+powershell -NoProfile -Command "Compress-Archive -Path 'dist\Apollo Brand Intelligence' -DestinationPath 'dist\ApolloBrandIntelligence-v3.4.2.zip' -Force"
 
 echo [5/5] Build complete! Verified distribution ready:
 dir /b "dist\Apollo Brand Intelligence\*.exe"
 echo.
 echo Computing SHA-256 Cryptographic Checksums:
-powershell -NoProfile -Command "Get-FileHash -Algorithm SHA256 'dist\Apollo Brand Intelligence\*.exe', 'dist\ApolloBrandIntelligence-v3.4.1.zip' | Format-Table -AutoSize"
+powershell -NoProfile -Command "Get-FileHash -Algorithm SHA256 'dist\Apollo Brand Intelligence\*.exe', 'dist\ApolloBrandIntelligence-v3.4.2.zip' | Format-Table -AutoSize"
 echo.
 echo Done! Output located at: dist\Apollo Brand Intelligence\
 pause

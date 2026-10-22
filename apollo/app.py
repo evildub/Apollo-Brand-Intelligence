@@ -7363,40 +7363,75 @@ class EbayTool(tk.Tk):
         tk.Label(win, text="✏ Edit Listing Information", bg=t["bg"], fg=t["accent"],
                  font=("Segoe UI", 11, "bold")).pack(pady=(12, 4))
         
-        sub_txt = f"Editing Item #{first_item.get('item_id', '')}" if not is_multi else f"Applying updates across {len(target_items)} selected listings"
-        tk.Label(win, text=sub_txt, bg=t["bg"], fg=t["subtext"], font=FONT_SM).pack(pady=(0, 10))
+        sub_txt = f"Editing Item #{first_item.get('item_id', '')}" if not is_multi else f"Batch updating {len(target_items)} selected listings"
+        tk.Label(win, text=sub_txt, bg=t["bg"], fg=t["subtext"], font=FONT_SM).pack(pady=(0, 2 if is_multi else 10))
+        if is_multi:
+            tk.Label(win, text="💡 Leave fields blank to keep their existing values across all listings.",
+                     bg=t["bg"], fg=t["accent"], font=FONT_SM).pack(pady=(0, 10))
 
         frame = tk.Frame(win, bg=t["bg"])
         frame.pack(fill="both", expand=True, padx=20)
 
         # 1. Brand
         tk.Label(frame, text="Brand / Trademark:", bg=t["bg"], fg=t["text"], font=FONT_SM).grid(row=0, column=0, sticky="w", pady=4)
-        brand_var = tk.StringVar(value=first_item.get("brand", ""))
+        brand_init = "" if is_multi else first_item.get("brand", "")
+        brand_var = tk.StringVar(value=brand_init)
         known_brands = sorted(list(self.data_store.get_brands().keys()))
         brand_cb = ttk.Combobox(frame, textvariable=brand_var, values=known_brands, font=FONT_SM)
         brand_cb.grid(row=0, column=1, sticky="ew", pady=4, padx=(8, 0))
 
         # 2. Product Type
         tk.Label(frame, text="Product Category:", bg=t["bg"], fg=t["text"], font=FONT_SM).grid(row=1, column=0, sticky="w", pady=4)
-        pt_var = tk.StringVar(value=first_item.get("product_type", ""))
+        pt_init = "" if is_multi else first_item.get("product_type", "")
+        pt_var = tk.StringVar(value=pt_init)
         known_pts = ["Airbag Covers", "Airbag Components", "Emblems", "Decals", "Wheel Caps", "Exterior Lighting", "Exterior Parts", "Brakes", "Ignition Systems", "Oil Filters", "Air Filters", "Merchandise", "Accessories"]
         pt_cb = ttk.Combobox(frame, textvariable=pt_var, values=known_pts, font=FONT_SM)
         pt_cb.grid(row=1, column=1, sticky="ew", pady=4, padx=(8, 0))
 
         # 3. Seller Name
         tk.Label(frame, text="Seller Name / Store:", bg=t["bg"], fg=t["text"], font=FONT_SM).grid(row=2, column=0, sticky="w", pady=4)
-        seller_var = tk.StringVar(value=first_item.get("seller", ""))
+        seller_init = "" if is_multi else first_item.get("seller", "")
+        seller_var = tk.StringVar(value=seller_init)
         seller_ent = tk.Entry(frame, textvariable=seller_var, bg=t["entry_bg"], fg=t["text"], insertbackground=t["text"], relief="flat", font=FONT_SM)
         seller_ent.grid(row=2, column=1, sticky="ew", pady=4, padx=(8, 0))
+        if is_multi:
+            ph_seller = "(Leave blank to keep existing)"
+            seller_ent.insert(0, ph_seller)
+            seller_ent.config(fg=t["subtext"])
+            def _on_s_in(e, en=seller_ent, ph=ph_seller):
+                if en.get() == ph:
+                    en.delete(0, "end")
+                    en.config(fg=t["text"])
+            def _on_s_out(e, en=seller_ent, ph=ph_seller):
+                if not en.get().strip():
+                    en.insert(0, ph)
+                    en.config(fg=t["subtext"])
+            seller_ent.bind("<FocusIn>", _on_s_in)
+            seller_ent.bind("<FocusOut>", _on_s_out)
 
         # 4. Price
         tk.Label(frame, text="Price:", bg=t["bg"], fg=t["text"], font=FONT_SM).grid(row=3, column=0, sticky="w", pady=4)
-        price_var = tk.StringVar(value=first_item.get("price", ""))
+        price_init = "" if is_multi else first_item.get("price", "")
+        price_var = tk.StringVar(value=price_init)
         price_ent = tk.Entry(frame, textvariable=price_var, bg=t["entry_bg"], fg=t["text"], insertbackground=t["text"], relief="flat", font=FONT_SM)
         price_ent.grid(row=3, column=1, sticky="ew", pady=4, padx=(8, 0))
+        if is_multi:
+            ph_price = "(Leave blank to keep existing)"
+            price_ent.insert(0, ph_price)
+            price_ent.config(fg=t["subtext"])
+            def _on_p_in(e, en=price_ent, ph=ph_price):
+                if en.get() == ph:
+                    en.delete(0, "end")
+                    en.config(fg=t["text"])
+            def _on_p_out(e, en=price_ent, ph=ph_price):
+                if not en.get().strip():
+                    en.insert(0, ph)
+                    en.config(fg=t["subtext"])
+            price_ent.bind("<FocusIn>", _on_p_in)
+            price_ent.bind("<FocusOut>", _on_p_out)
 
         # 5. Title (Single item only)
-        title_var = tk.StringVar(value=first_item.get("title", ""))
+        title_var = tk.StringVar(value=first_item.get("title", "") if not is_multi else "")
         if not is_multi:
             tk.Label(frame, text="Listing Title:", bg=t["bg"], fg=t["text"], font=FONT_SM).grid(row=4, column=0, sticky="w", pady=4)
             title_ent = tk.Entry(frame, textvariable=title_var, bg=t["entry_bg"], fg=t["text"], insertbackground=t["text"], relief="flat", font=FONT_SM)
@@ -7412,7 +7447,28 @@ class EbayTool(tk.Tk):
             new_pt = pt_var.get().strip()
             new_s = seller_var.get().strip()
             new_p = price_var.get().strip()
-            new_t = title_var.get().strip()
+            new_t = title_var.get().strip() if not is_multi else ""
+
+            # In batch mode, filter out placeholders
+            ph_tokens = {"(leave blank to keep existing)", "(keep existing)", "(no change)"}
+            if is_multi:
+                if new_b.lower() in ph_tokens: new_b = ""
+                if new_pt.lower() in ph_tokens: new_pt = ""
+                if new_s.lower() in ph_tokens: new_s = ""
+                if new_p.lower() in ph_tokens: new_p = ""
+
+            # If multi-edit and nothing was entered, exit cleanly without overwriting
+            if is_multi and not any([new_b, new_pt, new_s, new_p]):
+                messagebox.showinfo("Batch Edit", "No field updates entered. Selected listings were left untouched.", parent=win)
+                win.destroy()
+                return
+
+            changes_summary = []
+            if new_b: changes_summary.append(f"Brand='{new_b}'")
+            if new_pt: changes_summary.append(f"Category='{new_pt}'")
+            if new_s: changes_summary.append(f"Seller='{new_s}'")
+            if new_p: changes_summary.append(f"Price='{new_p}'")
+            if not is_multi and new_t: changes_summary.append("Title updated")
 
             for item in target_items:
                 if new_b: item["brand"] = new_b
@@ -7422,7 +7478,8 @@ class EbayTool(tk.Tk):
                 if not is_multi and new_t: item["title"] = new_t
 
             self._repopulate_results_table()
-            self._log(f"✏ Updated values for {len(target_items)} listing(s) in results table.")
+            detail_str = f" ({', '.join(changes_summary)})" if changes_summary else ""
+            self._log(f"✏ Updated values for {len(target_items)} listing(s) in results table{detail_str}.")
             win.destroy()
 
         self._btn(btn_row, "💾 Apply Changes", _save, accent=True).pack(side="left", fill="x", expand=True, padx=(0, 6))

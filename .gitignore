@@ -74,6 +74,11 @@ data/
 private_terms.md
 APOLLO_BRAND_VISION.txt
 
+# Presentations & scratch generators
+*.pptx
+~$*.pptx
+generate_deck.py
+
 # OS generated files
 .DS_Store
 .DS_Store?

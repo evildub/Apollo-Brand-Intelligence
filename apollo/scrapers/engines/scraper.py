@@ -273,6 +273,7 @@ class EbayScraper:
 
         if items and self._has_next_page(html, 1, len(page_items)):
             page = 2
+            prev_req_url = url
             while page <= MAX_PAGES:
                 if stop_event and stop_event.is_set():
                     break
@@ -280,7 +281,7 @@ class EbayScraper:
                     pause_event.wait()
 
                 url = self._build_url(active_info, include_term, cleaned_excludes, page, condition, domain=active_dom)
-                html = self._fetch_via_requests(url)
+                html = self._fetch_via_requests(url, referer=prev_req_url)
                 if not html:
                     break
                 page_items = self._parse_html(html, fallback_seller=seller_label, domain=active_dom)
@@ -298,8 +299,9 @@ class EbayScraper:
 
                 if new_found == 0 or len(page_items) < 10 or not self._has_next_page(html, page, len(page_items)):
                     break
+                prev_req_url = url
                 page += 1
-                time.sleep(random.uniform(1.0, 2.0))
+                time.sleep(random.uniform(1.2, 2.2))
 
         # Reverse Locale Auto-Detection fallback: If 0 results found on requested locale, probe international locales
         if not items and reverse_locale_probe and target_slug and target_slug.lower() not in ("global", "marketplace", "all products", "catalog", "full search"):
@@ -373,46 +375,58 @@ class EbayScraper:
         """
         Determine whether a search or store page actually has a subsequent page.
         Returns False if:
-        - The current page returned fewer than 20 items (indicating last/only page).
+        - The current page returned 0 items.
+        - The current page returned fewer than 15 items (indicating last/only page).
         - The DOM has an explicit next page button marked disabled or aria-disabled='true'.
-        - No active pagination link matching the next page number exists.
         - Total result count declared on the page indicates <= current item count.
         """
-        if current_page_items_count == 0:
-            return False
-        if current_page_items_count < 20:
+        if current_page_items_count == 0 or current_page_items_count < 15:
             return False
         if not html:
             return False
 
         h_low = html.lower()
 
-        # Check total results counter if present (e.g., '14 results for', '45 results')
-        m_tot = re.search(r'([\d,]+)\s+results?', h_low)
+        # Check if next button is explicitly disabled
+        # eBay uses: .pagination__next, a[aria-label='Next page'], a[aria-label='Go to next search page'], a[type='next']
+        if re.search(r'aria-disabled=["\']true["\'][^>]*class=["\'][^"\']*pagination__next', h_low) or \
+           re.search(r'class=["\'][^"\']*pagination__next[^"\']*["\'][^>]*aria-disabled=["\']true["\']', h_low) or \
+           re.search(r'class=["\'][^"\']*pagination__next--disabled[^"\']*["\']', h_low) or \
+           re.search(r'<a[^>]+aria-label=["\'](?:go to )?next(?: search)? page["\'][^>]+aria-disabled=["\']true["\']', h_low) or \
+           re.search(r'aria-disabled=["\']true["\'][^>]*aria-label=["\'](?:go to )?next(?: search)? page["\']', h_low) or \
+           re.search(r'<a[^>]+type=["\']next["\'][^>]+aria-disabled=["\']true["\']', h_low):
+            return False
+
+        # Check total results counter if declared in official container (e.g. srp-controls__count-heading)
+        m_tot = re.search(r'(?:srp-controls__count-heading|rcnt|total-results)[^>]*>.*?([\d,]+)\s+results?', h_low)
+        if not m_tot:
+            m_tot = re.search(r'([\d,]+)\s+results?\b(?!\s+per\s+page)', h_low)
         if m_tot:
             try:
                 tot_val = int(m_tot.group(1).replace(",", ""))
+                # Only cut off if declared total is strictly <= items harvested so far
                 if tot_val <= current_page_items_count * current_page:
                     return False
             except Exception:
                 pass
 
-        # Check if next button is explicitly disabled
-        # eBay uses: .pagination__next, a[aria-label='Next page'], a[type='next']
-        if re.search(r'<a[^>]+aria-label=["\']next page["\'][^>]+aria-disabled=["\']true["\']', h_low) or \
-           re.search(r'class=["\'][^"\']*pagination__next[^"\']*["\'][^>]+aria-disabled=["\']true["\']', h_low) or \
-           re.search(r'class=["\'][^"\']*pagination__next--disabled[^"\']*["\']', h_low):
-            return False
+        # If full batch returned and next button is not disabled, strongly indicates a subsequent page
+        if current_page_items_count >= 50:
+            return True
 
         # Look for explicit Next Page anchor or next page number link
         next_p_str = str(current_page + 1)
         has_next_link = (
+            'aria-label="go to next search page"' in h_low or
             'aria-label="next page"' in h_low or
+            'type="next"' in h_low or
+            'rel="next"' in h_low or
             "pagination__next" in h_low or
             f'_pgn={next_p_str}' in h_low or
             f'data-page="{next_p_str}"' in h_low or
             f'class="pagination__item">{next_p_str}</a>' in h_low or
             f'class="pagination__item" >{next_p_str}</a>' in h_low or
+            f'>{next_p_str}</a>' in h_low or
             f'>{next_p_str}</span>' in h_low
         )
         return has_next_link
@@ -610,7 +624,8 @@ class EbayScraper:
                 # If items found on Page 1, paginate remaining pages with the confirmed handle
                 if items and self._has_next_page(html, 1, len(page_items)):
                     page_num = 2
-                    max_crawl_limit = MAX_PAGES if target_slug else 2
+                    prev_url = url
+                    max_crawl_limit = MAX_PAGES
                     while page_num <= max_crawl_limit:
                         if stop_event and stop_event.is_set():
                             break
@@ -619,7 +634,7 @@ class EbayScraper:
 
                         url = self._build_url(active_info, include_term, excludes, page_num, condition, domain=active_dom)
                         try:
-                            page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                            page.goto(url, referer=prev_url, wait_until="domcontentloaded", timeout=20000)
                             try:
                                 page.wait_for_selector(".s-card, .s-item, .str-item-card, .srp-results, .srp-save-null-search", timeout=5000)
                             except Exception:
@@ -639,6 +654,24 @@ class EbayScraper:
                                 break
 
                         page_items = self._parse_html(html, fallback_seller=seller_label, domain=active_dom)
+                        if not page_items and html:
+                            h_low = html.lower()
+                            if any(k in h_low for k in ("error page | ebay", "pardon our interruption", "something went wrong on our end")) or ("0." in h_low and "ebay" in h_low and "sorry" in h_low):
+                                time.sleep(2.0)
+                                try:
+                                    page.reload(wait_until="domcontentloaded", timeout=20000)
+                                    try:
+                                        page.wait_for_selector(".s-card, .s-item, .str-item-card, .srp-results", timeout=5000)
+                                    except Exception:
+                                        pass
+                                    time.sleep(0.5)
+                                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                                    time.sleep(0.3)
+                                    html = page.content()
+                                    page_items = self._parse_html(html, fallback_seller=seller_label, domain=active_dom)
+                                except Exception:
+                                    pass
+
                         if not page_items:
                             break
 
@@ -654,8 +687,9 @@ class EbayScraper:
                         if new_found == 0 or len(page_items) < 10 or not self._has_next_page(html, page_num, len(page_items)):
                             break
 
+                        prev_url = url
                         page_num += 1
-                        time.sleep(random.uniform(0.8, 1.5))
+                        time.sleep(random.uniform(1.2, 2.2))
 
                 if not items and html:
                     html_low = html.lower()
@@ -895,8 +929,6 @@ class EbayScraper:
             params["_ssn"] = target_handle
             if nkw:
                 params["_nkw"] = nkw
-            else:
-                params["_armrs"] = "1"
         else:
             params["_nkw"] = nkw if nkw else ""
 
@@ -910,21 +942,24 @@ class EbayScraper:
 
         return f"https://{host}/sch/i.html?" + urlencode(params)
 
-    def _fetch_via_requests(self, url: str) -> str:
-        """Fallback fetch using session."""
+    def _fetch_via_requests(self, url: str, referer: str = "") -> str:
+        """Fallback fetch using session with optional Referer header."""
         try:
             if HAS_CURL_CFFI:
                 session = curl_requests.Session(impersonate="chrome124")
             else:
                 session = curl_requests.Session()
-            session.headers.update({
+            headers = {
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
                 ),
                 "Accept-Language": "en-US,en;q=0.9",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            })
+            }
+            if referer:
+                headers["Referer"] = referer
+            session.headers.update(headers)
             resp = session.get(url, timeout=15)
             return resp.text if resp.status_code == 200 else ""
         except Exception:

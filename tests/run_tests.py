@@ -1235,6 +1235,36 @@ class TestApolloCoreFeatures(unittest.TestCase):
         finally:
             scraper._fetch_via_requests = original_fetch
 
+        # 7. Test store sweep URL construction (clean, no _armrs=1)
+        store_sweep_url = scraper._build_url(
+            {"store_name": "target_store", "seller": "target_store", "domain": "ebay.com"},
+            include="",
+            excludes=[],
+            page=2,
+            condition="all",
+            domain="ebay.com"
+        )
+        self.assertIn("_ssn=target_store", store_sweep_url)
+        self.assertIn("_pgn=2", store_sweep_url)
+        self.assertNotIn("_armrs=", store_sweep_url)
+
+        # 8. Test _has_next_page heuristics
+        # Active next button
+        html_has_next = '<html><body><h1 class="srp-controls__count-heading">300 results</h1><a class="pagination__next" aria-label="Go to next search page" href="?_pgn=2">Next</a></body></html>'
+        self.assertTrue(scraper._has_next_page(html_has_next, 1, 60))
+
+        # Explicitly disabled next button
+        html_disabled = '<html><body><a class="pagination__next icon-link" aria-label="Go to next search page" aria-disabled="true">Next</a></body></html>'
+        self.assertFalse(scraper._has_next_page(html_disabled, 2, 60))
+
+        # Declared total count exhausted
+        html_exhausted = '<html><body><h1 class="srp-controls__count-heading">90 results</h1><a class="pagination__next" href="?_pgn=3">Next</a></body></html>'
+        self.assertFalse(scraper._has_next_page(html_exhausted, 2, 50))  # 50*2 = 100 >= 90
+
+        # Results per page dropdown ignored as total count
+        html_dropdown = '<html><body><option value="60">60 results per page</option><a class="pagination__next" href="?_pgn=3">Next</a></body></html>'
+        self.assertTrue(scraper._has_next_page(html_dropdown, 1, 60))
+
     def test_38_platform_name_and_search_dispatch_routing(self):
         """Test Item 38: Verify all marketplace platform names and dispatch matching logic (including Mercado Libre)."""
         # Test marketplace names from dropdown values
